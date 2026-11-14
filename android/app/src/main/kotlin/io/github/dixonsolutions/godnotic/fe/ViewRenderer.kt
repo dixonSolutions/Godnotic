@@ -3,7 +3,9 @@ package io.github.dixonsolutions.godnotic.fe
 import android.content.Context
 import android.graphics.Color
 import android.os.Parcelable
+import android.os.SystemClock
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -136,7 +138,7 @@ class ViewRenderer(
         if (id == null) { host.showDialog(null); return }
         val e = nodes[id] ?: return
         (e.view.parent as? ViewGroup)?.removeView(e.view)
-        host.showDialog(dialogFrame(e.view, e.props.bool("dismissable", true)))
+        host.showDialog(dialogFrame(e.view, e.props.bool("dismissable", true), e.props.num("guardMs", 0.0).toLong()))
     }
 
     override fun toast(text: String, kind: String) = host.toast(text, kind)
@@ -1217,15 +1219,60 @@ class ViewRenderer(
             val p = x.props
             val act = p["action"].obj().ifEmpty { mapOf("id" to id) }
             val a = act + mapOf("style" to p.str("style", act.str("style")), "label" to p.str("label").ifEmpty { act.str("label") })
-            val b = actionButton(id, a)
+            val b: View = if (p.str("swatch").isNotEmpty()) teamTile(id, a, p) else actionButton(id, a)
             b.isEnabled = !p.containsKey("enabled") || p.bool("enabled")
             holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         return e
     }
 
-    private fun dialogFrame(content: View, dismissable: Boolean): View {
-        val frame = FrameLayout(ctx)
+    /**
+     * A team in the join dialog (`swatch`: the team's colour, `subtitle`: how
+     * many play in it): a tall tile in that colour, the name large and the
+     * count under it, as Xonotic's team buttons are coloured.
+     */
+    private fun teamTile(id: String, a: Map<String, Any?>, p: Map<String, Any?>): View {
+        val colour = try { Color.parseColor(p.str("swatch")) } catch (ex: IllegalArgumentException) { Theme.BLUE }
+        val col = Kit.column(ctx, 2f)
+        col.gravity = Gravity.CENTER
+        col.minimumHeight = dp(84f)
+        col.setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
+        val r = dp(18f).toFloat()
+        // the team's colour, dimmed for the white text, with its full colour as the edge
+        val fill = Color.argb(255, Color.red(colour) * 55 / 100, Color.green(colour) * 55 / 100, Color.blue(colour) * 55 / 100)
+        val states = android.graphics.drawable.StateListDrawable()
+        states.addState(intArrayOf(android.R.attr.state_focused), Theme.rounded(fill, r, dp(3f), Color.WHITE))
+        states.addState(intArrayOf(), Theme.rounded(fill, r, dp(2f), colour))
+        col.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x55FFFFFF), states, Theme.rounded(Color.WHITE, r))
+        val name = Kit.text(ctx, a.str("label"), Theme.SP_TITLE, Color.WHITE, bold = true, lines = 1)
+        name.typeface = Theme.display
+        name.gravity = Gravity.CENTER
+        col.addView(name)
+        if (p.str("subtitle").isNotEmpty()) {
+            val n = Kit.text(ctx, p.str("subtitle"), Theme.SP_CAPTION, 0xE6FFFFFF.toInt(), lines = 1)
+            n.gravity = Gravity.CENTER
+            col.addView(n)
+        }
+        col.isClickable = true
+        col.isFocusable = true
+        col.contentDescription = listOf(a.str("label"), p.str("subtitle")).filter { it.isNotEmpty() }.joinToString(", ")
+        col.setOnClickListener { Kit.haptic(it); invoke(id, a) }
+        return col
+    }
+
+    /**
+     * A described dialog. dismissable false: a tap beside it does nothing (the
+     * join dialog opens by itself, often while the player is tapping at the
+     * match); guardMs: the first moments it is up it takes no touch at all.
+     */
+    private fun dialogFrame(content: View, dismissable: Boolean, guardMs: Long = 0): View {
+        val armedAt = SystemClock.uptimeMillis() + guardMs
+        val frame = object : FrameLayout(ctx) {
+            override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
+                SystemClock.uptimeMillis() < armedAt || super.onInterceptTouchEvent(ev)
+            override fun onTouchEvent(ev: MotionEvent): Boolean =
+                if (SystemClock.uptimeMillis() < armedAt) true else super.onTouchEvent(ev)
+        }
         frame.setBackgroundColor(0xB3000000.toInt())
         frame.isClickable = true // nothing behind it takes the tap
         if (dismissable) frame.setOnClickListener { events.back() }
@@ -1237,6 +1284,11 @@ class ViewRenderer(
         box.addView(content)
         val w = minOf(dp(760f), (ctx.resources.displayMetrics.widthPixels * 0.9).toInt())
         frame.addView(box, FrameLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER).apply { topMargin = dp(24f); bottomMargin = dp(24f) })
+        // it comes up, rather than appearing: the eye catches it
+        if (!Theme.reducedMotion(ctx)) {
+            box.alpha = 0f; box.scaleX = 0.94f; box.scaleY = 0.94f
+            box.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start()
+        }
         return frame
     }
 

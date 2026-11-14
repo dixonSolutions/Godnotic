@@ -90,3 +90,13 @@ columnview.gn-dense { font-size: 14px; }
 /* The map picker: tiles in rows that scroll sideways; one line for the name. */
 .gn-card .gn-tile-text { padding: 6px 10px 8px 10px; }
 .gn-card .gn-tile-text .gn-card-title { font-size: 14px; }
+
+/* the join dialog's teams (widgets.rs team_tile): Xonotic's team colours */
+button.gn-team { border-radius: 18px; min-height: 84px; color: white; border: 2px solid transparent; }
+button.gn-team .gn-team-name { font-weight: 800; font-size: 20px; }
+button.gn-team .gn-team-count { font-size: 13px; opacity: 0.9; }
+button.gn-team-red { background: #7e2421; border-color: #e5413b; }
+button.gn-team-blue { background: #20458c; border-color: #3a7dff; }
+button.gn-team-yellow { background: #846c0e; border-color: #f0c419; }
+button.gn-team-pink { background: #7b2f6e; border-color: #e055c8; }
+button.gn-team:hover { background-image: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)); }

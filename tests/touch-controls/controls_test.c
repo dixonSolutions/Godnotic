@@ -11,7 +11,12 @@ Checks the pure parts of the in-match touch controls:
     acceleration off is exactly linear;
   - the move stick: it floats to the thumb, has a dead zone, reaches full
     speed at the run deflection, keeps its direction, and follows a thumb
-    that passes the rim.
+    that passes the rim;
+  - the join slider ("Swipe to join", touch_hudmode.h TouchSlide_Layout)
+    with the spectator HUD's defaults (as touch_hud.c places them): it
+    touches neither the stick, the rocker nor the spectator bar, is 56 dp
+    tall and at least 200 dp wide, and keeps 48 dp from the bottom and side
+    edges (the system's gestures), either hand, with and without insets.
 Run through scripts/test-touch-controls.sh.
 */
 #include <stdio.h>
@@ -206,17 +211,76 @@ static void check_stick(void)
 	CHECK(s.cx == 300 && fabsf_(mx - 1) < 0.001f, "with following off the centre moved");
 }
 
+// --- the join slider ---------------------------------------------------------
+// touch_hud.c's spectator layout at its defaults: stick at (0.17, 0.68), a
+// 48 dp rocker beside it, the bar at (0.815, 0.885). Mirrored left-handed.
+typedef struct { float x, y, w, h; } box_t;
+static int boxes_meet(box_t a, box_t b)
+{
+	return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+static box_t circle_box(float cx, float cy, float r) { box_t b = { cx - r, cy - r, r * 2, r * 2 }; return b; }
+
+static void check_slider_layout(void)
+{
+	size_t i;
+	int hand, inset;
+	for (i = 0; i < sizeof(screens) / sizeof(screens[0]); i++)
+	for (hand = 0; hand < 2; hand++)
+	for (inset = 0; inset < 2; inset++)
+	{
+		const screen_t *sc = &screens[i];
+		float w = sc->px_w, h = sc->px_h, u = TouchDp_Density(sc->dpi, sc->px_h), smin = w < h ? w : h;
+		float mx = (hand ? 1 - 0.170f : 0.170f) * w, my = 0.680f * h, mr, rr = 24 * u, ux, uy, dy;
+		float bx = (hand ? 1 - 0.815f : 0.815f) * w, by = 0.885f * h, bhy, side, bar_l, bar_r;
+		touchslide_in_t in;
+		touchslide_rect_t r;
+		box_t slider, others[5];
+		const char *names[5] = { "stick", "UP", "DOWN", "spectator bar", "" };
+		int k;
+		mr = smin * 0.300f * 0.5f; if (mr < 24 * u) mr = 24 * u; if (mr < 64 * u) mr = 64 * u;
+		ux = mx + (hand ? -1 : 1) * (mr + rr * 1.6f); uy = my - rr * 1.15f; dy = my + rr * 1.15f;
+		bhy = smin * 0.085f * 0.5f; if (bhy < 23 * u) bhy = 23 * u;
+		side = bhy * 2.2f + bhy * 0.25f + bhy;
+		bar_l = bx - side - bhy; bar_r = bx + side + bhy;
+		memset(&in, 0, sizeof(in));
+		in.w = w; in.h = h; in.u = u;
+		in.in_l = in.in_r = inset ? w * 0.035f : 0;
+		in.in_b = inset ? 24 * u : 0;   // a gesture bar
+		in.left = hand ? bar_r : (mx + mr > ux + rr ? mx + mr : ux + rr);
+		in.right = hand ? (mx - mr < ux - rr ? mx - mr : ux - rr) : bar_l;
+		in.row_cy = by;
+		in.row_top = (uy - rr < by - bhy * 1.15f) ? uy - rr : by - bhy * 1.15f;
+		r = TouchSlide_Layout(&in);
+		slider.x = r.cx - r.hx; slider.y = r.cy - r.hy; slider.w = r.hx * 2; slider.h = r.hy * 2;
+		others[0] = circle_box(mx, my, mr);
+		others[1] = circle_box(ux, uy, rr);
+		others[2] = circle_box(ux, dy, rr);
+		others[3].x = bar_l; others[3].y = by - bhy; others[3].w = bar_r - bar_l; others[3].h = bhy * 2;
+		for (k = 0; k < 4; k++)
+			CHECK(!boxes_meet(slider, others[k]), "%s, %s hand, insets %d: the join slider (%.0f,%.0f %.0fx%.0f) meets the %s",
+				sc->name, hand ? "left" : "right", inset, slider.x, slider.y, slider.w, slider.h, names[k]);
+		CHECK(fabsf_(r.hy * 2 - 56 * u) < 0.5f, "%s: the slider is not 56 dp tall", sc->name);
+		CHECK(r.hx * 2 >= 200 * u - 0.5f, "%s, %s hand, insets %d: the slider is %.0f dp wide, under 200", sc->name, hand ? "left" : "right", inset, r.hx * 2 / u);
+		CHECK(slider.y + slider.h <= h - in.in_b - 48 * u + 0.5f, "%s, %s hand, insets %d: the slider is within 48 dp of the bottom edge", sc->name, hand ? "left" : "right", inset);
+		CHECK(slider.x >= in.in_l + 48 * u - 0.5f && slider.x + slider.w <= w - in.in_r - 48 * u + 0.5f,
+			"%s, %s hand, insets %d: the slider is within 48 dp of a side edge", sc->name, hand ? "left" : "right", inset);
+		CHECK(slider.y >= h * 0.25f, "%s: the slider went up into the top of the screen (y %.0f)", sc->name, slider.y);
+	}
+}
+
 int main(void)
 {
 	check_topbar();
 	check_look();
 	check_stick();
+	check_slider_layout();
 	CHECK(TOUCHDP_MIN_TARGET >= 48, "the smallest touch target is under 48 dp");
 	if (failures)
 	{
 		printf("%d check(s) failed\n", failures);
 		return 1;
 	}
-	printf("touch controls: top bar, look and stick checks passed\n");
+	printf("touch controls: top bar, look, stick and join slider checks passed\n");
 	return 0;
 }

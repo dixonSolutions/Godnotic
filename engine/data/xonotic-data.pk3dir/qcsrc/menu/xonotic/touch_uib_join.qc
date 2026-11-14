@@ -12,30 +12,75 @@
 // Each button's action is "join.<choice>" and runs "touch_join <choice>".
 
 bool uib_join_watching;   // opened for a player who was watching: closes once they play
+string uib_join_seen;     // what the popup was built from (teams, counts): rebuilt when it changes
 
+// Players in a team ("red blue yellow pink" from the engine's scoreboard read).
+float UIB_JoinTeamCount(float bit)
+{
+	tokenize_console(cvar_string("_touch_team_players"));
+	return stof(argv(bit == 1 ? 0 : bit == 2 ? 1 : bit == 4 ? 2 : 3));
+}
+
+string UIB_JoinPlayers(float n)
+{
+	if (n == 1) return _("1 player");
+	return sprintf(_("%d players"), n);
+}
+
+// One team: Xonotic's team colour as a swatch the renderer paints the button
+// with, and how many are in it.
+void UIB_JoinTeam(float bit, string key, string label, string swatch)
+{
+	uib_node(key, "button");
+	uib_s("label", label);
+	uib_j("action", UIB_A(strcat("join.", key), label, "team"));
+	uib_s("style", "secondary");
+	uib_s("team", key);
+	uib_s("swatch", swatch);
+	uib_s("subtitle", UIB_JoinPlayers(UIB_JoinTeamCount(bit)));
+	uib_end();
+}
+
+string UIB_JoinState()
+{
+	return strcat(cvar_string("_teams_available"), ":", cvar_string("_touch_team_players"), ":",
+		cvar_string("_touch_match_players"), ":", ftos(cvar("_touch_hud_flags") & 4));
+}
+
+// Xonotic's Team Selection, in our style: auto-select first (what the game
+// recommends), the teams it offers in their colours with how many play in
+// each, Spectate last. Without teams: Join and Spectate. Only a choice or
+// Back closes it: a tap beside it does nothing (it opens by itself, often
+// while the player is still tapping at the match), and the first moments it
+// is up take no taps at all (guardMs).
 void UIB_BuildJoin()
 {
-	if (!UIB_Screen("join", _("Join game")))
+	if (!UIB_Screen("join", _("Join the match")))
 		return;
 	uib_s("presentation", "dialog");
-	uib_b("dismissable", 1);
+	uib_b("dismissable", 0);
+	uib_f("guardMs", 450);
 	float teams = cvar("_teams_available");
 	bool teamgame = (cvar("_touch_hud_flags") & 4) || teams;
+	float playing = cvar("_touch_match_players");
 	if (teamgame)
-		uib_s("subtitle", _("Pick a team, or let the game pick"));
+		uib_s("subtitle", _("Pick a team, or let the game balance them"));
+	else
+		uib_s("subtitle", (playing > 0) ? sprintf(_("%s in the match"), UIB_JoinPlayers(playing)) : _("Nobody is playing yet"));
 	uib_j("primary", UIB_AS("join.auto", (teamgame ? _("Auto-select team") : _("Join")), "play", "primary"));
 	if (teams)
 	{
 		UIB_Open("teams", "grid");
 			uib_f("minItem", 140);
-			if (teams & 1) UIB_Button("red", _("Red"), UIB_A("join.red", _("Red"), "team"), "secondary");
-			if (teams & 2) UIB_Button("blue", _("Blue"), UIB_A("join.blue", _("Blue"), "team"), "secondary");
-			if (teams & 4) UIB_Button("yellow", _("Yellow"), UIB_A("join.yellow", _("Yellow"), "team"), "secondary");
-			if (teams & 8) UIB_Button("pink", _("Pink"), UIB_A("join.pink", _("Pink"), "team"), "secondary");
+			if (teams & 1) UIB_JoinTeam(1, "red", _("Red"), "#e5413b");
+			if (teams & 2) UIB_JoinTeam(2, "blue", _("Blue"), "#3a7dff");
+			if (teams & 4) UIB_JoinTeam(4, "yellow", _("Yellow"), "#f0c419");
+			if (teams & 8) UIB_JoinTeam(8, "pink", _("Pink"), "#e055c8");
 		UIB_Close();
 	}
 	UIB_Button("spectate", _("Spectate"), UIB_A("join.spectate", _("Spectate"), "esp"), "secondary");
 	UIB_Done();
+	strcpy(uib_join_seen, UIB_JoinState());
 }
 
 bool UIB_JoinUp()
@@ -93,8 +138,9 @@ bool UIB_JoinAction(string a)
 	return true;
 }
 
-// Back or a tap outside: as Spectate while watching (the player stays where
-// they are), and never the pause menu under the popup.
+// Back (the only way out besides a choice; a tap beside the popup does
+// nothing): as Spectate while watching (the player stays where they are),
+// and never the pause menu under the popup.
 bool UIB_JoinBack()
 {
 	if (UIB_TopScreen() != "join")
@@ -113,7 +159,8 @@ bool UIB_WelcomeNative()
 	return UIB_EngineHasBridge() && uib_native();
 }
 
-// Every tick: the popup goes once the player is in the game.
+// Every tick: the popup goes once the player is in the game, and follows
+// the teams' player counts while it is up.
 void UIB_JoinTick()
 {
 	if (!UIB_JoinUp())
@@ -122,5 +169,8 @@ void UIB_JoinTick()
 	{
 		uib_join_watching = false;
 		UIB_JoinClose();
+		return;
 	}
+	if (UIB_JoinState() != uib_join_seen)
+		UIB_Build("join");
 }

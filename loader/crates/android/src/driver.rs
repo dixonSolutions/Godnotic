@@ -568,6 +568,33 @@ mod tests {
         assert_eq!(d.state()["modal"], json!([]));
     }
 
+    /// The team-selection join popup (a stock CTF server, work/joinui): what the
+    /// Kotlin renderer needs reaches it unchanged: not dismissable, the touch
+    /// guard, each team's colour and player count.
+    #[test]
+    fn the_team_join_popup_carries_colours_counts_and_its_guard() {
+        let mut d = Driver::new();
+        let b = d.feed(r##"{"uib":1,"t":"snapshot","rev":1,"nodes":[
+            {"id":"app","type":"app","props":{"stack":["pause"],"modal":["join"],"context":"game"},"children":["pause","join"]},
+            {"id":"pause","type":"screen","props":{"title":"Paused","kind":"game"},"children":[]},
+            {"id":"join","type":"screen","props":{"title":"Join the match","presentation":"dialog","dismissable":false,"guardMs":450,
+                "primary":{"id":"join.auto","label":"Auto-select team","style":"primary"}},"children":["join/teams","join/spectate"]},
+            {"id":"join/teams","type":"grid","props":{"minItem":140},"children":["join/teams/red","join/teams/blue"]},
+            {"id":"join/teams/red","type":"button","props":{"label":"Red","style":"secondary","team":"red","swatch":"#e5413b","subtitle":"2 players",
+                "action":{"id":"join.red","label":"Red"}},"children":[]},
+            {"id":"join/teams/blue","type":"button","props":{"label":"Blue","style":"secondary","team":"blue","swatch":"#3a7dff","subtitle":"1 player",
+                "action":{"id":"join.blue","label":"Blue"}},"children":[]},
+            {"id":"join/spectate","type":"button","props":{"label":"Spectate","action":{"id":"join.spectate"}},"children":[]}]}"##);
+        let create = |id: &str| b.ops.iter().find(|o| o["op"] == "create" && o["id"] == id).cloned().unwrap_or_default();
+        assert_eq!(create("join")["props"]["dismissable"], false);
+        assert_eq!(create("join")["props"]["guardMs"], 450);
+        assert_eq!(create("join/teams/red")["props"]["swatch"], "#e5413b");
+        assert_eq!(create("join/teams/red")["props"]["subtitle"], "2 players");
+        assert_eq!(create("join/teams/blue")["props"]["team"], "blue");
+        assert!(ops(&b).contains(&"dialog join".to_string()));
+        assert_eq!(d.state()["overGame"], true);
+    }
+
     #[test]
     fn a_dialog_on_the_pause_page_or_in_the_menu_is_not_over_the_game() {
         let mut d = Driver::new();

@@ -93,6 +93,8 @@ TYPES = {
     "screen": {"presentation": enum("page", "sheet", "dialog", "fullscreen"),
                "kind": enum("home", "page", "detail", "game", "loading", "status"),
                "primary": ref("action"), "background": IMG, "dismissable": B,
+               # a dialog that opens by itself takes no touch for its first moments
+               "guardMs": {"type": "integer", "minimum": 0, "maximum": 2000},
                "header": obj({"collapsible": B, "compact": B, "hidden": B})},
     "toolbar": {},
     "actionbar": {"align": enum("start", "center", "end", "spread")},
@@ -142,7 +144,10 @@ TYPES = {
     "field": {**CONTROL, "value": S,
               "kind": enum("text", "name", "number", "password", "url", "search", "address"),
               "placeholder": S, "maxLength": I, "private": B, "hasValue": B, "submit": ref("action")},
-    "button": {"action": ref("action"), "style": STYLE},
+    # swatch / team: a team in the join dialog, drawn in the team's colour
+    "button": {"action": ref("action"), "style": STYLE,
+               "swatch": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
+               "team": enum("red", "blue", "yellow", "pink")},
     "colour": {**CONTROL, "value": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                "palette": {"type": "array", "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                            "maxItems": 64}, "preview": IMG},

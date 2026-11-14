@@ -385,6 +385,7 @@ pub fn node(app: &App, store: &Store, n: &Node) -> gtk::Widget {
         "tabs" => tabs(app, store, n),
         "split" => split(app, store, n),
         "field" => entry(app, n),
+        "button" if n.str("swatch").is_some() => team_tile(app, n),
         "button" => {
             let mut a = n.obj("action").cloned().unwrap_or_default();
             if a.str_of("label").is_none() {
@@ -1973,6 +1974,38 @@ fn card_grid(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
     gv.upcast()
 }
 
+/// A team in the join dialog (`swatch`, `team`, `subtitle`: how many play in it): a tall
+/// button in the team's colour (style.css `gn-team-<team>`), the name over the count.
+fn team_tile(app: &App, n: &Node) -> gtk::Widget {
+    let mut a = n.obj("action").cloned().unwrap_or_default();
+    if a.str_of("label").is_none() {
+        a.insert("label".into(), json!(n.title()));
+    }
+    let b = gtk::Button::new();
+    b.add_css_class("gn-team");
+    if let Some(t) = n.str("team") {
+        b.add_css_class(&format!("gn-team-{t}"));
+    }
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    col.set_valign(gtk::Align::Center);
+    col.append(&label(&a.str_of("label").unwrap_or_default(), &["gn-team-name"]));
+    if let Some(sub) = n.str("subtitle") {
+        col.append(&label(&sub, &["gn-team-count"]));
+    }
+    b.set_child(Some(&col));
+    b.set_size_request(-1, 84);
+    b.set_sensitive(n.enabled());
+    let w = Rc::downgrade(app);
+    let owner = n.id.clone();
+    b.connect_clicked(move |_| {
+        if let Some(app) = w.upgrade() {
+            invoke(&app, &owner, &a);
+        }
+    });
+    register_activator(app, &n.id, &b);
+    b.upcast()
+}
+
 /// A modal screen (`app.modal`) as an AdwDialog: a sheet at the bottom on narrow windows.
 pub fn dialog(app: &App, id: &str) -> adw::Dialog {
     let d = adw::Dialog::new();
@@ -1989,8 +2022,25 @@ pub fn dialog(app: &App, id: &str) -> adw::Dialog {
             let rows = core.store.children(id).iter().map(|k| 1 + core.store.children(&k.id).len()).sum::<usize>() as i32;
             d.set_content_height(if s.str("presentation").as_deref() == Some("dialog") { (190 + rows * 58).clamp(300, 640) } else { 480 });
             d.set_can_close(s.bool("dismissable").unwrap_or(true));
+            // guardMs: the first moments it is up it takes no click (it may open by itself mid-click)
+            if let Some(ms) = s.f64("guardMs").filter(|m| *m > 0.0) {
+                content.set_sensitive(false);
+                let cw = content.downgrade();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(ms as u64), move || {
+                    if let Some(c) = cw.upgrade() {
+                        c.set_sensitive(true);
+                    }
+                });
+            }
         }
     }
+    // not dismissable: Escape is Back (the engine decides), never a silent close
+    let wb = Rc::downgrade(app);
+    d.connect_close_attempt(move |_| {
+        if let Some(a) = wb.upgrade() {
+            app::back(&a);
+        }
+    });
     let w = Rc::downgrade(app);
     let id2 = id.to_string();
     d.connect_closed(move |_| {

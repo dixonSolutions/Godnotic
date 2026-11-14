@@ -863,7 +863,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             return
         }
         // over the running match the game stays in view, only lightly dimmed
-        if (bridgeOp && client?.overGame == true) view.setBackgroundColor(0x59000000)
+        // (dimmed enough that a dialog that opened by itself is noticed: the join dialog)
+        if (bridgeOp && client?.overGame == true) view.setBackgroundColor(0x73000000)
         dialogLayer.addView(view, match())
         dialogLayer.visibility = View.VISIBLE
         root.visibility = View.VISIBLE

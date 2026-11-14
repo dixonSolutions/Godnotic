@@ -15,7 +15,9 @@ copies, the native front ends and the tests share.
   - joining (TouchJoinDlg_*): Xonotic's own join dialog (the menu's Team
     Selection: auto-select, the teams, spectate), which comes up by itself
     for an observer when a match starts and from the MENU sheet after that.
-    There is no join gesture and no join button on the HUD.
+  - the join slider (TouchSlide_*): "Swipe to join" on the spectator HUD,
+    a wide track at the bottom middle whose knob is pushed right (a tap or a
+    click does the same). It joins, or opens the join dialog in a team game.
 
 No engine headers: scripts/test-touch-hudmode.sh compiles this alone. The
 QuakeC side mirrors the numbers in qcsrc/client/touch_mode.qh.
@@ -181,7 +183,7 @@ static inline const char *TouchMode_JoinName(int join)
 #define TOUCHCTL_VITALS   (1 << 16)
 #define TOUCHCTL_SPECBAR  (1 << 17)   // previous / follow-or-free / next
 #define TOUCHCTL_FLY      (1 << 18)   // up / down while free-flying
-#define TOUCHCTL_JOIN     (1 << 19)   // unused: joining is the join dialog (the bit stays reserved)
+#define TOUCHCTL_JOIN     (1 << 19)   // the join slider ("Swipe to join"), spectators only
 #define TOUCHCTL_TOSPEC   (1 << 20)   // "move to spectators", when placed
 #define TOUCHCTL_READY    (1 << 21)
 #define TOUCHCTL_VOTECHIP (1 << 22)   // a vote called in the match
@@ -204,13 +206,13 @@ static inline int TouchMode_Controls(int mode, int flags)
 		c = TOUCHCTL_CHROME | TOUCHCTL_LOOK | TOUCHCTL_RESPAWN | TOUCHCTL_TOSPEC;
 		break;
 	case TOUCHMODE_OBSERVING:
-		c = TOUCHCTL_CHROME | TOUCHCTL_MOVE | TOUCHCTL_LOOK | TOUCHCTL_SPECBAR | TOUCHCTL_FLY;
+		c = TOUCHCTL_CHROME | TOUCHCTL_MOVE | TOUCHCTL_LOOK | TOUCHCTL_SPECBAR | TOUCHCTL_FLY | TOUCHCTL_JOIN;
 		break;
 	case TOUCHMODE_OUT_FREE:
 		c = TOUCHCTL_CHROME | TOUCHCTL_MOVE | TOUCHCTL_LOOK | TOUCHCTL_SPECBAR | TOUCHCTL_FLY;
 		break;
 	case TOUCHMODE_FOLLOWING:
-		c = TOUCHCTL_CHROME | TOUCHCTL_SPECBAR | TOUCHCTL_VITALS;
+		c = TOUCHCTL_CHROME | TOUCHCTL_SPECBAR | TOUCHCTL_VITALS | TOUCHCTL_JOIN;
 		break;
 	case TOUCHMODE_OUT:
 		c = TOUCHCTL_CHROME | TOUCHCTL_SPECBAR | TOUCHCTL_VITALS;
@@ -323,6 +325,7 @@ static inline const char *TouchAct_Command(const touchmode_t *m, int act)
 // it: spectating later in the same match is the player's own choice.
 // ---------------------------------------------------------------------------
 #define TOUCHJOINDLG_SETTLE  0.75f  // seconds as an observer before it opens
+#define TOUCHJOINDLG_FREE    0.50f  // seconds the screen has been free (a menu, the pause page just closed)
 #define TOUCHJOINDLG_RETRY   1.5f   // a game hosted here: between "join" tries
 #define TOUCHJOINDLG_TRIES   6
 
@@ -336,6 +339,7 @@ typedef struct touchjoindlg_s
 	int tries;      // straight-in joins left (a game hosted here)
 	double since;   // an observer since, 0 = not
 	double next;    // nothing before this time
+	double free_since;  // the game has had the screen since, 0 = not
 } touchjoindlg_t;
 
 // One frame. local_game: the server is this process. campaign: the campaign
@@ -349,6 +353,7 @@ static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int
 		d->tries = TOUCHJOINDLG_TRIES;
 		d->since = 0;
 		d->next = 0;
+		d->free_since = 0;
 		return TOUCHJOINDLG_NOTHING;
 	}
 	if (mode == TOUCHMODE_PLAYING || TouchMode_IsOutOfRound(mode))
@@ -367,7 +372,13 @@ static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int
 		return TOUCHJOINDLG_NOTHING;
 	if (!d->since)
 		d->since = now;
-	if (now - d->since < TOUCHJOINDLG_SETTLE || now < d->next || !screen_free)
+	// Never in the frames a menu (the pause page) goes away: a tap meant for
+	// it must not land on the dialog, and the two must not look like one.
+	if (!screen_free)
+		d->free_since = 0;
+	else if (!d->free_since)
+		d->free_since = now;
+	if (now - d->since < TOUCHJOINDLG_SETTLE || now < d->next || !screen_free || now - d->free_since < TOUCHJOINDLG_FREE)
 		return TOUCHJOINDLG_NOTHING;
 	if (local_game && !(flags & TOUCHMODE_F_TEAMS) && d->tries > 0)
 	{
@@ -399,6 +410,188 @@ static inline const char *TouchJoinDlg_Command(const char *choice, int teams)
 	if (!strcmp(choice, "pink")) return "cmd selectteam pink; cmd join pink";
 	if (!strcmp(choice, "spectate")) return "cmd spectate";
 	return "";
+}
+
+// ---------------------------------------------------------------------------
+// The join slider: "Swipe to join" on the spectator HUD (free-fly and
+// following). A wide track at the bottom middle, between the stick's rocker
+// and the spectator bar, its knob at the left end. Pushing the knob right
+// past most of the track and letting go joins (in a team game it opens the
+// join dialog, to pick the team); short of that it springs back. A tap on it
+// (or a click at a desk) does the same as a full swipe. A finger that sets
+// off up or down was looking around: it is handed to the look.
+// It keeps clear of the system's gestures: the bottom edge (Home, the app
+// switcher's sideways swipe along the bar) and the side edges (Back).
+// Positions in console units, u = units per dp, times in seconds.
+// ---------------------------------------------------------------------------
+#define TOUCHSLIDE_H_DP        56.0f   // the track's height: a primary control
+#define TOUCHSLIDE_W_DP        300.0f  // its width, when there is room
+#define TOUCHSLIDE_MIN_W_DP    200.0f  // narrower than this: it goes above the bottom row
+#define TOUCHSLIDE_GAP_DP      16.0f   // from its neighbours
+#define TOUCHSLIDE_EDGE_DP     48.0f   // from the bottom edge, inside the safe area
+#define TOUCHSLIDE_ACCEPT      0.70f   // of the knob's travel, on release
+#define TOUCHSLIDE_TAP_DP      12.0f   // a tap moves less than this ...
+#define TOUCHSLIDE_TAP_TIME    0.45f   // ... and is up within this
+#define TOUCHSLIDE_LOOK_DP     14.0f   // this far up or down before right: the look's
+
+#define TOUCHSLIDE_TRACKING 0
+#define TOUCHSLIDE_ACCEPTED 1   // pushed far enough
+#define TOUCHSLIDE_TAPPED   2   // a tap: the same as accepted
+#define TOUCHSLIDE_SHORT    3   // let go too early: springs back
+#define TOUCHSLIDE_LOOK     4   // handed to the look
+
+typedef struct touchslide_s
+{
+	float x0, y0, x, y;
+	double t0, t;
+	float travel;   // how far the knob goes, units
+	float u;        // units per dp
+	float moved;    // the farthest the finger got from where it landed
+	int state;
+} touchslide_t;
+
+static inline void TouchSlide_Begin(touchslide_t *s, float x, float y, double t, float travel, float u)
+{
+	s->x0 = s->x = x;
+	s->y0 = s->y = y;
+	s->t0 = s->t = t;
+	s->travel = travel > 1 ? travel : 1;
+	s->u = u > 0 ? u : 1;
+	s->moved = 0;
+	s->state = TOUCHSLIDE_TRACKING;
+}
+
+static inline int TouchSlide_Move(touchslide_t *s, float x, float y, double t)
+{
+	float dx, dy, ady, d;
+	if (s->state != TOUCHSLIDE_TRACKING)
+		return s->state;
+	s->x = x;
+	s->y = y;
+	s->t = t;
+	dx = x - s->x0;
+	dy = y - s->y0;
+	ady = dy < 0 ? -dy : dy;
+	d = (dx < 0 ? -dx : dx) > ady ? (dx < 0 ? -dx : dx) : ady;
+	if (d > s->moved)
+		s->moved = d;
+	// mostly up or down before the knob got going: a look, not a join
+	if (ady > TOUCHSLIDE_LOOK_DP * s->u && ady > (dx > 0 ? dx : 0) * 1.2f && dx < s->travel * 0.15f)
+		s->state = TOUCHSLIDE_LOOK;
+	return s->state;
+}
+
+// How far the knob is along, 0 at rest, 1 at the far end.
+static inline float TouchSlide_Progress(const touchslide_t *s)
+{
+	float p = (s->x - s->x0) / s->travel;
+	return p < 0 ? 0 : p > 1 ? 1 : p;
+}
+
+static inline int TouchSlide_End(touchslide_t *s, float x, float y, double t)
+{
+	if (TouchSlide_Move(s, x, y, t) != TOUCHSLIDE_TRACKING)
+		return s->state;
+	if (TouchSlide_Progress(s) >= TOUCHSLIDE_ACCEPT)
+		s->state = TOUCHSLIDE_ACCEPTED;
+	else if (s->moved < TOUCHSLIDE_TAP_DP * s->u && t - s->t0 <= TOUCHSLIDE_TAP_TIME)
+		s->state = TOUCHSLIDE_TAPPED;
+	else
+		s->state = TOUCHSLIDE_SHORT;
+	return s->state;
+}
+
+static inline int TouchSlide_Joins(int state)
+{
+	return state == TOUCHSLIDE_ACCEPTED || state == TOUCHSLIDE_TAPPED;
+}
+
+static inline const char *TouchSlide_Name(int state)
+{
+	switch (state)
+	{
+	case TOUCHSLIDE_TRACKING: return "tracking";
+	case TOUCHSLIDE_ACCEPTED: return "accepted";
+	case TOUCHSLIDE_TAPPED: return "tapped";
+	case TOUCHSLIDE_SHORT: return "short";
+	case TOUCHSLIDE_LOOK: return "look";
+	default: return "?";
+	}
+}
+
+// Where the track goes. left / right: the inner edges of what is beside it in
+// the bottom row (the stick's ring and its rocker on one side, the spectator
+// bar on the other); row_cy: that row's middle; row_top: the top of the
+// bottom row's controls, for when the gap between them is too narrow.
+typedef struct touchslide_in_s
+{
+	float w, h, u;
+	float in_l, in_r, in_b;   // safe-area insets
+	float left, right;
+	float row_cy, row_top;
+} touchslide_in_t;
+
+typedef struct touchslide_rect_s
+{
+	float cx, cy, hx, hy;
+	int above;   // no room in the row: it sits above it
+} touchslide_rect_t;
+
+static inline touchslide_rect_t TouchSlide_Layout(const touchslide_in_t *in)
+{
+	touchslide_rect_t r;
+	float u = in->u, gap = TOUCHSLIDE_GAP_DP * u, edge = TOUCHSLIDE_EDGE_DP * u;
+	float lo = in->left > in->in_l + edge ? in->left : in->in_l + edge;
+	float hi = in->right < in->w - in->in_r - edge ? in->right : in->w - in->in_r - edge;
+	float room = hi - lo - 2 * gap, want = TOUCHSLIDE_W_DP * u, lowest;
+	r.hy = TOUCHSLIDE_H_DP * 0.5f * u;
+	lowest = in->h - in->in_b - edge - r.hy;
+	r.above = room < TOUCHSLIDE_MIN_W_DP * u;
+	if (!r.above)
+	{
+		r.hx = (room < want ? room : want) * 0.5f;
+		r.cx = (lo + hi) * 0.5f;
+		r.cy = in->row_cy < lowest ? in->row_cy : lowest;
+	}
+	else
+	{
+		float wide = in->w - in->in_l - in->in_r - 2 * edge;
+		r.hx = (wide < want ? wide : want) * 0.5f;
+		r.cx = (in->in_l + in->w - in->in_r) * 0.5f;
+		r.cy = in->row_top - gap - r.hy;
+		if (r.cy > lowest)
+			r.cy = lowest;
+	}
+	return r;
+}
+
+// The knob: a circle at the track's left end, inset; its travel is the rest.
+static inline float TouchSlide_KnobRadius(const touchslide_rect_t *r)
+{
+	return r->hy * 0.84f;
+}
+
+static inline float TouchSlide_Travel(const touchslide_rect_t *r)
+{
+	return 2 * (r->hx - r->hy);
+}
+
+// ---------------------------------------------------------------------------
+// Teams, for the join dialog's player counts: Xonotic's team colours as the
+// scoreboard's colours byte has them (pants: red 4, blue 13, yellow 12,
+// pink 9). Returns the team's bit (1 red, 2 blue, 4 yellow, 8 pink, as
+// _teams_available), 0 for no team.
+// ---------------------------------------------------------------------------
+static inline int TouchJoin_TeamBit(int colors)
+{
+	switch (colors & 15)
+	{
+	case 4: return 1;
+	case 13: return 2;
+	case 12: return 4;
+	case 9: return 8;
+	default: return 0;
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -249,7 +249,10 @@ stack are deleted from the store; renderers may keep their widgets for a back an
 (`page` default, `sheet`, `dialog`, `fullscreen`), `kind` (`home`, `page`, `detail`,
 `game`, `loading`, `status`), `primary` (action, the main thing to do), `actions`
 (toolbar), `background` (image ref, renderers may blur/dim it), `dismissable` (sheets and
-dialogs: tapping outside or back closes them), `header` (`{collapsible, compact, hidden}`:
+dialogs: tapping outside or back closes them; `false`: only Back and the dialog's own
+buttons do, a tap outside does nothing), `guardMs` (a dialog that opens by itself: for
+this long after it appears it takes no touch or click at all, so a tap meant for what
+was under it cannot answer it), `header` (`{collapsible, compact, hidden}`:
 the sticky header, section 4.10). Children: content and containers.
 
 **`toast`** — `text`, `kind` (`info`, `success`, `warning`, `error`), `icon`, `action`
@@ -349,7 +352,7 @@ small note for anything but `immediate`.
 | `stepper` | number | `min`, `max`, `step`, `format` |
 | `choice` | string | `options` (`[{value, label, icon, image, help}]`), `style` (`auto`, `segmented`, `dropdown`, `radio`, `cards`) |
 | `field` | string | `kind` (`text`, `name`, `number`, `password`, `url`, `search`, `address`), `placeholder`, `maxLength`, `private`, `hasValue`, `submit` (action) |
-| `button` | — | `action` (action), `style` (`primary`, `secondary`, `tonal`, `destructive`, `link`) |
+| `button` | — | `action` (action), `style` (`primary`, `secondary`, `tonal`, `destructive`, `link`), `swatch` (`#rrggbb`: drawn as a tall tile in that colour, `subtitle` under the label; the join dialog's teams), `team` (`red`, `blue`, `yellow`, `pink`: the same team, for renderers with a style per team) |
 | `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `preview` (image ref) |
 | `keybind` | string[] (key names) | `command`, `max` (keys per command, default 2) |
 | `progress` | see 4.4 | |
@@ -945,6 +948,7 @@ For the Rust core (and anyone else):
 | `touch_uib_api.qh` | the builtins #1180..#1222 (`uib_begin`, `uib_node`, `uib_s`/`uib_f`/`uib_b`/`uib_j`/`uib_push`, `uib_nav`, `uib_window` ...). Guard: `UIB_EngineHasBridge()` (cvar `uib_version`) |
 | `touch_uib_build.qc` | builder helpers: `UIB_Screen`, `UIB_Open`/`UIB_Close`, `UIB_A` (actions), `UIB_Switch`, `UIB_Slider`, `UIB_Choice` ...; view-model values (`vm:` binds) kept in `_uib_*` cvars |
 | `touch_uib_screens.qc` | Home (banner, three cards, the bar of Settings, Credits and Quit that Settings and Credits carry too), Singleplayer / Create (screen `sp`; LAN, slots, Port, Password only when opened from Multiplayer), Campaign, map details, Multiplayer (`mp`), password dialog, the first-start welcome (`welcome`: the player's name, not dismissable, back does nothing), the host's LAN popup (`lan.host`), pause (hosting card), loading, Credits, quit dialog; navigation; `UIB_Event`, the menu's answer to every renderer event |
+| `touch_uib_join.qc` | the join popup (`join`, a modal in the game context): Xonotic's team selection, Auto-select, the teams with `swatch`, `team` and a player count, Spectate; Join and Spectate without teams; `dismissable: false`, `guardMs: 450`. Actions `join.auto`, `join.<team>`, `join.spectate` (docs/CONTROLS.md, Joining) |
 | `touch_uib_settings.qc` | Settings (split, vertical tabs, horizontal sub-tabs) and Mods (lists, detail with permissions, install from link) |
 | `touch_uib_render.qc` | the QuakeC renderer (web, and the fallback everywhere) |
 
