@@ -1,0 +1,14 @@
+# Linux native bridge and first-run handoff
+
+The GTK loader changes in this checkout are based on Godnotic `origin/main` 35dcf955, while the shared checkout's HEAD is older. In particular `widgets.rs`, `data_ui.rs` and `backend.rs` include changes already present on that origin commit. Integrate against current main rather than treating those older-HEAD differences as new work.
+
+The Linux loader starts the engine as the UI-bridge backend using a Unix socket on fd 3. Stdio cannot be used: the engine console reads stdin and can consume the bridge handshake. The first-run data screen waits for game data; completion or a manual installation starts the backend without restarting the loader. Game data is reachable from Settings. The desktop window starts fullscreen; narrow home cards stack.
+
+Verified locally: loader core tests with `http-ureq`, the fd 3 regression test, GTK build and clippy in GNOME SDK 50, a released 1.2.205 engine and its actual installed data in an isolated Flatpak environment, desktop and 420px screenshots, and transition after simulated manual data installation. On Bluefin 44 with Wayland and Intel RPL-S graphics, the built loader was also run inside the installed GNOME 48 Flatpak runtime with an isolated profile: fullscreen first-run screen, manual-install transition, welcome form, native Home, Settings and a local Stormkeep game with bots all worked. The test profile used symlinks to existing game packs. This build has not been installed into the user's Flatpak; the GNOME 48 SDK build has not been run. GNOME denied the request for a compositor gameplay screenshot.
+
+Still required:
+
+- In-game native join, scoreboard and respawn UI, input-specific prompts and behavior: not verified or completed here. `origin/work/joinui` carries concurrent join/spectator work; coordinate rather than overwrite it. The GTK bridge currently hides the frontend on `game` context, so native dialogs over a running game need a verified presentation strategy.
+- Publish the optimized DXT/ASTC split data, then verify the published artifacts before switching clients. The local preparation and validation procedure is in `~/.cache/godnotic-work/data-out/PUBLISH.md`. The current data release lacks the split manifests and the Linux loader may therefore fall back to the larger full archive. This change is not a faster download by itself.
+- Clarify whether the user wants the existing libadwaita frontend or a replacement: the request said "No libadwaita anywhere", and the current GTK renderer and the changes above use libadwaita. Replacing it is not done.
+- The first-run screen's real network download started and showed progress on Bluefin, but was stopped after ten seconds; a complete network download followed by automatic entry has not been tested. The manual-install transition was exercised.

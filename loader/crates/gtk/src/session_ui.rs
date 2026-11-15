@@ -27,6 +27,19 @@ fn paths() -> (GamePaths, Config) {
     (p, cfg)
 }
 
+/// Start the engine as the native UI backend for the lifetime of the app.
+pub fn start_backend() -> std::io::Result<session::Backend> {
+    let (p, cfg) = paths();
+    let start = p.start_script.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "The game was not found next to the app"))?;
+    let (env, args) = session::base_args(&cfg);
+    let mut command = std::process::Command::new(start);
+    command.args(args);
+    command.envs(env);
+    command.env("SDL_VIDEO_X11_WMCLASS", session::APP_ID);
+    command.env("SDL_VIDEO_WAYLAND_WMCLASS", session::APP_ID);
+    session::Backend::start_socket(command)
+}
+
 fn toast(app: &App, text: &str) {
     if let Some(u) = app.ui.borrow().as_ref() {
         u.toasts.add_toast(adw::Toast::new(text));
@@ -48,7 +61,7 @@ pub fn start(app: &App, action: Action) {
             n.starts_with("xonotic-") && n.ends_with("-data.pk3")
         }));
     if !ready && std::env::var_os("GODNOTIC_SKIP_DATA_CHECK").is_none() {
-        toast(app, "Download the game data first: the storage button at the top right");
+        toast(app, "Download the game data first");
         return;
     }
     let _ = std::fs::create_dir_all(&p.user_base);
