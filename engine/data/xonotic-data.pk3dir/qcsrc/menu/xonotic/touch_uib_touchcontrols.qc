@@ -10,10 +10,20 @@
 // Hooks in touch_uib_settings.qc: UIB_SecTouchControls() as the first sub-tab
 // of UIB_SecTouch, UIB_TouchControlsAction() in UIB_SettingsAction.
 
+// Every device has this section (Linux phones, tablets and touchscreen PCs, the web),
+// not only phones: the on-screen controls can be turned on wherever there is a
+// touchscreen. Without one the rows stay, and the first line says when they apply.
 void UIB_SecTouchControls()
 {
 	if (UIB_SubTab("feel", _("Touch controls")))
 	{
+		UIB_Section("mode", _("On-screen controls"), false);
+			if (!cvar("vid_touchscreen_detected") && !cvar("vid_touchscreen"))
+				UIB_Text("notouch", _("No touchscreen found on this device. These settings apply when you play by touch: on a touchscreen PC, a tablet or a phone, or with the on-screen controls set to Always."), "note");
+			UIB_Choice("show", _("Show the on-screen controls"), "cvar:vid_touchscreen_mode", "segmented",
+				UIB_Opts3("1", _("Automatic"), "2", _("Always"), "0", _("Never")),
+				_("Automatic: on a touchscreen with no keyboard attached. Touch and the mouse work either way"));
+		UIB_Close();
 		UIB_Section("look", _("Look"), false);
 			UIB_Slider("sens", _("Swipe sensitivity"), "cvar:touch_sens_base", 1, 8, 0.1, "x",
 				_("How far the view turns for a swipe. The same swipe turns the same angle on every screen size"));

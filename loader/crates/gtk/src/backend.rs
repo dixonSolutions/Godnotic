@@ -39,6 +39,10 @@ pub struct FixtureBackend {
 
 pub struct EngineBackend {
     pub proc: godnotic_core::session::Backend,
+    /// The game window lives inside this app's window (X11, `GODNOTIC_EMBED_PARENT`):
+    /// one top-level window the whole time; the engine maps its window over the pages
+    /// while the match has the input. Otherwise the two windows take turns.
+    pub embedded: bool,
 }
 
 impl Backend {
@@ -225,14 +229,33 @@ pub fn engine_gone(_app: &App, reason: &str) {
     eprintln!("godnotic-loader: engine said bye: {reason}");
 }
 
-/// `app.context`: in a match the engine's window takes over (see docs/LAUNCHER.md, one window).
+/// Whether the match has the screen and the input: `app.context` is `game` and the
+/// game's menu is not up (`app.menu`, published by the engine in back-end mode). Over a
+/// match the menu is the pause screen (Escape, MENU) or one of its dialogs (the join and
+/// statistics questions): this app draws those, so its pages must show then.
+pub fn match_has_screen(context: &str, menu: Option<bool>) -> bool {
+    // an engine without app.menu: as before, the match whenever the context says game
+    context == "game" && !menu.unwrap_or(false)
+}
+
+/// `app.context` and `app.menu`: who shows. Embedded, the engine maps its window over the
+/// pages itself and this window stays (one window); otherwise this window steps aside
+/// while the match has the screen and comes back for the menu, the pause screen and
+/// the dialogs over a match.
 pub fn context_changed(app: &App, context: &str) {
-    if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
+    let embedded = match &*app.backend.borrow() {
+        Backend::Engine(e) => e.embedded,
+        _ => return,
+    };
     let Some(win) = app.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
-    if context == "game" {
-        if win.is_visible() { win.set_visible(false); }
-    } else if !win.is_visible() {
-        win.present();
+    let menu = app.core.borrow().store.app().and_then(|a| a.bool("menu"));
+    let playing = match_has_screen(context, menu);
+    if embedded || !playing {
+        if !win.is_visible() {
+            win.present();
+        }
+    } else if win.is_visible() {
+        win.set_visible(false);
     }
 }
 

@@ -565,6 +565,9 @@
            "loading"
           ]
          },
+         "menu": {
+          "type": "boolean"
+         },
          "reserved": {
           "type": "array",
           "items": {
@@ -4952,6 +4955,12 @@
       }
      },
      "additionalProperties": false
+    },
+    "focused": {
+     "type": "boolean"
+    },
+    "visible": {
+     "type": "boolean"
     }
    }
   },

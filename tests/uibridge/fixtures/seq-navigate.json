@@ -42,7 +42,8 @@
      ],
      "modal": [],
      "canBack": false,
-     "context": "menu"
+     "context": "menu",
+     "menu": true
     },
     "children": [
      "home"
@@ -224,7 +225,8 @@
        ],
        "modal": [],
        "canBack": true,
-       "context": "menu"
+       "context": "menu",
+       "menu": true
       },
       "children": [
        "home",
@@ -721,7 +723,8 @@
        ],
        "modal": [],
        "canBack": false,
-       "context": "menu"
+       "context": "menu",
+       "menu": true
       },
       "children": [
        "home"

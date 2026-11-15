@@ -42,7 +42,8 @@
      ],
      "modal": [],
      "canBack": false,
-     "context": "menu"
+     "context": "menu",
+     "menu": true
     },
     "children": [
      "home"

@@ -10,6 +10,8 @@
 //! row <list id> <n>   activate row n of a list
 //! scroll <list id> <n>  scroll a list so row n is visible
 //! back                the back event
+//! action <node> <id>  invoke an action of a node as the engine sees it (no confirmation dialog)
+//! value <node> <json> send a value event (a Settings section: value settings/split "touch")
 //! size 420 900        resize the window
 //! dark | light        colour scheme
 //! snapshot <file.png> render the window
@@ -18,7 +20,14 @@
 //! type <node> <text>  set an entry's text
 //! join <addr> [pw]    start a session joining a server (as a godnotic:// link would)
 //! play                start the game the classic way
-//! waitvisible <ms>    wait until the window shows again (the session ended)
+//! waitvisible <ms>    wait until the window shows again (the session ended, the pause menu opened)
+//! waithidden <ms>     wait until the window hides (a match took the screen, two windows)
+//! waitgame <ms>       wait until the match has the screen (app.context game, app.menu false)
+//! waitmenu <ms>       wait until it no longer has (the pause screen, a dialog, the menu)
+//! waittop <id> <ms>   wait until that screen or dialog is on top
+//! key <name>          a key press through the window's own key handler (Escape: back)
+//! visible <file>      append "visible" or "hidden" (the window), "game" or "pages" (who has
+//!                     the screen), whether the game window is inside this one, the top screen, the modals
 //! measure <file> [node...]  append the window's size and the width its content needs, the
 //!                     number of map pictures that arrived, then each node's widget box in
 //!                     window coordinates and its own minimum width
@@ -108,6 +117,22 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             app::back(&app);
             delay = 250;
         }
+        "value" => {
+            if let (Some(node), Some(v)) = (args.first(), args.get(1..).map(|a| a.join(" "))) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&v) {
+                    let m = app.core.borrow_mut().client.value(node, v);
+                    app::send(&app, m);
+                }
+            }
+            delay = 250;
+        }
+        "action" => {
+            if let (Some(node), Some(id)) = (args.first(), args.get(1)) {
+                let m = app.core.borrow_mut().client.action(node, id, None);
+                app::send(&app, m);
+            }
+            delay = 250;
+        }
         "fling" => {
             // fling <list id> <ms>: scrolls the list from top to bottom over <ms> on the frame
             // clock and prints the frame intervals (indicative only under Xvfb).
@@ -172,6 +197,64 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             if !shown && left > 0 {
                 lines.push_front(format!("waitvisible {}", left - 200));
                 delay = 200;
+            }
+        }
+        "waithidden" => {
+            let left: i64 = args.first().and_then(|a| a.parse().ok()).unwrap_or(30000);
+            let shown = win.as_ref().is_some_and(|w| w.is_visible());
+            if shown && left > 0 {
+                lines.push_front(format!("waithidden {}", left - 200));
+                delay = 200;
+            }
+        }
+        "waitgame" | "waitmenu" => {
+            let left: i64 = args.first().and_then(|a| a.parse().ok()).unwrap_or(30000);
+            if playing(&app) != (cmd == "waitgame") && left > 0 {
+                lines.push_front(format!("{cmd} {}", left - 200));
+                delay = 200;
+            }
+        }
+        "waittop" => {
+            let want = args.first().copied().unwrap_or("");
+            let left: i64 = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(30000);
+            let top = {
+                let core = app.core.borrow();
+                core.store.modal().last().cloned().or_else(|| core.store.stack().last().cloned()).unwrap_or_default()
+            };
+            if top != want && left > 0 {
+                lines.push_front(format!("waittop {want} {}", left - 200));
+                delay = 200;
+            }
+        }
+        "key" => {
+            // The window's key controller, as a key press reaches it (the same handler, not a shortcut around it).
+            let key = args.first().and_then(|n| gdk::Key::from_name(*n));
+            let ctl = win.as_ref().and_then(|w| {
+                let list = w.observe_controllers();
+                (0..list.n_items()).filter_map(|i| list.item(i).and_downcast::<gtk::EventControllerKey>()).next()
+            });
+            match (key, ctl) {
+                (Some(k), Some(c)) => {
+                    let stop: bool = c.emit_by_name("key-pressed", &[&k, &0u32, &gdk::ModifierType::empty()]);
+                    println!("key {} -> {}", k.name().unwrap_or_default(), if stop { "handled" } else { "not handled" });
+                }
+                _ => eprintln!("script: no key {:?} or no key handler", args.first()),
+            }
+            delay = 250;
+        }
+        "visible" => {
+            let shown = win.as_ref().is_some_and(|w| w.is_visible());
+            let top = app.core.borrow().store.stack().last().cloned().unwrap_or_default();
+            let modal = app.core.borrow().store.modal().join(",");
+            let embedded = matches!(&*app.backend.borrow(), crate::backend::Backend::Engine(e) if e.embedded);
+            // @ the monotonic clock in seconds, to find the moment in a screen recording
+            let line = format!("{} {} {} {top} {modal} @{:.2}", if shown { "visible" } else { "hidden" }, if playing(&app) { "game" } else { "pages" }, if embedded { "embedded" } else { "separate" }, glib::monotonic_time() as f64 / 1e6);
+            println!("window {line}");
+            if let Some(p) = args.first() {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                    let _ = writeln!(f, "{line}");
+                }
             }
         }
         "size" => {
@@ -264,4 +347,11 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
     }
     let _ = gdk::Display::default();
     glib::timeout_add_local_once(std::time::Duration::from_millis(delay), move || step(w, lines));
+}
+
+/// The match has the screen and the input (see backend::match_has_screen).
+fn playing(app: &App) -> bool {
+    let core = app.core.borrow();
+    let menu = core.store.app().and_then(|a| a.bool("menu"));
+    crate::backend::match_has_screen(&core.store.context(), menu)
 }

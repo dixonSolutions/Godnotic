@@ -312,12 +312,12 @@ fn entry(app: &App, n: &Node) -> gtk::Widget {
         t.set_text(&n.str("value").unwrap_or_default());
         let w = Rc::downgrade(app);
         let id = n.id.clone();
-        let has_submit = n.obj("submit").is_some();
+        // the value goes as it is typed, also for a field with a submit action: its bind
+        // is what the screen reads (Multiplayer's Join is off until an address is typed,
+        // and reads the address from it), and Enter is not the only way to submit
         t.connect_changed(move |t| {
-            if !has_submit {
-                if let Some(a) = w.upgrade() {
-                    value(&a, &id, json!(t.text().to_string()));
-                }
+            if let Some(a) = w.upgrade() {
+                value(&a, &id, json!(t.text().to_string()));
             }
         });
         t.upcast()
@@ -526,6 +526,15 @@ fn field_row(app: &App, n: &Node) -> gtk::Widget {
     let w = Rc::downgrade(app);
     let id = n.id.clone();
     let submit = n.obj("submit").cloned();
+    if !private && submit.is_some() {
+        // as it is typed too (see the plain entry above), besides the apply button
+        let (w2, id2) = (w.clone(), id.clone());
+        r.connect_changed(move |e| {
+            if let Some(a) = w2.upgrade() {
+                value(&a, &id2, json!(e.text().to_string()));
+            }
+        });
+    }
     if submit.is_none() && !private {
         r.connect_changed(move |e| {
             if let Some(a) = w.upgrade() {

@@ -241,6 +241,7 @@ image/window requests, so a reconnect is cheap.
 | `reserved` | `{id, x, y, w, h}`[] | rects, in dp of the engine's window, that the engine itself draws over the UI (section 4.12). Absent when there are none |
 | `title` | string | application title |
 | `context` | `"menu"` / `"game"` / `"loading"` | menu at start, pause menu over a running match, a loading screen |
+| `menu` | bool | back-end mode (section 9.2) only: the game's menu is up. In `game` that is the pause menu or a dialog over the match (`join`, `uid2name`), which the front end shows; `false` while the match has the screen and the input. Absent: treat `game` as the match having the screen |
 
 Children: every screen in `stack` and `modal`, then the `toast` nodes. Screens that leave the
 stack are deleted from the store; renderers may keep their widgets for a back animation.
@@ -759,6 +760,7 @@ Rules for a list with `selection: single` (or `multi`); `rowSelect` and `rowPrim
 | `reducedMotion` | the system asks for less motion |
 | `powerSave`, `thermal` | the engine lowers background work (server pings, previews, warm-up) |
 | `insets` | safe-area insets in dp |
+| `focused`, `visible` | the renderer's window is the active one / is shown and not minimised (absent: true). In back-end mode the engine mutes (`snd_mutewhenidle`), idles and stops drawing by them whenever its own window is not a top-level window of its own (section 9.2) |
 
 The engine exposes the latest caps to the menu VM, which may adapt content (fewer columns
 on a compact width, no parallax hint with reduced motion). Send `caps` again whenever any
@@ -800,8 +802,15 @@ The engine runs as the UI back end when started with `-uibridge <spec>`:
 Framing is NDJSON (section 3). In back-end mode:
 
 - the menu VM runs and keeps the description current, but the menu is not drawn;
-- the game window stays hidden until a match starts (`app.context` becomes `game`) and
-  hides again when the player returns to the menu;
+- the game window is created hidden and stays hidden until a match starts (`app.context`
+  becomes `game`); it hides again while the game's menu is up over the match (`app.menu`:
+  the pause menu after Escape or MENU, the join and statistics dialogs), which the front
+  end then shows, and when the player returns to the menu;
+- with `GODNOTIC_EMBED_PARENT=<X11 window id>` (the Linux app on X11 or XWayland) the
+  game window is put inside the front end's window as a child, kept at its size and
+  mapped over its pages while the match has the screen: one top-level window throughout.
+  The window's focus and visibility then come from the renderer's caps (`focused`,
+  `visible`); `uib_window` prints the state;
 - with `fd:` or `stdio`, the engine quits cleanly (`bye`, config saved) when the front end
   closes its end; with `listen`, it waits 10 s for a new client, then quits;
 - the engine answers the first `hello` as soon as the menu VM has built Home (measured
@@ -1059,8 +1068,15 @@ bounds), full game data:
 
 ## 12a. Embedding the engine (for the Linux app)
 
-The owner wants one window managed by the Rust core. What the engine side offers now
-and what an embedding needs:
+The owner wants one window managed by the Rust core. **What ships now** (X11 and
+XWayland): the engine stays a child process on the stream transport, creates its window
+hidden (`vid_sdl.c` hook, `UIBStream_WindowFlags`), reparents it into the app's window
+(`GODNOTIC_EMBED_PARENT`, `touch_uib_stream.c`), keeps it at the app window's size and
+maps it over the GTK pages while the match has the screen. One top-level window, no flash
+(the child has no background of its own, so the app's last frame stays until the game
+draws). On a Wayland-only session (no XWayland) the two windows still take turns.
+`scripts/test-gtk-live.sh` counts the top-level windows through a whole session.
+What a true in-process embedding would need beyond that:
 
 - **In process**: everything in section 10 works in any process that links the engine;
   `TouchUIB_Open/Post/Take/NotifyFd/SetNotify/Close` are thread-safe, so the Rust core
@@ -1077,11 +1093,8 @@ and what an embedding needs:
   the reliable path is to make the GtkGLArea's context current and skip SDL video
   entirely, giving the engine the size and a swap callback). That is a change to
   `vid_sdl.c` (upstream, owned by the Android lock), so it is not made here.
-- **No window until told to present**: back-end mode today creates the SDL window and
-  hides it immediately (`touch_uib_stream.c`, `SDL_HideWindow` while `app.context` is
-  `menu`/`loading`, shown for `game`), so it can flash for a frame at start. A true
-  windowless start needs `vid_sdl.c` to create the window with `SDL_WINDOW_HIDDEN`
-  when `-uibridge` is given; one hook line there would do it.
+- **No window until told to present**: done; back-end mode creates the SDL window with
+  `SDL_WINDOW_HIDDEN` (one hook line in `vid_sdl.c`).
 - **Fallback**: the stream transport (`-uibridge fd:N`) with the engine a hidden child
   process; it quits when the app closes its end.
 

@@ -2121,6 +2121,7 @@ void Sys_SDL_HandleEvents(void)
 	TouchAndroid_AfterEvents(); // Touch: background, held map load, touch_netstate
 #endif
 	vid_activewindow = !vid_hidden && vid_hasfocus;
+	{ extern void UIBStream_WindowState(void); UIBStream_WindowState(); } // Touch: the app's window focus and visibility (touch_uib_stream.c)
 
 	VID_UpdateMouseGrab();
 }
@@ -2698,6 +2699,7 @@ static qbool VID_InitModeGL(const viddef_mode_t *mode)
 	// HUD and all. Either landscape, following the sensor, is what we want.
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
+	{ extern unsigned UIBStream_WindowFlags(void); windowflags |= UIBStream_WindowFlags(); } // Touch: hidden at start under a UI bridge front end (touch_uib_stream.c)
 	window = SDL_CreateWindow(gamename, vid.xPos, vid.yPos, mode->width, mode->height, windowflags);
 	if (window == NULL)
 	{
