@@ -1,8 +1,8 @@
 app-id: io.github.dixonSolutions.Godnotic
-# GNOME 48 for GTK 4 and libadwaita (the launcher). It is built on
-# freedesktop 24.08, so the engine keeps the same compiler and libraries.
+# GNOME 50 for GTK 4 and libadwaita (the launcher). It is built on
+# freedesktop 25.08 (GCC 15), which also builds the engine.
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 # The app (loader/); "Play directly" in the desktop file still runs start.sh.
 command: godnotic-loader
@@ -43,6 +43,13 @@ modules:
     config-opts:
       - -DCMAKE_INSTALL_LIBDIR=lib
       - -DBUILD_SHARED=ON
+    # The engine dlopens libxmp.so; the static library (4.5 MB), headers and
+    # CMake files only made every install and the Pages repo bigger.
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /lib/cmake
+      - '*.a'
     sources:
       - type: archive
         url: https://github.com/libxmp/libxmp/archive/libxmp-4.6.2.tar.gz

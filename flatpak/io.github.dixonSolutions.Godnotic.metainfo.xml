@@ -5,7 +5,7 @@
   <summary>Touch arena FPS for Linux phones, tablets and PCs</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer id="io.github.dixonSolutions">
+  <developer id="io.github.dixonsolutions">
     <name>dixonSolutions</name>
   </developer>
   <description>
@@ -28,9 +28,16 @@
   <url type="homepage">https://github.com/dixonSolutions/Godnotic</url>
   <url type="bugtracker">https://github.com/dixonSolutions/Godnotic/issues</url>
   <url type="vcs-browser">https://github.com/dixonSolutions/Godnotic</url>
+  <!-- CI (scripts/set-package-version.sh) adds a release per build at the top. -->
+  <!-- GNOME Software and Discover load these by URL. -->
   <screenshots>
     <screenshot type="default">
-      <caption>Godnotic on a touch device</caption>
+      <caption>Two-thumb touch controls in a match</caption>
+      <image type="source" width="1200" height="540">https://raw.githubusercontent.com/dixonSolutions/Godnotic/main/docs/media/hud-playing.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Voting for the next map</caption>
+      <image type="source" width="1200" height="540">https://raw.githubusercontent.com/dixonSolutions/Godnotic/main/docs/media/hud-mapvote.jpg</image>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1">
