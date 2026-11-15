@@ -144,7 +144,8 @@ class VirtualList(
         }
         val lm = view.layoutManager as? LinearLayoutManager
         val firstPos = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
-        val anchorKey = if (firstPos > 0 && !touching) window.row(firstPos)?.let(::keyOf) else null
+        // not while a finger or a fling moves the list: that would stop the fling
+        val anchorKey = if (firstPos > 0 && !touching && view.scrollState == RecyclerView.SCROLL_STATE_IDLE) window.row(firstPos)?.let(::keyOf) else null
         val anchorTop = if (anchorKey != null) lm?.findViewByPosition(firstPos)?.top ?: 0 else 0
         val old = rows.indices.map { window.row(offset + it) }
         window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
