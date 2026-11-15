@@ -141,6 +141,16 @@ jobs:
       - name: Check updater selection and configuration
         run: bash scripts/test-andysu-release.sh
 
+  andysu-channel:
+    name: AndySU live channel app id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair, publish, guard and host checks against a stand-in GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/test-andysu-channel.sh
+
   web-mods:
     name: Lua mods from a file on the web (page side)
     runs-on: ubuntu-latest

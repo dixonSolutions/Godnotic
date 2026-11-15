@@ -701,6 +701,70 @@ time and result of the last check (`checked_at`, `checked_result`). The update s
 rewrites the record every 30 s so "Last checked" and the network stay true. A download
 the player asked for (**Download and install**) goes on any connection.
 
+### Live updates: channel manifests
+
+Each ABI has its own channel, `live-arm64`, `live-arm32` and `live-x64`. The signed manifest
+of a channel is the `update.json` and `update.json.sig` assets of the GitHub release
+`channel-live-<abi>`. The host's frozen config names it (`manifest_url` in
+`assets/andysu/config.json`). The payload files are assets of the per-version releases
+`andysu-live-<abi>-<version>`. A host refuses a manifest, and stays on the build it runs,
+unless all of these hold:
+
+* the signature chains to `keys/godnotic-public.pem`;
+* `app` equals the host's app id (`andysu.toml`: `app`), else `wrong_app`;
+* `channel` equals the host's channel, else `wrong_channel`;
+* it has not expired (30 days after signing);
+* its `sequence` is not below one the host has already accepted.
+
+A payload whose descriptor (`andysu-payload.json`) names another app is downloaded in
+full and then refused.
+
+`andysu publish` (AndySU 0.1.135) adds a release to the existing manifest and keeps that
+manifest's `app`. Only a brand-new manifest takes the app id from the payload. The live
+channels were created before the rename, so they kept the pre-rename id through every
+release from 1.2.195 to 1.2.204 (sequence 88). No Godnotic install could update live in
+that time, and on an AndySU host `AppUpdater` stands down, so those installs had no update
+path at all. `scripts/andysu-channel.sh` fixes this and guards against it coming back:
+
+* **Before publishing** (job `andysu-live`, step "Make the channel manifest name this
+  app"), `gh-repair` downloads the channel manifest. If the manifest names another app, the
+  step keeps the releases whose payload descriptors name ours. Then it sets `app`, re-signs
+  with `andysu sign` (which raises the sequence and gives another 30 days) and uploads. A
+  correct manifest is only read. If no release names our app, it deletes the manifest so the
+  publish starts the channel again.
+* **After publishing** (step "Check the channel as an installed host would"), `gh-check`
+  runs `andysu verify --app --channel` on the release assets and on the public URL hosts
+  fetch. It also checks that every listed payload names our app, that this version is the
+  newest release and every one of its files is reachable, and that the sequence went up. A
+  publish that starts a channel again (sequence 1) would strand every host that saw a higher
+  one, and AndySU's action does that when it cannot fetch the old manifest. The release
+  fails if any check does.
+* **Weekly and on demand**, `resign-live.yml` repairs, re-signs a manifest that has less
+  than 14 days left, and runs the same check. It runs only from `main`, and stands down
+  while a release is running, because that release's live jobs do the same work. To repair
+  the channels without a release:
+
+  ```sh
+  gh workflow run resign-live.yml --repo dixonSolutions/Godnotic --ref main
+  gh run watch --repo dixonSolutions/Godnotic "$(gh run list --repo dixonSolutions/Godnotic \
+    --workflow resign-live.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+  ```
+
+To check a channel by hand (no signing key needed; `gh-check` needs a signed-in `gh`):
+
+```sh
+andysu verify https://github.com/dixonSolutions/Godnotic/releases/download/channel-live-arm64/update.json \
+  --pub keys/godnotic-public.pem --app io.github.dixonsolutions.godnotic --channel live-arm64
+ANDYSU_CLI=andysu scripts/andysu-channel.sh gh-check live-arm64
+```
+
+`scripts/test-andysu-channel.sh` (in the tests workflow) runs it all offline. It uses
+AndySU's own publish action, a stand-in `gh` serving release assets over HTTP, a throwaway
+key, and AndySU's simulated client as the host. Installs that still carry the pre-rename
+Android package are a separate app: they cannot install a Godnotic payload, and since the
+repair they refuse the manifest before downloading anything. Moving them to Godnotic takes
+a fresh install of the Godnotic APK.
+
 ### What survives an update
 
 Everything the player has. An update is an ordinary same-signature upgrade, so

@@ -464,6 +464,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
         run: test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$TAG"
+      # Publish keeps the app id of the manifest it adds to (AndySU 0.1.135), so a channel created
+      # under another id keeps it, and every host rejects the channel (WrongApp). Set andysu.toml's
+      # id and re-sign before publishing; once it is right this only reads the manifest.
+      - name: Make the channel manifest name this app
+        id: channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ needs.version.outputs.version }}
+          ANDYSU_SIGNING_KEY: ${{ secrets.ANDYSU_SIGNING_KEY }}
+          ANDYSU_SIGNING_CERT: ${{ secrets.ANDYSU_SIGNING_CERT }}
+        run: ANDYSU_CLI="$RUNNER_TEMP/andysu" bash scripts/andysu-channel.sh gh-repair "live-$SUFFIX" --release "$VERSION"
       # The id must equal the version built into the host, or a fresh install takes itself for an
       # update. A re-run is a no-op, and a half-finished publish resumes (AndySU 0.1.135).
       - name: Publish signed ABI channel
@@ -495,3 +507,19 @@ jobs:
           name="Godnotic-live-$VERSION-$SUFFIX.apk"
           cp split/host.apk "$name"
           gh release upload "$TAG" "$name" --clobber
+      # Fail the release when hosts would refuse the channel: signature, app, channel and expiry as
+      # the host checks them, every payload naming this app, this version newest and reachable, and
+      # a sequence above the one published before (a channel started afresh strands hosts).
+      - name: Check the channel as an installed host would
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ needs.version.outputs.version }}
+          BEFORE: ${{ steps.channel.outputs.sequence }}
+          HAD_RELEASE: ${{ steps.channel.outputs.has_release }}
+        run: |
+          set -euo pipefail
+          # A re-run finds this version already listed and publishes nothing.
+          after="$BEFORE"
+          if [ "$HAD_RELEASE" = true ]; then after=$((BEFORE - 1)); fi
+          ANDYSU_CLI="$RUNNER_TEMP/andysu" bash scripts/andysu-channel.sh gh-check "live-$SUFFIX" --release "$VERSION" --after "$after"
