@@ -3,8 +3,7 @@
 # The GTK front end (loader/crates/gtk) on fixtures, on a private Xvfb: sizes
 # and positions read back with the UI script's `measure` command.
 #
-#   Home at 400x860       the three cards in one row inside the window (their
-#                         minimum widths added up to 620 px)
+#   Home at 400x860       the three cards stack within the window, with room for their labels
 #   Map previews          loader/scripts/drive.sh and shot.sh hand the fixture
 #                         player real pk3s, so map pictures arrive (they passed
 #                         an empty GODNOTIC_DATA_DIRS, which read nothing)
@@ -44,10 +43,10 @@ measure home 400x860 home/tiles/sp home/tiles/campaign home/tiles/mp
 m="$WORK/home-400x860.txt"
 min=$(field "$m" window 4); y1=$(field "$m" home/tiles/sp 2); y2=$(field "$m" home/tiles/campaign 2); y3=$(field "$m" home/tiles/mp 2)
 x3=$(field "$m" home/tiles/mp 1); w3=$(field "$m" home/tiles/mp 3)
-if [ -n "$min" ] && [ "$min" -le 400 ] && [ -n "$y1" ] && [ "$y1" = "$y2" ] && [ "$y2" = "$y3" ] && [ $((x3 + w3)) -le 400 ]; then
-	ok "Home at 400x860: the content needs $min px, the three cards side by side end at $((x3 + w3)) px"
+if [ -n "$min" ] && [ "$min" -le 400 ] && [ -n "$y1" ] && [ -n "$y2" ] && [ -n "$y3" ] && [ -n "$x3" ] && [ -n "$w3" ] && [ "$y1" -lt "$y2" ] && [ "$y2" -lt "$y3" ] && [ $((x3 + w3)) -le 400 ]; then
+	ok "Home at 400x860: the three cards stack within the window"
 else
-	bad "Home at 400x860: wider than the window or not one row ($(tr '\n' '|' < "$m"))"
+	bad "Home at 400x860: cards do not stack within the window ($(tr '\n' '|' < "$m"))"
 fi
 
 measure singleplayer 915x480 sp/maps/list sp:play

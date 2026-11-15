@@ -355,8 +355,11 @@ fn sync_stack(app: &App, rebuild_all: bool) {
     let top_old = old.last().cloned();
     if top_new != top_old {
         if let Some(t) = &top_old {
-            let m = app.core.borrow_mut().client.simple("hidden", Some(t));
-            send(app, m);
+            // The engine may already have removed the old screen in this update.
+            if app.core.borrow().store.node(t).is_some() {
+                let m = app.core.borrow_mut().client.simple("hidden", Some(t));
+                send(app, m);
+            }
         }
         if let Some(t) = &top_new {
             let m = app.core.borrow_mut().client.simple("shown", Some(t));
