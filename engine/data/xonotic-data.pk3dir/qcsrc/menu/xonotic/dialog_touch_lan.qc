@@ -580,8 +580,9 @@ void TouchCreate_Reflow(entity me)
 {
 	if (!touch_menu_on)
 		return;
-	registercvar("touch_lan_create", "0", CVAR_SAVE);
-	registercvar("touch_lan_create_password", "0", CVAR_SAVE);
+	// 32 = CF_ARCHIVE (saved to config.cfg); QC CVAR_SAVE is 1, which the engine reads as CF_CLIENT
+	registercvar("touch_lan_create", "0", 32);
+	registercvar("touch_lan_create_password", "0", 32);
 	// Room on the left: the game type list 4 rows shorter, what is under it
 	// 4 rows up (the rows stay clear of the pinned Mutators / Start rows).
 	float d = 4 * me.itemSpacing.y;
