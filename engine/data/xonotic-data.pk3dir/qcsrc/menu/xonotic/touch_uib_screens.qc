@@ -847,7 +847,7 @@ void UIB_AddRecent(string map, string mode)
 			out = strcat(out, " ", argv(i));
 			++k;
 		}
-	registercvar("_uib_recent", "", 1);
+	registercvar("_uib_recent", "", 32); // 32 = CF_ARCHIVE: saved to config.cfg (1 is CF_CLIENT, not saved)
 	cvar_set("_uib_recent", out);
 	UIB_RecentRows();
 }
@@ -1840,7 +1840,8 @@ void UIB_Init()
 	uib_reset();
 	registercvar("_uib_server_name", "", 0);
 	registercvar("_uib_server_net", "", 0);
-	registercvar("touch_lan_bots_duel", "1", 1);   // Duel's own Bots (0 or 1); touch_lan_bots stays every other mode's
+	registercvar("touch_lan_bots_duel", "1", 32);   // Duel's own Bots (0 or 1); touch_lan_bots stays every other mode's. 32 = CF_ARCHIVE: saved to config.cfg
+	registercvar("_uib_recent", "", 32);            // the recent games list, saved too (UIB_AddRecent sets it)
 	registercvar("_uib_debug_open", "", 0);
 	registercvar("_uib_debug_toast", "", 0);
 	registercvar("_uib_debug_servers", "", 0);
