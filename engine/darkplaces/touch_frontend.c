@@ -45,6 +45,7 @@ Everything works on the desktop too, without a sink, for headless tests
 #include "touch_lua.h"
 #include "touch_net.h"
 #include "touch_joinname.h"
+#include "touch_jointime.h"
 
 extern uint8_t serverlist_querystage; // netconn.c
 
@@ -1037,6 +1038,7 @@ static void fe_play(cmd_state_t *cmd)
 		fe_event("play_failed", "reason", "bad request", NULL, NULL);
 		return;
 	}
+	TouchJoinTime_Tap();
 	Cbuf_AddText(cmd_local, "\ndisconnect; wait; g_campaign 0\n");
 	Cbuf_AddText(cmd_local, va(line, sizeof(line), "maxplayers %d\nsv_public 0\nbot_number %d\n", max(bots + 1, 2), bots));
 	if (*sk)
@@ -1257,6 +1259,7 @@ static void TouchFE_Cmd_f(cmd_state_t *cmd)
 		const char *addr = arg(cmd, 2);
 		if (!*addr || !quotable(addr))
 			return;
+		TouchJoinTime_Tap();
 		Cbuf_AddText(cmd_local, va(line, sizeof(line), "\nconnect \"%s\"\n", addr));
 	}
 	else if (!strcmp(verb, "password"))
