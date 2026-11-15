@@ -212,6 +212,9 @@ void UIBStream_Shutdown(void);
 int UIBStream_Active(void);
 int UIBStream_PollFd(void);
 int UIBStream_BackendMode(void);
+unsigned UIBStream_WindowFlags(void);   // vid_sdl.c: SDL_WINDOW_HIDDEN in back-end mode
+void UIBStream_WindowState(void);       // vid_sdl.c, after the window events
+int UIBStream_Muted(int blocked);       // snd_main.c, after snd_mutewhenidle
 
 // mods
 int UIBMod_Materialize(const char *screenid);   // build a registered mod page as a screen

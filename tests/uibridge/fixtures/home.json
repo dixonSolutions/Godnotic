@@ -45,7 +45,8 @@
      "context": "menu",
      "prepared": [
       "mp"
-     ]
+     ],
+     "menu": true
     },
     "children": [
      "home",

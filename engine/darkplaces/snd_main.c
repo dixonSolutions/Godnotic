@@ -2083,6 +2083,7 @@ void S_Update(const matrix4x4_t *listenermatrix)
 	snd_blocked = (snd_mutewhenidle.integer == 1 && !vid_activewindow)
 	           || (snd_mutewhenidle.integer == 2 && vid_hidden)
 	           || cls.timedemo;
+	{ extern int UIBStream_Muted(int); snd_blocked = UIBStream_Muted(snd_blocked) != 0; } // Touch: the app window's focus (touch_uib_stream.c)
 
 	{
 		double mindist_trans, maxdist_trans;

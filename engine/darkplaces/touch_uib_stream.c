@@ -10,8 +10,18 @@ TouchUIB_Open client, so the stream and the in-process API behave the same.
 
 Back-end mode (any -uibridge): the menu VM describes but does not draw while a native
 renderer is attached, the window is hidden while the app context is "menu" or
-"loading" (shown for "game"), and the engine quits cleanly when the front end goes
-away (fd/stdio at once; listen after 10 s without a client).
+"loading" and while the game's menu is up over a match (app.menu: the pause menu and
+the dialogs over a match, which the front end draws), shown while the match has the
+input, and the engine quits cleanly when the front end goes away (fd/stdio at once;
+listen after 10 s without a client).
+
+One window on Linux: with GODNOTIC_EMBED_PARENT=<X11 window id> (the GTK app's own
+window, the app on X11 or XWayland) the game window is created hidden, put inside
+that window as a child (XReparentWindow), kept at its size, and mapped over the app's
+pages while the match has the input: no second top-level window ever appears. The
+app's window focus and visibility come in its caps (`focused`, `visible`): the game
+mutes (snd_mutewhenidle) and stops drawing by them whenever its own window is not a
+top-level of its own.
 */
 #include "quakedef.h"
 #include "touch_uib_int.h"
@@ -33,6 +43,17 @@ away (fd/stdio at once; listen after 10 s without a client).
 #endif
 #endif
 
+// The X11 part of SDL_SysWMinfo needs the Xlib headers only: it is there whenever they
+// are, also with an SDL configured without them (the union keeps its size).
+#if defined(UIB_SDL_WINDOW) && defined(__linux__) && __has_include(<SDL_syswm.h>) && __has_include(<X11/Xlib.h>)
+#ifndef SDL_VIDEO_DRIVER_X11
+#define SDL_VIDEO_DRIVER_X11 1
+#endif
+#include <SDL_syswm.h>
+#include <dlfcn.h>
+#define UIB_X11_EMBED 1
+#endif
+
 static struct
 {
 	int mode;               // 0 off, 1 fd, 2 stdio, 3 listen
@@ -48,6 +69,10 @@ static struct
 	int window_hidden;
 	double start_time;
 	int first_hello_logged;
+	int menu_published;     // app.menu as last published: -1 never
+	unsigned long embed_parent; // GODNOTIC_EMBED_PARENT: the app's X11 window, 0 none
+	unsigned long embedded; // the game window's X11 id once it is inside the app's window
+	double embed_next;      // the next look at the app's window size
 } sm = {0, -1, -1, -1};
 
 int UIBStream_BackendMode(void) { return sm.mode != 0; }
@@ -234,19 +259,26 @@ static void UIB_Clipboard_c(cvar_t *var)
 #endif
 }
 
+static void TouchUIB_WindowStatus_f(cmd_state_t *cmd);
+
 void UIBStream_Init(void)
 {
+	Cmd_AddCommand(CF_CLIENT, "uib_window", TouchUIB_WindowStatus_f, "print the UI bridge back end's window state: the game window shown or hidden (or inside the app's window), the menu, the app window's focus and visibility, and whether the sound is muted (tests)");
 	Cvar_RegisterVariable(&uib_clipboard);
 	Cvar_RegisterCallback(&uib_clipboard, UIB_Clipboard_c);
 	Cvar_RegisterVariable(&uib_clipboard_ok);
 #ifdef UIB_SDL_WINDOW
 	Cvar_SetQuick(&uib_clipboard_ok, "1");
 #endif
+	sm.menu_published = -1;
 	int i = Sys_CheckParm("-uibridge");
 	if (!i)
 		return;
 	const char *spec = i + 1 < sys.argc ? sys.argv[i + 1] : "listen";
 	sm.start_time = Sys_DirtyTime();
+	const char *ep = getenv("GODNOTIC_EMBED_PARENT");
+	if (ep && *ep)
+		sm.embed_parent = strtoul(ep, NULL, 0);
 #ifdef UIB_STREAM
 	if (!strncmp(spec, "fd:", 3))
 	{
@@ -292,19 +324,177 @@ void UIBStream_Init(void)
 #endif
 }
 
+// The game's menu is open (key_dest): over a match that is the pause menu or a dialog
+// of it (the join and statistics questions), which the front end shows; false while
+// the match has the input. Published as app.menu in back-end mode only.
+static int menu_open(void)
+{
+#ifdef CONFIG_MENU
+	return key_dest == key_menu || key_dest == key_menu_grabbed;
+#else
+	return 0;
+#endif
+}
+
+static void publish_menu(void)
+{
+	if (!sm.mode || cls.state == ca_dedicated)
+		return;
+	int m = menu_open();
+	if (m == sm.menu_published)
+		return;
+	uibnode_t *app = UIBS_Find("app");
+	if (!app)
+		return;
+	UIBS_SetProp(app, "menu", m ? "true" : "false", m ? 4 : 5);
+	sm.menu_published = m;
+}
+
+// The front end's window, from its caps: focused (the active window) and visible
+// (mapped, not minimised). Unknown counts as yes (an older front end).
+static int caps_flag(const char *key)
+{
+	const char *caps = UIB_LastCaps();
+	char out[16];
+	if (!caps || !*caps || !UIBJ_PathText(caps, strlen(caps), key, out, sizeof(out)))
+		return 1;
+	return strcmp(out, "false") && strcmp(out, "0");
+}
+
+#ifdef UIB_X11_EMBED
+// libX11 is SDL's (already loaded when SDL runs on X11): looked up, not linked.
+static struct
+{
+	int tried, ok;
+	int (*reparent)(Display *, Window, Window, int, int);
+	int (*resize)(Display *, Window, unsigned, unsigned);
+	int (*raise)(Display *, Window);
+	int (*focus)(Display *, Window, int, Time);
+	int (*geometry)(Display *, Drawable, Window *, int *, int *, unsigned *, unsigned *, unsigned *, unsigned *);
+	int (*sync)(Display *, Bool);
+	int (*flush)(Display *);
+	XErrorHandler (*handler)(XErrorHandler);
+} x11;
+
+static int x11_load(void)
+{
+	if (x11.tried)
+		return x11.ok;
+	x11.tried = 1;
+	void *h = dlopen("libX11.so.6", RTLD_NOW | RTLD_GLOBAL);
+	if (!h)
+		return 0;
+	*(void **)&x11.reparent = dlsym(h, "XReparentWindow");
+	*(void **)&x11.resize = dlsym(h, "XResizeWindow");
+	*(void **)&x11.raise = dlsym(h, "XRaiseWindow");
+	*(void **)&x11.focus = dlsym(h, "XSetInputFocus");
+	*(void **)&x11.geometry = dlsym(h, "XGetGeometry");
+	*(void **)&x11.sync = dlsym(h, "XSync");
+	*(void **)&x11.flush = dlsym(h, "XFlush");
+	*(void **)&x11.handler = dlsym(h, "XSetErrorHandler");
+	x11.ok = x11.reparent && x11.resize && x11.raise && x11.focus && x11.geometry && x11.sync && x11.flush && x11.handler;
+	return x11.ok;
+}
+
+static int x11_failed;
+static int x11_quiet(Display *d, XErrorEvent *e) { (void)d; (void)e; x11_failed = 1; return 0; }
+
+static int x11_info(SDL_Window *w, SDL_SysWMinfo *info)
+{
+	SDL_VERSION(&info->version);
+	return SDL_GetWindowWMInfo(w, info) && info->subsystem == SDL_SYSWM_X11 && x11_load();
+}
+
+// Puts the game window inside the app's window (once per window: vid_restart makes a new one).
+static void embed(SDL_Window *w)
+{
+	SDL_SysWMinfo info;
+	if (!sm.embed_parent || !x11_info(w, &info) || sm.embedded == (unsigned long)info.info.x11.window)
+		return;
+	Display *d = info.info.x11.display;
+	x11_failed = 0;
+	XErrorHandler old = x11.handler(x11_quiet);
+	x11.reparent(d, info.info.x11.window, (Window)sm.embed_parent, 0, 0);
+	x11.sync(d, False);
+	x11.handler(old);
+	if (x11_failed)
+	{
+		Con_Printf("uibridge: could not put the game window inside the app's window 0x%lx; it stays a window of its own\n", sm.embed_parent);
+		sm.embed_parent = 0;
+		return;
+	}
+	sm.embedded = (unsigned long)info.info.x11.window;
+	sm.embed_next = 0;
+	Con_DPrintf("uibridge: game window 0x%lx inside the app's window 0x%lx\n", sm.embedded, sm.embed_parent);
+}
+
+// Keeps the game window at the app window's size; a few times a second.
+static void embed_fit(SDL_Window *w)
+{
+	SDL_SysWMinfo info;
+	Window root;
+	int x, y;
+	unsigned pw, ph, bw, depth, cw, ch;
+	if (!sm.embedded || Sys_DirtyTime() < sm.embed_next || !x11_info(w, &info))
+		return;
+	sm.embed_next = Sys_DirtyTime() + 0.25;
+	Display *d = info.info.x11.display;
+	x11_failed = 0;
+	XErrorHandler old = x11.handler(x11_quiet);
+	if (x11.geometry(d, (Window)sm.embed_parent, &root, &x, &y, &pw, &ph, &bw, &depth)
+	    && x11.geometry(d, info.info.x11.window, &root, &x, &y, &cw, &ch, &bw, &depth)
+	    && (pw != cw || ph != ch) && pw > 0 && ph > 0)
+		x11.resize(d, info.info.x11.window, pw, ph);
+	x11.sync(d, False);
+	x11.handler(old);
+}
+
+// The game window takes the keys when it comes up inside the app's window (and when
+// the app's window becomes active again over a match): the window manager focuses the
+// app's top-level, whose own key handler would get them otherwise.
+static void embed_focus(SDL_Window *w)
+{
+	SDL_SysWMinfo info;
+	if (!sm.embedded || !x11_info(w, &info))
+		return;
+	Display *d = info.info.x11.display;
+	x11_failed = 0;
+	XErrorHandler old = x11.handler(x11_quiet);
+	x11.raise(d, info.info.x11.window);
+	x11.focus(d, info.info.x11.window, RevertToParent, CurrentTime);
+	x11.sync(d, False);
+	x11.handler(old);
+}
+#endif
+
+#ifdef UIB_X11_EMBED
+static int fe_focused_prev = -1;
+#endif
+
 static void window_policy(void)
 {
+	publish_menu();
 #ifdef UIB_SDL_WINDOW
 	if (!sm.mode)
 		return;
 	uibnode_t *app = UIBS_Find("app");
 	size_t l;
 	const char *ctx = app ? UIBS_PropJSON(app, "context", &l) : NULL;
-	int want_hidden = sm.conn && (!ctx || strncmp(ctx, "\"game\"", 6));
-	if (want_hidden == sm.window_hidden)
-		return;
+	int want_hidden = sm.conn && (!ctx || strncmp(ctx, "\"game\"", 6) || menu_open());
 	SDL_Window *w = SDL_GL_GetCurrentWindow();
 	if (!w)
+		return;
+#ifdef UIB_X11_EMBED
+	embed(w);
+	embed_fit(w);
+	{
+		int f = caps_flag("focused");
+		if (f && fe_focused_prev == 0 && !sm.window_hidden)
+			embed_focus(w); // back to the app over a running match
+		fe_focused_prev = f;
+	}
+#endif
+	if (want_hidden == sm.window_hidden)
 		return;
 	if (want_hidden)
 		SDL_HideWindow(w);
@@ -312,9 +502,81 @@ static void window_policy(void)
 	{
 		SDL_ShowWindow(w);
 		SDL_RaiseWindow(w);
+#ifdef UIB_X11_EMBED
+		embed_focus(w);
+#endif
 	}
+	Con_DPrintf("uibridge: game window %s%s\n", want_hidden ? "hidden" : "shown", sm.embedded ? " (inside the app's window)" : "");
 	sm.window_hidden = want_hidden;
 #endif
+}
+
+// SDL creates the game window hidden in back-end mode: the bridge shows it when a
+// match takes the screen, so nothing flashes up at start (vid_sdl.c hook).
+unsigned UIBStream_WindowFlags(void)
+{
+#ifdef UIB_SDL_WINDOW
+	return Sys_CheckParm("-uibridge") ? SDL_WINDOW_HIDDEN : 0;
+#else
+	return 0;
+#endif
+}
+
+// After the window events (vid_sdl.c hook): whenever the game window is not a
+// top-level of its own on screen (hidden behind the app, or inside the app's
+// window), its focus and visibility are the app window's. vid_activewindow then
+// mutes the sound (snd_mutewhenidle) and lowers the frame rate (cl_maxidlefps) when
+// the app is in the background; vid_hidden stops drawing while nothing shows it.
+void UIBStream_WindowState(void)
+{
+#ifdef UIB_SDL_WINDOW
+	if (!sm.mode || !sm.conn)
+		return;
+	if (sm.window_hidden)
+	{
+		// behind the app (its pages show): nothing to draw, the idle frame rate
+		vid_hidden = true;
+		vid_activewindow = false;
+		return;
+	}
+	if (!sm.embedded)
+		return; // the game's own top-level window: SDL's own focus and visibility
+	// inside the app's window, over its pages: the keys are the game window's own (SDL's
+	// focus) or the app's (its top-level is focused); either way the app is in front
+	int visible = caps_flag("visible");
+	if (!visible)
+		vid_hidden = true;
+	vid_activewindow = visible && (vid_activewindow || caps_flag("focused"));
+#endif
+}
+
+// The sound follows the window the player sees: the app's while the game window is
+// hidden behind its pages (snd_main.c hook, after snd_mutewhenidle). The menu's music
+// plays while the app's window is the active one and stops with it; over a match,
+// UIBStream_WindowState has already folded the app's focus into vid_activewindow.
+static int own_window(void)
+{
+	// shown, as a top-level of its own or inside the app's window: vid_activewindow says it
+	return !sm.mode || !sm.conn || !sm.window_hidden;
+}
+
+int UIBStream_Muted(int blocked)
+{
+	if (own_window() || cls.state == ca_dedicated)
+		return blocked;
+	int mute = (int)Cvar_VariableValue(&cvars_all, "snd_mutewhenidle", ~0u);
+	int visible = caps_flag("visible");
+	return (mute == 1 && !(visible && caps_flag("focused"))) || (mute == 2 && !visible) || cls.timedemo;
+}
+
+static void TouchUIB_WindowStatus_f(cmd_state_t *cmd)
+{
+	(void)cmd;
+	int mute = (int)Cvar_VariableValue(&cvars_all, "snd_mutewhenidle", ~0u);
+	int blocked = UIBStream_Muted((mute == 1 && !vid_activewindow) || (mute == 2 && vid_hidden) || cls.timedemo);
+	Con_Printf("uib window: back end %d, game window %s%s, menu %d, app focused %d visible %d, vid_hidden %d, vid_activewindow %d, sound %s\n",
+		sm.mode, sm.window_hidden ? "hidden" : "shown", sm.embedded ? " (embedded)" : "", menu_open(),
+		caps_flag("focused"), caps_flag("visible"), (int)vid_hidden, (int)vid_activewindow, blocked ? "muted" : "on");
 }
 
 void UIBStream_Frame(void)

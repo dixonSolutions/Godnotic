@@ -45,7 +45,8 @@
      "context": "menu",
      "prepared": [
       "mp"
-     ]
+     ],
+     "menu": true
     },
     "children": [
      "home",
@@ -493,7 +494,8 @@
        ],
        "modal": [],
        "canBack": true,
-       "context": "menu"
+       "context": "menu",
+       "menu": true
       },
       "children": [
        "home",
@@ -1008,7 +1010,8 @@
        "context": "menu",
        "prepared": [
         "mp"
-       ]
+       ],
+       "menu": true
       },
       "children": [
        "home",

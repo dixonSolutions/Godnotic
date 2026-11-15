@@ -211,7 +211,7 @@ static void publish(void)
 }
 
 static touchjoindlg_t join_dlg = {1, TOUCHJOINDLG_TRIES, 0, 0, 0};
-static char join_dlg_map[64];
+static char join_dlg_map[192];  // the match the dialog was last owed for: "<map>@<server address>"
 static qbool join_dlg_welcome;   // the game's own Welcome dialog (Join! / Spectate) came up for this connection
 
 static qbool screen_free(void)
@@ -239,6 +239,7 @@ void TouchHudMode_Update(void)
 {
 	touchmode_in_t in;
 	int last_mode = current.mode;
+	char match_key[sizeof(join_dlg_map)], peer[128] = "";
 	read_inputs(&in);
 	current = TouchMode_Derive(&in);
 	current_target[0] = 0;
@@ -256,10 +257,15 @@ void TouchHudMode_Update(void)
 	}
 	// The join dialog, owed once per match to a player who starts it as an
 	// observer; a game hosted here with no team to pick goes straight in.
-	// (Nothing calls this between maps, so a new map is seen by its name.)
-	if (in.in_match && strcmp(join_dlg_map, cl.worldbasename))
+	// (Nothing calls this between maps, so a new map is seen by its name, and a
+	// new server by its address: a server joined on the map of the local game
+	// just left owed nothing, and its observer never got the dialog.)
+	if (cls.netcon)
+		LHNETADDRESS_ToString(&cls.netcon->peeraddress, peer, sizeof(peer), true);
+	dpsnprintf(match_key, sizeof(match_key), "%s@%s", cl.worldbasename, peer);
+	if (in.in_match && strcmp(join_dlg_map, match_key))
 	{
-		dp_strlcpy(join_dlg_map, cl.worldbasename, sizeof(join_dlg_map));
+		dp_strlcpy(join_dlg_map, match_key, sizeof(join_dlg_map));
 		TouchJoinDlg_Frame(&join_dlg, TOUCHMODE_OFF, 0, 0, 0, 0, 0, host.realtime);
 		if (join_dlg_welcome)
 			TouchJoinDlg_Answered(&join_dlg);

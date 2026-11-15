@@ -90,7 +90,7 @@ FORMAT = enum("int", "float1", "float2", "percent", "ms", "dp", "db", "x", "deg"
 
 TYPES = {
     "app": {"stack": {"type": "array", "items": ID}, "modal": {"type": "array", "items": ID},
-            "busy": ref("busy"), "canBack": B, "context": enum("menu", "game", "loading"),
+            "busy": ref("busy"), "canBack": B, "context": enum("menu", "game", "loading"), "menu": B,
             "reserved": {"type": "array", "items": ref("reserved"), "maxItems": 8},
             # screens built ahead and kept while not shown (a renderer may have them ready)
             "prepared": {"type": "array", "items": ID, "maxItems": 8}},
@@ -193,6 +193,7 @@ CAPS = obj({
     "locale": S, "reducedMotion": B, "powerSave": B,
     "thermal": enum("nominal", "fair", "serious", "critical"),
     "insets": obj({"top": I, "right": I, "bottom": I, "left": I}),
+    "focused": B, "visible": B,
 }, closed=False)
 DEFS["caps"] = CAPS
 

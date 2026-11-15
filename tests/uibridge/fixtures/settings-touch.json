@@ -43,7 +43,8 @@
      ],
      "modal": [],
      "canBack": true,
-     "context": "menu"
+     "context": "menu",
+     "menu": true
     },
     "children": [
      "home",
@@ -324,11 +325,58 @@
      "label": "Touch controls"
     },
     "children": [
+     "settings/split/touch/tabs/feel/mode",
      "settings/split/touch/tabs/feel/look",
      "settings/split/touch/tabs/feel/stick",
      "settings/split/touch/tabs/feel/buttons",
      "settings/split/touch/tabs/feel/layout"
     ]
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/mode",
+    "type": "section",
+    "props": {
+     "title": "On-screen controls"
+    },
+    "children": [
+     "settings/split/touch/tabs/feel/mode/notouch",
+     "settings/split/touch/tabs/feel/mode/show"
+    ]
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/mode/notouch",
+    "type": "text",
+    "props": {
+     "body": "No touchscreen found on this device. These settings apply when you play by touch: on a touchscreen PC, a tablet or a phone, or with the on-screen controls set to Always.",
+     "style": "note"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/mode/show",
+    "type": "choice",
+    "props": {
+     "label": "Show the on-screen controls",
+     "bind": "cvar:vid_touchscreen_mode",
+     "style": "segmented",
+     "options": [
+      {
+       "value": "1",
+       "label": "Automatic"
+      },
+      {
+       "value": "2",
+       "label": "Always"
+      },
+      {
+       "value": "0",
+       "label": "Never"
+      }
+     ],
+     "help": "Automatic: on a touchscreen with no keyboard attached. Touch and the mouse work either way",
+     "value": "0"
+    },
+    "children": []
    },
    {
     "id": "settings/split/touch/tabs/feel/look",

@@ -120,6 +120,7 @@ fn main() -> glib::ExitCode {
     godnotic_core::paths::GamePaths::adopt_old_name(&std::env::vars().collect());
     updates::wait_for_old_instance(); // after a Flatpak update's restart
     let o = parse_args();
+    embed_backend_choice(&o);
     let test_run = o.snapshot.is_some() || o.script.is_some() || std::env::var_os("GODNOTIC_EXIT_AFTER_FRAME").is_some() || std::env::var_os("GODNOTIC_NON_UNIQUE").is_some();
     let flags = if test_run { gio::ApplicationFlags::NON_UNIQUE } else { gio::ApplicationFlags::HANDLES_OPEN };
     let gapp = adw::Application::builder().application_id(APP_ID).flags(flags).build();
@@ -235,16 +236,99 @@ fn show_first_download(a: &app::App, use_engine: bool) {
     nav.replace(&[first]);
 }
 
+/// The engine process ended. What it described (a pause page, a match) is gone with it:
+/// never left on screen. A clean exit is the player quitting (Quit, or closing the game's
+/// own window when the two windows take turns): the app quits with it, so the next start
+/// is a fresh one at Home. A crash shows that the game stopped, with Start again (a new
+/// engine, at Home).
+fn engine_exited(a: &app::App) -> bool {
+    let status = match &mut *a.backend.borrow_mut() {
+        Backend::Engine(e) => match e.proc.child.try_wait() {
+            Ok(Some(s)) => s,
+            _ => return false,
+        },
+        _ => return true,
+    };
+    eprintln!("godnotic-loader: the engine exited ({status})");
+    forget_engine_ui(a);
+    if status.success() {
+        if let Some(app) = a.ui.borrow().as_ref().and_then(|u| u.win.application()) {
+            app.quit();
+        }
+        return true;
+    }
+    let why = match status.code() {
+        Some(c) => format!("The game stopped (exit code {c})."),
+        None => "The game stopped unexpectedly.".to_string(),
+    };
+    *a.backend.borrow_mut() = Backend::Offline(why);
+    show_stopped(a);
+    true
+}
+
+/// Drops every page, dialog and node the engine described.
+fn forget_engine_ui(a: &app::App) {
+    *a.core.borrow_mut() = app::Core { store: Default::default(), client: Default::default() };
+    a.out.borrow_mut().clear();
+    a.deferred.borrow_mut().clear();
+    let dialogs: Vec<adw::Dialog> = a.ui.borrow_mut().as_mut().map(|u| {
+        u.pages.clear();
+        u.shown_stack.clear();
+        u.updaters.clear();
+        u.activators.clear();
+        u.lists.clear();
+        u.dialogs.drain().map(|(_, d)| d).collect()
+    }).unwrap_or_default();
+    for d in dialogs {
+        d.force_close();
+    }
+}
+
+/// The engine crashed: say so, with Start again (a new engine, which opens at Home).
+fn show_stopped(a: &app::App) {
+    let why = match &*a.backend.borrow() {
+        Backend::Offline(w) => w.clone(),
+        _ => return,
+    };
+    let Some((nav, win)) = a.ui.borrow().as_ref().map(|u| (u.nav.clone(), u.win.clone())) else { return };
+    let s = adw::StatusPage::builder().icon_name("input-gaming-symbolic").title("Godnotic").description(glib::markup_escape_text(&why)).build();
+    let again = gtk::Button::with_label("Start again");
+    again.add_css_class("gn-play");
+    again.set_halign(gtk::Align::Center);
+    let w = Rc::downgrade(a);
+    again.connect_clicked(move |_| {
+        if let Some(a) = w.upgrade() {
+            start_ui(&a, true);
+        }
+    });
+    s.set_child(Some(&again));
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&adw::HeaderBar::new());
+    tv.set_content(Some(&s));
+    nav.replace(&[adw::NavigationPage::builder().tag("stopped").title("Godnotic").child(&tv).can_pop(false).build()]);
+    if !win.is_visible() {
+        win.present();
+    }
+}
+
 /// Says hello to the backend; the snapshot arrives through the pump.
 fn start_ui(a: &app::App, use_engine: bool) {
     if use_engine {
-        match session_ui::start_backend() {
+        let embed = embed_parent(a);
+        match session_ui::start_backend(embed) {
             Ok(proc) => {
-                *a.backend.borrow_mut() = Backend::Engine(backend::EngineBackend { proc });
+                *a.backend.borrow_mut() = Backend::Engine(backend::EngineBackend { proc, embedded: embed.is_some() });
+                if std::env::var_os("GODNOTIC_TIMING").is_some() || embed.is_some() {
+                    eprintln!("godnotic-loader: engine started{}", embed.map(|x| format!(", its window inside this one (0x{x:x})")).unwrap_or_default());
+                }
+                watch_window(a);
                 let weak = Rc::downgrade(a);
                 glib::timeout_add_local(std::time::Duration::from_millis(80), move || {
                     if let Some(a) = weak.upgrade() {
                         app::schedule(&a);
+                        if engine_exited(&a) {
+                            return glib::ControlFlow::Break;
+                        }
                         glib::ControlFlow::Continue
                     } else { glib::ControlFlow::Break }
                 });
@@ -275,7 +359,77 @@ fn caps(a: &app::App) -> serde_json::Value {
         "locale": std::env::var("LANG").ok().and_then(|l| l.split(['.', '_']).next().map(str::to_string)).unwrap_or_else(|| "en".into()),
         "reducedMotion": a.reduced_motion.get(), "powerSave": p.saving_power.unwrap_or(false), "thermal": "nominal",
         "insets": {"top": 0, "right": 0, "bottom": 0, "left": 0},
+        "focused": window_state(a).0, "visible": window_state(a).1,
     })
+}
+
+/// The window's focus and visibility (shown, not minimised), for the engine: it mutes and
+/// stops drawing by them while its own window is not a top-level of its own.
+fn window_state(a: &app::App) -> (bool, bool) {
+    let Some(win) = a.ui.borrow().as_ref().map(|u| u.win.clone()) else { return (true, true) };
+    let minimised = win.surface().and_downcast::<gdk::Toplevel>().is_some_and(|t| t.state().contains(gdk::ToplevelState::MINIMIZED));
+    let visible = win.is_visible() && !minimised;
+    (visible && win.is_active(), visible)
+}
+
+/// Tells the engine (caps) when the window gains or loses focus, hides, or is minimised.
+fn watch_window(a: &app::App) {
+    let Some(win) = a.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
+    let last = Rc::new(std::cell::Cell::new(window_state(a)));
+    let w = Rc::downgrade(a);
+    let changed: Rc<dyn Fn()> = Rc::new(move || {
+        let Some(a) = w.upgrade() else { return };
+        let now = window_state(&a);
+        if last.replace(now) != now {
+            let c = caps(&a);
+            let m = a.core.borrow_mut().client.caps(c);
+            app::send(&a, m);
+        }
+    });
+    let c = changed.clone();
+    win.connect_is_active_notify(move |_| c());
+    let c = changed.clone();
+    win.connect_visible_notify(move |_| c());
+    if let Some(t) = win.surface().and_downcast::<gdk::Toplevel>() {
+        let c = changed.clone();
+        t.connect_state_notify(move |_| c());
+    }
+}
+
+/// One window on Linux: the game's window goes inside this one, which needs X11 (an X11
+/// session, or XWayland). On a Wayland session with XWayland the app asks GTK for X11
+/// before it starts. GODNOTIC_EMBED=0 keeps the two windows (they then take turns).
+fn embed_wanted() -> bool {
+    std::env::var("GODNOTIC_EMBED").map(|v| v != "0").unwrap_or(true)
+}
+
+fn embed_backend_choice(o: &Opts) {
+    let real_engine = o.fixture.is_none() && o.snapshot.is_none() && (o.script.is_none() || std::env::var_os("GODNOTIC_TEST_NATIVE_BACKEND").is_some());
+    let has_x = std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty());
+    if real_engine && embed_wanted() && has_x && std::env::var_os("GDK_BACKEND").is_none() {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+}
+
+extern "C" {
+    // libgtk-4 (built with its X11 backend): the X11 window behind a GdkSurface
+    fn gdk_x11_surface_get_xid(surface: *mut gdk::ffi::GdkSurface) -> std::os::raw::c_ulong;
+}
+
+/// This window's X11 id, when the game's window can go inside it.
+fn embed_parent(a: &app::App) -> Option<u64> {
+    use gtk::glib::translate::ToGlibPtr;
+    if !embed_wanted() {
+        return None;
+    }
+    let win = a.ui.borrow().as_ref().map(|u| u.win.clone())?;
+    let surface = win.surface()?;
+    if surface.display().type_().name() != "GdkX11Display" {
+        return None;
+    }
+    // SAFETY: the surface is an X11 surface (checked above) and alive while `surface` is held.
+    let xid = unsafe { gdk_x11_surface_get_xid(surface.to_glib_none().0) };
+    (xid != 0).then_some(xid as u64)
 }
 
 /// No engine UI: the skeleton gives way to a status page.

@@ -11,7 +11,11 @@ finish-args:
   - --share=network
   - --share=ipc
   - --socket=wayland
-  - --socket=fallback-x11
+  # X11 (XWayland on a Wayland session) as well, not only as a fallback: the game's
+  # window goes inside the app's own window as an X11 child, so Godnotic is one
+  # window (loader/crates/gtk/src/main.rs, engine/darkplaces/touch_uib_stream.c).
+  # The app picks X11 when it can; GODNOTIC_EMBED=0 keeps Wayland and two windows.
+  - --socket=x11
   - --socket=pulseaudio
   - --device=dri
   # The keyboard hot-plug watcher reads the SW_TABLET_MODE switch from

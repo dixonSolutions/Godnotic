@@ -27,14 +27,20 @@ pub(crate) fn paths() -> (GamePaths, Config) {
     (p, cfg)
 }
 
-/// Start the engine as the native UI backend for the lifetime of the app.
-pub fn start_backend() -> std::io::Result<session::Backend> {
+/// Start the engine as the native UI backend for the lifetime of the app. With `embed`
+/// (this app's X11 window) the game's window goes inside it: windowed, X11, sized by it.
+pub fn start_backend(embed: Option<u64>) -> std::io::Result<session::Backend> {
     let (p, cfg) = paths();
     let start = p.start_script.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "The game was not found next to the app"))?;
     let (env, args) = session::base_args(&cfg);
     let mut command = std::process::Command::new(start);
     command.args(args);
     command.envs(env);
+    if let Some(xid) = embed {
+        command.env("GODNOTIC_EMBED_PARENT", xid.to_string());
+        command.env("SDL_VIDEODRIVER", "x11");
+        command.args(["+vid_fullscreen", "0"]);
+    }
     command.env("SDL_VIDEO_X11_WMCLASS", session::APP_ID);
     command.env("SDL_VIDEO_WAYLAND_WMCLASS", session::APP_ID);
     if let Some((k, v)) = crate::updates::engine_env() { command.env(k, v); }
