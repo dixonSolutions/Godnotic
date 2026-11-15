@@ -139,6 +139,9 @@ fn main() -> glib::ExitCode {
         a.reduced_motion.set(o2.reduced || !gtk::Settings::default().map(|s| s.is_gtk_enable_animations()).unwrap_or(true));
         a.images.borrow_mut().preload_brand();
         let win = app::build_window(&a, gapp, o2.size);
+        if (!test_run || std::env::var_os("GODNOTIC_TEST_FULLSCREEN").is_some()) && o2.size.is_none() {
+            win.fullscreen();
+        }
         if a.reduced_motion.get() {
             win.add_css_class("gn-reduced");
         }
@@ -159,7 +162,12 @@ fn main() -> glib::ExitCode {
                 return glib::ControlFlow::Break;
             }
             // The described UI comes after the first frame: nothing blocks the window.
-            start_ui(&a2);
+            let real_engine = !test_run || std::env::var_os("GODNOTIC_TEST_NATIVE_BACKEND").is_some();
+            if o3.fixture.is_none() && std::env::var_os("GODNOTIC_SKIP_DATA_CHECK").is_none() && !data_ui::ready() {
+                show_first_download(&a2, real_engine);
+            } else {
+                start_ui(&a2, real_engine);
+            }
             if let Some(path) = o3.snapshot.clone() {
                 let w = w.clone();
                 glib::timeout_add_local_once(std::time::Duration::from_millis(o3.snapshot_delay), move || {
@@ -195,8 +203,52 @@ fn main() -> glib::ExitCode {
     gapp.run_with_args(&["godnotic-loader"])
 }
 
+/// First use starts with the data download, before the game home screen.
+fn show_first_download(a: &app::App, use_engine: bool) {
+    let Some(nav) = a.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
+    let weak = Rc::downgrade(a);
+    let started = Rc::new(std::cell::Cell::new(false));
+    let once = started.clone();
+    let done: Rc<dyn Fn()> = Rc::new(move || {
+        if !once.replace(true) {
+            if let Some(a) = weak.upgrade() { start_ui(&a, use_engine); }
+        }
+    });
+    let check = done.clone();
+    glib::timeout_add_local(std::time::Duration::from_millis(750), move || {
+        if started.get() { return glib::ControlFlow::Break; }
+        if data_ui::ready() { check(); return glib::ControlFlow::Break; }
+        glib::ControlFlow::Continue
+    });
+    let controls = data_ui::content(Some(done));
+    let clamp = adw::Clamp::builder().maximum_size(520).child(&controls).build();
+    let page = adw::StatusPage::builder()
+        .icon_name("folder-download-symbolic")
+        .title("Download game data")
+        .description("Download the game data to start playing.")
+        .child(&clamp).build();
+    let scroll = gtk::ScrolledWindow::builder().vexpand(true).child(&page).build();
+    let first = adw::NavigationPage::builder().tag("first-download").title("Game data").child(&scroll).can_pop(false).build();
+    nav.replace(&[first]);
+}
+
 /// Says hello to the backend; the snapshot arrives through the pump.
-fn start_ui(a: &app::App) {
+fn start_ui(a: &app::App, use_engine: bool) {
+    if use_engine {
+        match session_ui::start_backend() {
+            Ok(proc) => {
+                *a.backend.borrow_mut() = Backend::Engine(backend::EngineBackend { proc });
+                let weak = Rc::downgrade(a);
+                glib::timeout_add_local(std::time::Duration::from_millis(80), move || {
+                    if let Some(a) = weak.upgrade() {
+                        app::schedule(&a);
+                        glib::ControlFlow::Continue
+                    } else { glib::ControlFlow::Break }
+                });
+            }
+            Err(e) => { *a.backend.borrow_mut() = Backend::Offline(e.to_string()); }
+        }
+    }
     if matches!(&*a.backend.borrow(), Backend::Offline(_)) {
         show_offline(a);
         return;
@@ -232,7 +284,6 @@ fn show_offline(a: &app::App) {
     let Some(nav) = a.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
     let tv = adw::ToolbarView::new();
     let hb = adw::HeaderBar::new();
-    hb.pack_end(&data_ui::button());
     tv.add_top_bar(&hb);
     let s = adw::StatusPage::builder().icon_name("input-gaming-symbolic").title("Godnotic").description(glib::markup_escape_text(&why)).build();
     let play = gtk::Button::with_label("Play");

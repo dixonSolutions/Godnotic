@@ -139,10 +139,11 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
     tv.set_top_bar_style(adw::ToolbarStyle::Raised);
     let header = adw::HeaderBar::new();
     header.set_show_back_button(false);
+    header.set_show_start_title_buttons(false);
+    header.set_show_end_title_buttons(false);
     let title = adw::WindowTitle::new(&s.title(), &s.str("subtitle").unwrap_or_default());
     header.set_title_widget(Some(&title));
     let in_stack = store.stack().iter().position(|x| *x == s.id);
-    let depth = in_stack.unwrap_or(0);
     // Dialogs and sheets close with their own button; pages get Back.
     if in_stack.is_some_and(|d| d > 0 || store.app().and_then(|a| a.bool("canBack")).unwrap_or(false)) {
         let back = gtk::Button::from_icon_name("go-previous-symbolic");
@@ -170,10 +171,15 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
             header.pack_end(&b);
         }
     }
-    if depth == 0 {
-        header.pack_end(&crate::data_ui::button());
+    if s.id == "settings" {
+        let data = gtk::Button::with_label("Game data");
+        let weak = Rc::downgrade(app);
+        data.connect_clicked(move |_| {
+            if let Some(a) = weak.upgrade() { crate::data_ui::settings(&a); }
+        });
+        header.pack_end(&data);
     }
-    tv.add_top_bar(&header);
+    if s.str("kind").as_deref() != Some("home") { tv.add_top_bar(&header); }
     if let Some(from) = s.from_mod() {
         let l = label(&format!("From the mod {from}"), &["gn-from-mod"]);
         l.set_margin_start(12);
@@ -202,7 +208,16 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
         if let Some(p) = s.obj("primary") {
             let bar = gtk::CenterBox::new();
             bar.add_css_class("gn-actionbar");
-            bar.set_center_widget(Some(&action_button(app, &s.id, p, true)));
+            let button = action_button(app, &s.id, p, true);
+            if s.str("presentation").as_deref() == Some("dialog") {
+                let weak = button.downgrade();
+                register_updater(app, &s.id, Rc::new(move |n: &Node| {
+                    if let Some(button) = weak.upgrade() {
+                        button.set_sensitive(n.obj("primary").and_then(|a| a.bool_of("enabled")).unwrap_or(true));
+                    }
+                }));
+            }
+            bar.set_center_widget(Some(&button));
             tv.add_bottom_bar(&bar);
         }
     }
@@ -545,6 +560,7 @@ fn field_row(app: &App, n: &Node) -> gtk::Widget {
             l2.set_icon_name(Some(if n.bool("hasValue").unwrap_or(false) { "changes-prevent-symbolic" } else { "changes-allow-symbolic" }));
         }));
     }
+    register_activator(app, &n.id, &r);
     r.upcast()
 }
 
@@ -845,7 +861,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
                 if featured {
                     // Home's cards share the window's height with the banner above them: both expand
                     // from a small minimum, so a short window (a phone on its side) needs no scrolling
-                    p.set_vexpand(true);
+                    p.set_vexpand(!app.narrow.get());
                     b.add_css_class("gn-featured");
                 }
             } else {
@@ -890,7 +906,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
         t.append(&pb);
     }
     v.append(&t);
-    if n.bool("featured").unwrap_or(false) {
+    if n.bool("featured").unwrap_or(false) && !app.narrow.get() {
         // Home's cards stay side by side at every width, never stacked: on a phone each has a
         // third of it. The picture shrinks and the subtitle and title end in an ellipsis
         // rather than hold the row wider than the window (a word set the minimum).
@@ -980,9 +996,9 @@ fn grid(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     // Home's row on a phone: a little less between the cards, more for each
     f.set_column_spacing(if featured && app.narrow.get() { 8 } else { 12 });
     let compact_strip = n.str("scroll").as_deref() == Some("horizontal") && !featured && window_height(app) < SHORT_WINDOW;
-    // Home's cards: always one row, side by side at every width, never stacked
-    f.set_min_children_per_line(if featured { kids.len().clamp(1, 4) as u32 } else if app.narrow.get() { 1 } else { 2 });
-    f.set_max_children_per_line(n.f64("maxColumns").map(|m| m as u32).unwrap_or(((1100.0 / (min + 12.0)) as u32).clamp(1, 6)));
+    // Home uses one column on a narrow screen and a row on wider screens.
+    f.set_min_children_per_line(if app.narrow.get() { 1 } else if featured { kids.len().clamp(1, 4) as u32 } else { 2 });
+    f.set_max_children_per_line(if featured && app.narrow.get() { 1 } else { n.f64("maxColumns").map(|m| m as u32).unwrap_or(((1100.0 / (min + 12.0)) as u32).clamp(1, 6)) });
     for k in store.children(&n.id) {
         if k.hidden() {
             continue;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Storage and game data as a small popover from the header bar (native: it
+//! Storage and game data in the native first-run and settings screens (it
 //! must work before any engine can run). Shows what is installed, the data
 //! set, and Download / Check again with progress; music is always part of
 //! the set. The downloader is the core's (ranged, resumable, CRC-checked).
@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::rc::Rc;
 
 /// Where the engine's QuakeC reads and writes (`<userdir>/data/data`): the download's status and request files.
 fn engine_write_dir() -> PathBuf {
@@ -39,7 +40,12 @@ fn installed(dir: &Path) -> (usize, u64, bool) {
 }
 
 fn free_space(p: &Path) -> u64 {
-    let Ok(c) = std::ffi::CString::new(p.to_string_lossy().as_bytes()) else { return u64::MAX };
+    let mut existing = p;
+    while !existing.exists() {
+        let Some(parent) = existing.parent() else { return u64::MAX };
+        existing = parent;
+    }
+    let Ok(c) = std::ffi::CString::new(existing.to_string_lossy().as_bytes()) else { return u64::MAX };
     // SAFETY: statvfs fills the struct we pass; the path is a valid C string.
     unsafe {
         let mut s: libc::statvfs = std::mem::zeroed();
@@ -48,14 +54,42 @@ fn free_space(p: &Path) -> u64 {
 }
 
 enum Msg {
+    Ready,
     Progress(Progress),
     Done(Result<(), String>),
 }
 
-/// The header-bar button with the storage popover.
-pub fn button() -> gtk::MenuButton {
-    let mb = gtk::MenuButton::builder().icon_name("drive-harddisk-symbolic").tooltip_text("Storage and game data").build();
-    let pop = gtk::Popover::new();
+/// True when a game can start using the installed data.
+pub fn ready() -> bool {
+    let env: HashMap<String, String> = std::env::vars().collect();
+    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()));
+    let p = GamePaths::resolve(&env, exe.as_deref(), &|f| Path::new(f).exists(), "");
+    Path::new(&p.user_data()).join(datasets::READY_MARKER).exists()
+        || p.data_dirs().iter().any(|d| {
+            let names: Vec<_> = std::fs::read_dir(d).into_iter().flatten().flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+            names.iter().any(|n| n.starts_with("xonotic-") && n.ends_with("-data.pk3"))
+                && names.iter().any(|n| n.starts_with("xonotic-") && n.ends_with("-maps.pk3"))
+        })
+}
+
+/// Native settings exposes game data alongside the remaining game settings.
+pub fn settings(app: &crate::app::App) {
+    use adw::prelude::*;
+    let Some(nav) = app.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&adw::HeaderBar::new());
+    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    box_.append(&content(None));
+    let clamp = adw::Clamp::builder().maximum_size(600).child(&box_).build();
+    let scroll = gtk::ScrolledWindow::builder().vexpand(true).child(&clamp).build();
+    toolbar.set_content(Some(&scroll));
+    let page = adw::NavigationPage::builder().title("Settings").child(&toolbar).build();
+    nav.push(&page);
+}
+
+/// Download controls, also usable as the first-run screen.
+pub fn content(on_ready: Option<Rc<dyn Fn()>>) -> gtk::Box {
     let v = gtk::Box::new(gtk::Orientation::Vertical, 10);
     v.set_margin_top(12);
     v.set_margin_bottom(12);
@@ -84,8 +118,6 @@ pub fn button() -> gtk::MenuButton {
     for w in [title.upcast_ref::<gtk::Widget>(), status.upcast_ref(), detail.upcast_ref(), bar.upcast_ref(), go.upcast_ref(), stop.upcast_ref()] {
         v.append(w);
     }
-    pop.set_child(Some(&v));
-    mb.set_popover(Some(&pop));
 
     let refresh = {
         let (status, detail, go) = (status.clone(), detail.clone(), go.clone());
@@ -94,13 +126,12 @@ pub fn button() -> gtk::MenuButton {
             let (n, bytes, ready) = installed(&dir);
             status.set_text(&if ready { format!("Installed · {n} packs, {} MB", bytes >> 20) } else if n > 0 { format!("Incomplete · {n} packs, {} MB", bytes >> 20) } else { "Not downloaded yet".into() });
             let choice = datasets::choose(None, std::env::var(datasets::ENV).ok().as_deref(), None, None);
-            detail.set_text(&format!("{} · {} MB free · {}", choice.reason, free_space(&dir) >> 20, dir.display()));
+            let free = free_space(&dir);
+            detail.set_text(&if free == u64::MAX { choice.reason } else { format!("{} · {} MB free", choice.reason, free >> 20) });
             go.set_label(if ready { "Check again" } else { "Download" });
         }
     };
     refresh();
-    let r2 = refresh.clone();
-    pop.connect_show(move |_| r2());
 
     let token: std::rc::Rc<std::cell::RefCell<Option<CancelToken>>> = Default::default();
     let t2 = token.clone();
@@ -111,6 +142,7 @@ pub fn button() -> gtk::MenuButton {
     });
     let (bar2, stop2, status2) = (bar.clone(), stop.clone(), status.clone());
     go.connect_clicked(move |go| {
+        let on_ready = on_ready.clone();
         let (tx, rx) = mpsc::channel::<Msg>();
         let t = CancelToken::new();
         *token.borrow_mut() = Some(t.clone());
@@ -132,7 +164,9 @@ pub fn button() -> gtk::MenuButton {
                 // The split set when the server has its manifest (first the packs a match needs, then the
                 // rest while the game may already run: the status file tells it what landed), else one archive.
                 let engine_dir = engine_write_dir();
-                datasets::fetch_all(&http, &choice, None, &dir, Some(&engine_dir), fetch::Config::default(), &free, &t, &listen, &|| {}, datasets::FULL_URL)
+                let ready_tx = tx.clone();
+                let first_play_ready = move || { let _ = ready_tx.send(Msg::Ready); };
+                datasets::fetch_all(&http, &choice, None, &dir, Some(&engine_dir), fetch::Config::default(), &free, &t, &listen, &first_play_ready, datasets::FULL_URL)
             };
             let _ = tx.send(Msg::Done(r.map_err(|e| e.to_string())));
         });
@@ -140,6 +174,9 @@ pub fn button() -> gtk::MenuButton {
         glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
             for m in rx.try_iter() {
                 match m {
+                    Msg::Ready => {
+                        if let Some(f) = &on_ready { f(); }
+                    }
                     Msg::Progress(p) => {
                         if p.total > 0 {
                             bar.set_fraction(p.done as f64 / p.total as f64);
@@ -165,5 +202,5 @@ pub fn button() -> gtk::MenuButton {
     if datasets::split_unfinished(&data_dir()) {
         go.emit_clicked();
     }
-    mb
+    v
 }
