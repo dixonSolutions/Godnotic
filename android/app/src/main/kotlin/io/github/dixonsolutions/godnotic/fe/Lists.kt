@@ -93,7 +93,10 @@ class VirtualList(
         view.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = ask()
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
-                if (state == RecyclerView.SCROLL_STATE_IDLE && !touching) onVisible?.invoke(shown(), null)
+                if (state == RecyclerView.SCROLL_STATE_IDLE && !touching) {
+                    onVisible?.invoke(shown(), null)
+                    pendingTotal?.let { sourceChanged(it) }
+                }
             }
         })
         // a finger on the list: the engine holds its source still (docs/UI_BRIDGE.md, `visible`)
@@ -101,7 +104,11 @@ class VirtualList(
             override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
                 when (e.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> if (!touching) { touching = true; onVisible?.invoke(shown(), true) }
-                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> if (touching) { touching = false; onVisible?.invoke(shown(), false) }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> if (touching) {
+                        touching = false; onVisible?.invoke(shown(), false)
+                        // a tap or a hold without a fling: catch up now (a fling catches up when it stops)
+                        rv.post { if (!touching && rv.scrollState == RecyclerView.SCROLL_STATE_IDLE) pendingTotal?.let { sourceChanged(it) } }
+                    }
                 }
                 return false
             }
@@ -110,6 +117,8 @@ class VirtualList(
     }
 
     private var touching = false
+    /** A source change that came while the list moved: applied when it stops. */
+    private var pendingTotal: Int? = null
     /** The rows on screen and whether a finger is on the list (null: unchanged). */
     var onVisible: ((IntRange, Boolean?) -> Unit)? = null
 
@@ -174,6 +183,10 @@ class VirtualList(
     fun sourceChanged(total: Int) {
         val before = window.total
         if (before < 0 || window.loaded == 0) { reset(total); return }
+        // while a finger or a fling moves the list, the update waits for it to stop:
+        // nothing jumps under the player, and no frame of the fling pays for a rebind
+        if (touching || view.scrollState != RecyclerView.SCROLL_STATE_IDLE) { pendingTotal = total; return }
+        pendingTotal = null
         window.markStale(total)
         if (total > before) adapter.notifyItemRangeInserted(before, total - before)
         else if (total < before) adapter.notifyItemRangeRemoved(total, before - total)
