@@ -6,6 +6,7 @@
 #include <GLES2/gl2.h>
 
 #include "touch_frontend.h"
+#include "touch_uib.h"
 
 typedef int (*nativeui_pop_fn)(char *, size_t);
 
@@ -45,6 +46,12 @@ void NativeUI_Frame(void)
         if (!pop || !publish || !publish_permissions) { dlclose(bridge); return; }
         /* Keep this reference: JNI may use the resident bridge throughout a swap. */
         NativeUI_AttachFrontend(bridge);
+        {
+            /* a tap wakes the engine's idle sleep (older bridges lack this: the next frame takes it) */
+            void (*set_wake)(int) = (void (*)(int))dlsym(bridge, "nativeui_set_wake_fd");
+            if (set_wake)
+                set_wake(TouchUIB_WakeFd());
+        }
     }
     while (pop(command, sizeof command))
         Cbuf_AddText(cmd_local, command);

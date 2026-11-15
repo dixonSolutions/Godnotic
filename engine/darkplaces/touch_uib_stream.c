@@ -52,6 +52,9 @@ static struct
 
 int UIBStream_BackendMode(void) { return sm.mode != 0; }
 int UIBStream_Active(void) { return sm.conn != NULL; }
+// what the engine's idle sleep also waits on (TouchUIB_SleepTime): the front
+// end's socket, or the listening one while nobody is connected; -1 for none
+int UIBStream_PollFd(void) { return sm.conn ? sm.rfd : sm.mode == 3 ? sm.lfd : -1; }
 
 #ifdef UIB_STREAM
 static void nonblock(int fd)

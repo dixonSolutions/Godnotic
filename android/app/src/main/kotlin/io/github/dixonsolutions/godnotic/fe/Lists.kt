@@ -128,12 +128,61 @@ class VirtualList(
         window.missing(max(0, first - margin), last + margin)?.let { request(it) }
     }
 
-    /** New rows from the bridge: rebinds only the changed positions. */
+    /**
+     * New rows from the bridge, put in place: only rows whose content changed are
+     * rebound, a new count grows or shrinks the list at its end, and the row the
+     * player was looking at (below the top) stays where it was on screen while the
+     * order around it changes (a refresh streaming answers in, docs/UI_BRIDGE.md
+     * "Rows that stay put"). Nothing is cleared first, so nothing flashes.
+     */
     fun rows(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         val before = window.total
+        if (before < 0) {
+            window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
+            adapter.notifyDataSetChanged()
+            return
+        }
+        val lm = view.layoutManager as? LinearLayoutManager
+        val firstPos = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        val anchorKey = if (firstPos > 0 && !touching) window.row(firstPos)?.let(::keyOf) else null
+        val anchorTop = if (anchorKey != null) lm?.findViewByPosition(firstPos)?.top ?: 0 else 0
+        val old = rows.indices.map { window.row(offset + it) }
         window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
-        if (before != total) adapter.notifyDataSetChanged() // the count changed: positions stay keyed by id
-        else adapter.notifyItemRangeChanged(offset, rows.size, PAYLOAD_ROW)
+        if (total > before) adapter.notifyItemRangeInserted(before, total - before)
+        else if (total < before) adapter.notifyItemRangeRemoved(total, before - total)
+        var start = -1
+        for (i in rows.indices) {
+            val pos = offset + i
+            val changed = pos < minOf(before, total) && old[i] != rows[i]
+            if (changed && start < 0) start = pos
+            if (!changed && start >= 0) { adapter.notifyItemRangeChanged(start, pos - start, PAYLOAD_ROW); start = -1 }
+        }
+        if (start >= 0) adapter.notifyItemRangeChanged(start, minOf(offset + rows.size, total) - start, PAYLOAD_ROW)
+        if (anchorKey != null && lm != null) {
+            val now = (offset until offset + rows.size).firstOrNull { window.row(it)?.let(::keyOf) == anchorKey }
+            if (now != null && now != firstPos) lm.scrollToPositionWithOffset(now, anchorTop)
+        }
+    }
+
+    /**
+     * The source changed (a refresh, a filter): the rows on screen stay until their
+     * new versions come, the count follows at once, the visible window is asked for
+     * again. Replaces clearing to placeholders on every notice, which flashed the
+     * whole list four times a second while a refresh ran.
+     */
+    fun sourceChanged(total: Int) {
+        val before = window.total
+        if (before < 0 || window.loaded == 0) { reset(total); return }
+        window.markStale(total)
+        if (total > before) adapter.notifyItemRangeInserted(before, total - before)
+        else if (total < before) adapter.notifyItemRangeRemoved(total, before - total)
+        if (total <= 0) return
+        val lm = view.layoutManager as? LinearLayoutManager
+        val first = max(0, lm?.findFirstVisibleItemPosition() ?: 0)
+        val last = max(first, lm?.findLastVisibleItemPosition() ?: 0)
+        var r = window.missing(first, last)
+        var guard = 0
+        while (r != null && guard++ < 4) { request(r); r = window.missing(first, last) }
     }
 
     /** All rows at once (a small inline list), diffed against what is shown by key. */
@@ -150,7 +199,9 @@ class VirtualList(
         window.invalidate()
         window.accept(mapOf("offset" to 0.0, "total" to total.toDouble(), "rows" to emptyList<Any>()))
         adapter.notifyDataSetChanged()
-        window.missing(0, window.pageSize)?.let { request(it) }
+        // asked a moment later: the engine pushes a new list's first rows right after
+        // the diff that creates it, in the same batch, and then nothing is missing
+        view.post { window.missing(0, window.pageSize)?.let { request(it) } }
     }
 
     fun refresh() = adapter.notifyDataSetChanged()

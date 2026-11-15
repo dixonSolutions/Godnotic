@@ -56,6 +56,8 @@ DEFS["action"] = obj({
     "accept": {"type": "array", "items": enum("pk3", "zip", "godnotic-mod", "cfg", "dem"), "maxItems": 8},
     "text": S,
     "a11y": S,
+    # the screen this action shows (one of app.prepared): a renderer may show it at the tap
+    "opens": ID,
 }, ["id"])
 DEFS["badge"] = obj({"text": S, "icon": ICON, "tone": TONE})
 DEFS["chip"] = obj({"text": S, "icon": ICON})
@@ -89,7 +91,9 @@ FORMAT = enum("int", "float1", "float2", "percent", "ms", "dp", "db", "x", "deg"
 TYPES = {
     "app": {"stack": {"type": "array", "items": ID}, "modal": {"type": "array", "items": ID},
             "busy": ref("busy"), "canBack": B, "context": enum("menu", "game", "loading"),
-            "reserved": {"type": "array", "items": ref("reserved"), "maxItems": 8}},
+            "reserved": {"type": "array", "items": ref("reserved"), "maxItems": 8},
+            # screens built ahead and kept while not shown (a renderer may have them ready)
+            "prepared": {"type": "array", "items": ID, "maxItems": 8}},
     "screen": {"presentation": enum("page", "sheet", "dialog", "fullscreen"),
                "kind": enum("home", "page", "detail", "game", "loading", "status"),
                "primary": ref("action"), "background": IMG, "dismissable": B,
@@ -120,6 +124,8 @@ TYPES = {
              "selection": enum("none", "single", "multi"),
              "selected": {"type": "array", "items": S, "maxItems": 256},
              "rowSelect": ref("action"),
+             # the player picked a sort (a header tap): sent with payload {sort, desc}
+             "sortAction": ref("action"),
              "rows": {"type": "integer", "minimum": 1, "maximum": 4}, "scroll": enum("vertical", "horizontal"),
              "rowPrimary": ref("action"), "rowActions": {"type": "array", "items": ref("action"), "maxItems": 8},
              "state": enum("ready", "loading", "error"), "empty": ref("pageState"), "error": ref("pageState"),

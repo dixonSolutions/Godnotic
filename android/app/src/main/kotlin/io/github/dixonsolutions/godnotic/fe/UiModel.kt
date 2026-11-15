@@ -153,7 +153,7 @@ class UibClient(private val renderer: UiRenderer, private val send: (String) -> 
                 onChanged?.invoke()
             }
             "rows" -> if (!ignoreRows) renderer.listRows(m.str("source"), m.int("offset"), m.int("total"), m["rows"].list().map { it.obj() })
-            "source" -> if (!ignoreRows) renderer.listRows(m.str("source"), 0, m.int("total"), emptyList())
+            "source" -> if (!ignoreRows) renderer.sourceChanged(m.str("source"), m.int("total"))
             "image" -> renderer.imageReady(m.str("ref"), m.str("path"))
             "error" -> if (m.str("code") == "not_found") m.str("ref").takeIf { it.isNotEmpty() }?.let { renderer.imageReady(it, "") }
             "hello", "ack", "pong", "bye" -> {}
@@ -276,8 +276,22 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
     private val rows = HashMap<Int, Map<String, Any?>>()
     private val asked = HashSet<Int>() // page numbers requested and not yet answered
 
+    private val stalePages = HashSet<Int>() // shown, but from before the source changed: asked again
+
     fun row(i: Int): Map<String, Any?>? = rows[i]
     val loaded: Int get() = rows.size
+
+    /**
+     * The source changed (a `source` notice): keep every row on screen, ask for
+     * the pages again ([missing] returns them once more), take [total] now.
+     */
+    fun markStale(newTotal: Int) {
+        total = newTotal
+        if (total >= 0) rows.keys.removeAll { it >= total }
+        stalePages.clear()
+        rows.keys.forEach { stalePages.add(it / pageSize) }
+        asked.clear()
+    }
 
     /** The first page to request for rows [first]..[last], or null when all are here or asked. */
     fun missing(first: Int, last: Int): IntRange? {
@@ -288,7 +302,7 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
         while (page * pageSize <= hi) {
             val start = page * pageSize
             val end = if (total > 0) minOf(start + pageSize, total) - 1 else start + pageSize - 1
-            val complete = (start..end).all { rows.containsKey(it) }
+            val complete = page !in stalePages && (start..end).all { rows.containsKey(it) }
             if (!complete && page !in asked) {
                 asked.add(page)
                 return start..end
@@ -302,14 +316,17 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
     fun accept(msg: Map<String, Any?>) {
         val offset = msg.int("offset")
         total = msg.int("total", total)
-        msg["rows"].list().forEachIndexed { i, r -> rows[offset + i] = r.obj() }
+        val got = msg["rows"].list()
+        got.forEachIndexed { i, r -> rows[offset + i] = r.obj() }
         asked.remove(offset / pageSize)
+        if (got.isNotEmpty()) for (p in offset / pageSize..(offset + got.size - 1) / pageSize) stalePages.remove(p)
         if (total >= 0) rows.keys.removeAll { it >= total }
     }
 
     fun invalidate() {
         rows.clear()
         asked.clear()
+        stalePages.clear()
         total = -1
     }
 }

@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #define QUEUE_CAP 32
 #define COMMAND_CAP 8192 /* a UI bridge event, percent-encoded, fits */
@@ -12,6 +13,14 @@ static char queue[QUEUE_CAP][COMMAND_CAP];
 static unsigned head, count;
 static char status[STATUS_CAP];
 static char permissions[STATUS_CAP];
+/* The engine's wake-up (an eventfd, touch_uib.c TouchUIB_SleepTime): poked when
+ * the UI queues a command, so an engine idling behind a native screen takes a
+ * tap at once instead of at its next frame. -1 until an engine sets it. */
+static volatile int wake_fd = -1;
+void nativeui_set_wake_fd(int fd)
+{
+    wake_fd = fd;
+}
 
 JNIEXPORT jboolean JNICALL Java_io_github_dixonsolutions_godnotic_NativeBridge_enqueueBytes(JNIEnv *env, jobject self, jbyteArray command)
 {
@@ -32,6 +41,10 @@ JNIEXPORT jboolean JNICALL Java_io_github_dixonsolutions_godnotic_NativeBridge_e
         ok = 1;
     }
     pthread_mutex_unlock(&mutex);
+    if (ok && wake_fd >= 0) {
+        unsigned long long one = 1;
+        if (write(wake_fd, &one, sizeof one) < 0) { /* full or closed: the next frame takes it */ }
+    }
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 

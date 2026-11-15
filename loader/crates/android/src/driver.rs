@@ -41,6 +41,8 @@ pub struct Driver {
     shown_modal: Vec<String>,
     /// Toasts already shown (they have no view to update or remove).
     toasts: HashSet<String>,
+    /// Prepared screens whose views exist (`app.prepared`).
+    prepared_built: Vec<String>,
     /// Rows come from elsewhere (test builds generate them).
     pub ignore_rows: bool,
 }
@@ -83,8 +85,7 @@ impl Driver {
             .unwrap_or(false);
         let hero = self
             .store
-            .to_snapshot_nodes()
-            .into_iter()
+            .iter()
             .find(|n| {
                 n.kind == "hero"
                     || (n.kind == "card"
@@ -225,8 +226,10 @@ impl Driver {
                 return b;
             }
             "source" => {
+                // the source changed (a refresh, a filter): the renderer keeps the rows it
+                // shows and asks for them again, replacing them in place when they come
                 if !self.ignore_rows {
-                    b.ops.push(json!({"op": "rows", "source": str_of(&m, "source"), "offset": 0, "total": int_of(&m, "total"), "rows": []}));
+                    b.ops.push(json!({"op": "source", "source": str_of(&m, "source"), "rev": int_of(&m, "rev"), "total": int_of(&m, "total")}));
                 }
                 return b;
             }
@@ -294,6 +297,7 @@ impl Driver {
         self.built.clear();
         self.shown_stack.clear();
         self.shown_modal.clear();
+        self.prepared_built.clear();
         self.show_app(true, b);
         b.ops.push(json!({"op": "end"}));
     }
@@ -347,13 +351,15 @@ impl Driver {
                     .push(json!({"op": "navigate", "screen": top, "transition": transition}));
             }
             let old = std::mem::take(&mut self.shown_stack);
+            let prepared = self.store.prepared();
             for o in &old {
-                if !stack.contains(o) {
+                if !stack.contains(o) && !prepared.contains(o) {
                     self.drop_tree(o, b);
                 }
             }
             self.shown_stack = stack;
         }
+        self.prepare(b);
         if force || modal != self.shown_modal {
             let old = std::mem::take(&mut self.shown_modal);
             for o in &old {
@@ -390,6 +396,27 @@ impl Driver {
         }
     }
 
+    /// Screens the engine built ahead (`app.prepared`, docs/UI_BRIDGE.md 4.1): their
+    /// views are created now, not shown, so `navigate` to one later (the tap, shown
+    /// at once by the platform; the engine's answer confirming it) has nothing to
+    /// build. Views of a screen that is neither prepared nor shown any more go.
+    fn prepare(&mut self, b: &mut Batch) {
+        let prepared: Vec<String> = self.store.prepared().into_iter().filter(|s| self.store.node(s).is_some()).collect();
+        for p in &prepared {
+            if !self.built.contains(p) {
+                self.op_create(b, p, None, -1);
+                b.ops.push(json!({"op": "prepared", "screen": p}));
+            }
+        }
+        let gone: Vec<String> = std::mem::take(&mut self.prepared_built).into_iter().filter(|p| !prepared.contains(p)).collect();
+        for g in gone {
+            if !self.shown_stack.contains(&g) && !self.shown_modal.contains(&g) {
+                self.drop_tree(&g, b);
+            }
+        }
+        self.prepared_built = prepared;
+    }
+
     fn apply_changes(&mut self, set: &[String], deleted: &[String], b: &mut Batch) {
         b.ops.push(json!({"op": "begin"}));
         for id in deleted {
@@ -413,10 +440,10 @@ impl Driver {
             }
         }
         // views of nodes nothing refers to any more
-        let all = self.store.to_snapshot_nodes();
-        let referenced: HashSet<&str> = all
+        let referenced: HashSet<String> = self
+            .store
             .iter()
-            .flat_map(|n| n.children.iter().map(String::as_str))
+            .flat_map(|n| n.children.iter().cloned())
             .collect();
         let shown: HashSet<String> = self
             .store
@@ -536,6 +563,37 @@ mod tests {
         assert_eq!(ops(&b), ["begin ", "remove mp", "navigate home", "end "]);
     }
 
+    /// Multiplayer built ahead while Home shows (app.prepared): its views are
+    /// created (not shown) with Home, the list's first rows pushed by the engine
+    /// pass through, opening it only navigates, and Back keeps the views.
+    #[test]
+    fn a_prepared_screen_is_built_ahead_kept_and_only_navigated() {
+        let mut d = Driver::new();
+        let b = d.feed(r#"{"uib":1,"t":"snapshot","rev":1,"nodes":[
+            {"id":"app","type":"app","props":{"stack":["home"],"modal":[],"prepared":["mp"]},"children":["home","mp"]},
+            {"id":"home","type":"screen","props":{"title":"Home"},"children":[]},
+            {"id":"mp","type":"screen","props":{"title":"Multiplayer"},"children":["mp/servers"]},
+            {"id":"mp/servers","type":"list","props":{"source":"servers","count":2},"children":[]}]}"#);
+        assert_eq!(ops(&b), ["begin ", "create home", "navigate home", "create mp", "create mp/servers", "prepared mp", "dialog ", "end "]);
+        assert_eq!(d.state()["top"], "home");
+        let b = d.feed(r#"{"uib":1,"t":"rows","id":3,"re":0,"source":"servers","rev":4,"total":2,"offset":0,"rows":[{"key":"a"},{"key":"b"}]}"#);
+        assert_eq!(ops(&b), ["rows "]);
+        assert_eq!(b.ops[0]["rows"].as_array().unwrap().len(), 2);
+        // the tap's answer: only a navigation, nothing built
+        let b = d.feed(r#"{"uib":1,"t":"diff","base":1,"rev":2,"del":[],
+            "set":[{"id":"app","type":"app","props":{"stack":["home","mp"],"modal":[],"canBack":true,"prepared":["mp"]},"children":["home","mp"]}]}"#);
+        assert_eq!(ops(&b), ["begin ", "navigate mp", "end "]);
+        // Back: Home again, Multiplayer's views stay (it is still prepared)
+        let b = d.feed(r#"{"uib":1,"t":"diff","base":2,"rev":3,"del":[],
+            "set":[{"id":"app","type":"app","props":{"stack":["home"],"modal":[],"prepared":["mp"]},"children":["home","mp"]}]}"#);
+        assert_eq!(ops(&b), ["begin ", "navigate home", "end "]);
+        // no longer prepared (a match started): its views go
+        let b = d.feed(r#"{"uib":1,"t":"diff","base":3,"rev":4,"del":["mp","mp/servers"],
+            "set":[{"id":"app","type":"app","props":{"stack":["home"],"modal":[]},"children":["home"]}]}"#);
+        let o = ops(&b);
+        assert!(o.contains(&"remove mp".to_string()), "{o:?}");
+    }
+
     /// The join dialog as the engine published it over a running match: a
     /// stock DM server, a Godnotic client with a native front end attached
     /// (uib_dump from the controls agent's probe, tests/join-over-game.json).
@@ -630,6 +688,11 @@ mod tests {
         let b = d.feed(r#"{"uib":1,"t":"rows","source":"servers","offset":0,"total":2,"rows":[{"key":"a"},{"key":"b"}]}"#);
         assert_eq!(b.ops[0]["op"], "rows");
         assert_eq!(b.ops[0]["total"], 2);
+        // a source notice is its own op: the rows shown stay until the new ones come
+        let b = d.feed(r#"{"uib":1,"t":"source","id":0,"source":"servers","rev":5,"total":240}"#);
+        assert_eq!(b.ops[0]["op"], "source");
+        assert_eq!(b.ops[0]["total"], 240);
+        assert_eq!(b.ops[0]["rev"], 5);
         let mut body = Map::new();
         body.insert("node".into(), json!("mp/list"));
         body.insert("row".into(), json!("a"));

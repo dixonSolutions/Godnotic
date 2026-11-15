@@ -38,6 +38,7 @@ static struct
 	int64_t floor;             // diffs from below this rev are impossible
 	// nav
 	char *stack_ids, *modal_ids, *context;
+	char *prepared_ids;        // screens built ahead and kept, not shown (app.prepared)
 	int canback;
 	char *busy;
 	char *reserved;
@@ -48,6 +49,10 @@ static struct
 	int ntoasts;
 	const char *build_origin;
 	int warned;
+	// lists that appeared (or lost their count) since the last commit: counted
+	// and given their first rows in the frame they appear (touch_uib.c)
+	char fresh[16][UIB_MAX_ID];
+	int nfresh;
 } st;
 
 static unsigned hashstr(const char *s)
@@ -466,6 +471,19 @@ static void bind_fill(uibnode_t *n)
 		n->bindkind = 'm';
 }
 
+void UIBS_MarkFresh(const char *id)
+{
+	for (int i = 0; i < st.nfresh; i++)
+		if (!strcmp(st.fresh[i], id))
+			return;
+	if (st.nfresh < (int)(sizeof(st.fresh) / sizeof(st.fresh[0])))
+		snprintf(st.fresh[st.nfresh++], sizeof(st.fresh[0]), "%s", id);
+}
+
+int UIBS_FreshCount(void) { return st.nfresh; }
+const char *UIBS_Fresh(int i) { return i >= 0 && i < st.nfresh ? st.fresh[i] : ""; }
+void UIBS_ClearFresh(void) { st.nfresh = 0; }
+
 void UIBS_Close(void)
 {
 	if (st.dummy)
@@ -484,6 +502,8 @@ void UIBS_Close(void)
 		const char *cj = UIBS_PropJSON(n, "count", &cl);
 		if (cj)
 			setprop(&n->pprops, &n->npprops, &n->maxpprops, "count", cj, cl);
+		else
+			UIBS_MarkFresh(n->id);
 	}
 	// private values never leave the store
 	size_t pl;
@@ -569,6 +589,19 @@ void UIBS_SetNav(const char *stack, const char *modal, int canback, const char *
 		st.canback = canback;
 		st.navdirty = 1;
 	}
+}
+
+// Screens built ahead (docs/UI_BRIDGE.md 4.1, app.prepared): kept in the tree
+// while they are not on the stack, so a renderer can have them ready.
+void UIBS_SetPrepared(const char *ids)
+{
+	if (!ids)
+		ids = "";
+	if (st.prepared_ids && !strcmp(st.prepared_ids, ids))
+		return;
+	free(st.prepared_ids);
+	st.prepared_ids = strdup(ids);
+	st.navdirty = 1;
 }
 
 void UIBS_SetBusy(const char *json, size_t len)
@@ -700,9 +733,24 @@ static void reconcile_app(void)
 	uibnode_t *a = app_node();
 	uibnode_t *kids[64];
 	int nk = 0;
-	uibbuf_t s = {0}, m = {0};
+	uibbuf_t s = {0}, m = {0}, pr = {0};
 	ids_json(&s, st.stack_ids, kids, &nk, 48);
 	ids_json(&m, st.modal_ids, kids, &nk, 56);
+	{
+		// prepared screens: after the shown ones, each once; a prepared screen
+		// that is also shown stays where the stack puts it
+		uibnode_t *pk[8];
+		int np = 0;
+		ids_json(&pr, st.prepared_ids, pk, &np, 8);
+		for (int i = 0; i < np && nk < 60; i++)
+		{
+			int dup = 0;
+			for (int j = 0; j < nk; j++)
+				dup |= kids[j] == pk[i];
+			if (!dup)
+				kids[nk++] = pk[i];
+		}
+	}
 	for (int i = 0; i < st.ntoasts && nk < 64; i++)
 		kids[nk++] = st.toasts[i].node;
 	// drop roots that left the app
@@ -738,8 +786,10 @@ static void reconcile_app(void)
 	UIBS_SetProp(a, "context", ctx.p, ctx.n);
 	UIBS_SetProp(a, "busy", st.busy, st.busy ? strlen(st.busy) : 0);
 	UIBS_SetProp(a, "reserved", st.reserved, st.reserved ? strlen(st.reserved) : 0);
+	UIBS_SetProp(a, "prepared", pr.n > 2 ? pr.p : NULL, pr.n > 2 ? pr.n : 0);
 	UIBB_Free(&s);
 	UIBB_Free(&m);
+	UIBB_Free(&pr);
 	UIBB_Free(&ctx);
 	int same = a->nkids == nk;
 	for (int i = 0; same && i < nk; i++)
@@ -815,6 +865,8 @@ void UIBS_Reset(void)
 	st.ntoasts = 0;
 	free(st.stack_ids); st.stack_ids = NULL;
 	free(st.modal_ids); st.modal_ids = NULL;
+	free(st.prepared_ids); st.prepared_ids = NULL;
+	st.nfresh = 0;
 	free(st.busy); st.busy = NULL;
 	free(st.reserved); st.reserved = NULL;
 	st.navdirty = 1;

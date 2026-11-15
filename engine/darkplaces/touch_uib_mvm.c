@@ -194,6 +194,15 @@ void VM_uib_nav(prvm_prog_t *prog)
 	UIBS_SetNav(PRVM_G_STRING(OFS_PARM0), PRVM_G_STRING(OFS_PARM1), PRVM_G_FLOAT(OFS_PARM2) != 0, PRVM_G_STRING(OFS_PARM3));
 }
 
+// void uib_prepare(string ids): screens built ahead and kept while not shown
+// (app.prepared, docs/UI_BRIDGE.md 4.1); "" for none. The menu VM checks the
+// uib_prepare cvar before calling it (older engines lack the builtin).
+void VM_uib_prepare(prvm_prog_t *prog)
+{
+	UIB_Touched();
+	UIBS_SetPrepared(PRVM_G_STRING(OFS_PARM0));
+}
+
 // void uib_busy(string json): "" when not busy
 void VM_uib_busy(prvm_prog_t *prog)
 {

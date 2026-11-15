@@ -104,6 +104,10 @@
     "a11y": {
      "type": "string",
      "maxLength": 4096
+    },
+    "opens": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"
     }
    },
    "required": [
@@ -569,6 +573,14 @@
           "type": "array",
           "items": {
            "$ref": "#/$defs/reserved"
+          },
+          "maxItems": 8
+         },
+         "prepared": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"
           },
           "maxItems": 8
          }
@@ -2648,6 +2660,9 @@
           "maxItems": 256
          },
          "rowSelect": {
+          "$ref": "#/$defs/action"
+         },
+         "sortAction": {
           "$ref": "#/$defs/action"
          },
          "rows": {

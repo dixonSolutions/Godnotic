@@ -7,17 +7,24 @@ docs/UI_BRIDGE.md is the contract; touch_uib_store.c holds the tree.
 #include "touch_uib_int.h"
 #include "touch_shellbtn.h"
 #include "touch_display.h"
+#include "libcurl.h"
 #ifdef __linux__
+#include <stdint.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 #endif
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+#include <poll.h>
+#define UIB_WAKE 1
+#endif
 
 cvar_t menu_touch_uib = {CF_CLIENT | CF_ARCHIVE, "menu_touch_uib", "1", "Godnotic: 1 (default) draws the menu from the UI bridge descriptions (touch_uib_*.qc) with the QuakeC renderer wherever no native renderer shows it, and lets the classic menu draw the dialogs it has no screen for; 0 is the classic touch menu everywhere"};
 static cvar_t uib_version = {CF_CLIENT | CF_READONLY, "uib_version", TOUCHUIB_SCHEMA, "Godnotic UI bridge schema version (the menu VM checks it before using the bridge builtins)"};
 static cvar_t uib_debug = {CF_CLIENT, "uib_debug", "0", "Godnotic UI bridge: 1 logs messages, 2 also logs their text"};
+static cvar_t uib_prepare = {CF_CLIENT | CF_READONLY, "uib_prepare", "1", "Godnotic UI bridge: the engine has uib_prepare (#1223), screens built ahead (app.prepared)"};
 static cvar_t uib_trace = {CF_CLIENT, "uib_trace", "0", "Godnotic UI bridge: 1 prints how a screen opened (the action, the diff, the first rows, in ms after the action); Android always logs it"};
 
 // ---------------------------------------------------------------- open trace
@@ -92,7 +99,8 @@ static struct
 	touchuib_mod_event_fn modfn;
 	void *modctx;
 	int loopback;          // conn slot of the console loopback, -1
-} uib = {0, NULL, {0}, 0, 0, 0, NULL, NULL, -1};
+	int wakefd;            // eventfd: a message for the engine arrived (TouchUIB_SleepTime)
+} uib = {0, NULL, {0}, 0, 0, 0, NULL, NULL, -1, -1};
 
 int uib_loopback_print;
 
@@ -199,6 +207,8 @@ int TouchUIB_Post(touchuib_conn_t *c, const char *json, size_t len)
 		}
 	}
 	Thread_UnlockMutex(c->mutex);
+	if (!r)
+		TouchUIB_Wake();
 	return r;
 }
 
@@ -779,6 +789,54 @@ static void send_changes(void)
 	}
 }
 
+// a string prop of a node, unquoted ("" when absent or not a string)
+static void prop_string(uibnode_t *n, const char *key, char *out, size_t size)
+{
+	size_t l;
+	char err[64];
+	const char *j = UIBS_PropJSON(n, key, &l);
+	out[0] = 0;
+	if (!j || !l || j[0] != '"')
+		return;
+	uibjdoc_t *d = UIBJ_Parse(j, l, err, sizeof(err));
+	uibj_t *v = UIBJ_Root(d);
+	if (v && v->type == UIBJ_STR)
+		dpsnprintf(out, size, "%s", v->str);
+	UIBJ_Free(d);
+}
+
+// The first rows of a list that just appeared, sent right after the diff that
+// creates it (a `rows` message with re 0, docs/UI_BRIDGE.md "Opening a screen
+// fast"): the renderer has them before it draws the list, instead of asking
+// for them and waiting a frame or two for the answer.
+#define UIB_FIRST_ROWS 50
+static void push_first_rows(const char *listid)
+{
+	uibnode_t *n = UIBS_Find(listid);
+	char source[160], sort[64], filter[256];
+	if (!n)
+		return;
+	prop_string(n, "source", source, sizeof(source));
+	prop_string(n, "sort", sort, sizeof(sort));
+	prop_string(n, "filter", filter, sizeof(filter));
+	size_t dl;
+	const char *dj = UIBS_PropJSON(n, "desc", &dl);
+	int desc = dj && dl == 4 && !memcmp(dj, "true", 4);
+	if (!source[0])
+		return;
+	for (int i = 0; i < UIB_MAX_CONNS; i++)
+	{
+		touchuib_conn_t *c = uib.conns[i];
+		if (!c || c->closed || !c->hello || c->local || c->overflow)
+			continue;
+		uibbuf_t b = {0};
+		UIBSrc_Window(&b, UIB_NextMsgId(i), 0, source, 0, UIB_FIRST_ROWS, sort, desc, filter, 1);
+		UIB_Trace("first rows of %s (%s) to %s, %d bytes", listid, source, c->name, (int)b.n);
+		UIB_SendTo(i, b.p, b.n);
+		UIBB_Free(&b);
+	}
+}
+
 // app.reserved: what the engine draws over the UI in its own window (the
 // console button, touch_shellbtn.c), in dp, so renderers lay out around it.
 static void UIB_WatchReserved(void)
@@ -948,6 +1006,67 @@ static void UIB_Input_f(cmd_state_t *cmd)
 }
 #endif
 
+// ---------------------------------------------------------------- sleeping on the bridge
+
+// The engine idles between frames (behind a native screen at cl_maxidlefps, 20
+// a second; a hidden backend window likewise), and a message from the front
+// end used to wait for the next frame: up to 50 ms before a tap was even seen.
+// The frame's sleep now also waits on the bridge (this eventfd, which any
+// thread may poke, the Android JNI queue through nativeui_set_wake_fd, and the
+// stream's socket) and ends the moment something arrives. The frame rate is
+// unchanged; only the wait for input is gone.
+int TouchUIB_WakeFd(void)
+{
+#ifdef UIB_WAKE
+	if (uib.wakefd < 0)
+		uib.wakefd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+#endif
+	return uib.wakefd;
+}
+
+void TouchUIB_Wake(void)
+{
+#ifdef UIB_WAKE
+	uint64_t one = 1;
+	if (uib.wakefd >= 0 && write(uib.wakefd, &one, sizeof(one)) < 0)
+		return;
+#endif
+}
+
+double TouchUIB_SleepTime(double sleeptime)
+{
+#ifdef UIB_WAKE
+	struct pollfd p[2];
+	int n = 0, any = 0, ms;
+	double t0, slept;
+	if (sleeptime < 0.002 || host.restless || cls.state == ca_dedicated || !uib.up)
+		return sleeptime;
+	for (int i = 0; i < UIB_MAX_CONNS; i++)
+		any |= uib.conns[i] && !uib.conns[i]->local;
+	if (!any && UIBStream_PollFd() < 0)
+		return sleeptime; // no front end: the stock sleep
+	if (Curl_Running())
+		return sleeptime; // Sys_Sleep waits on the transfers then
+	p[n].fd = TouchUIB_WakeFd(); p[n].events = POLLIN; p[n].revents = 0; n += p[n].fd >= 0;
+	p[n].fd = UIBStream_PollFd(); p[n].events = POLLIN; p[n].revents = 0; n += p[n].fd >= 0;
+	if (!n)
+		return sleeptime;
+	ms = (int)((sleeptime - 0.001) * 1000.0); // the last millisecond to Sys_Sleep, which is exact
+	t0 = Sys_DirtyTime();
+	if (poll(p, n, ms) > 0)
+	{
+		uint64_t v;
+		if (uib.wakefd >= 0 && read(uib.wakefd, &v, sizeof(v)) < 0)
+			v = 0;
+		return 0; // something for the engine: the next frame now
+	}
+	slept = Sys_DirtyTime() - t0;
+	return sleeptime > slept ? sleeptime - slept : 0;
+#else
+	return sleeptime;
+#endif
+}
+
 void TouchUIB_Frame(void)
 {
 #ifdef CONFIG_MENU
@@ -1013,12 +1132,24 @@ void TouchUIB_Frame(void)
 	}
 	UIBSrc_Frame();
 	UIBImg_Frame();
+	// lists that appeared this frame are counted now; their first rows follow the diff
+	char fresh[16][UIB_MAX_ID];
+	int nfresh = 0;
+	for (int i = 0; i < UIBS_FreshCount() && nfresh < 16; i++)
+	{
+		uibnode_t *n = UIBS_Find(UIBS_Fresh(i));
+		if (n && UIBSrc_CountFresh(n) > 0)
+			dpsnprintf(fresh[nfresh++], sizeof(fresh[0]), "%s", n->id);
+	}
+	UIBS_ClearFresh();
 	if (UIBS_Commit())
 		send_changes();
 	else
 		for (int i = 0; i < UIB_MAX_CONNS; i++)
 			if (uib.conns[i] && uib.conns[i]->hello && uib.conns[i]->overflow)
 				send_snapshot(i);
+	for (int i = 0; i < nfresh; i++)
+		push_first_rows(fresh[i]);
 	UIBStream_Frame();
 }
 
@@ -1678,6 +1809,7 @@ void TouchUIB_Init(void)
 	Cvar_RegisterVariable(&uib_version);
 	Cvar_RegisterVariable(&uib_debug);
 	Cvar_RegisterVariable(&uib_trace);
+	Cvar_RegisterVariable(&uib_prepare);
 	Cmd_AddCommand(CF_CLIENT, "uib_dump", UIB_Dump_f, "UI bridge: write the current snapshot to the console or a file (uib_dump <file>)");
 	Cmd_AddCommand(CF_CLIENT, "uib_send", UIB_Send_f, "UI bridge: deliver a renderer message (JSON) on the console loopback and print the replies");
 	Cmd_AddCommand(CF_CLIENT, "uib_event", UIB_Event_f, "UI bridge: deliver an event, e.g. uib_event {\"ev\":\"action\",\"node\":\"home/hero\",\"action\":\"play\"}");

@@ -690,7 +690,31 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     override fun action(node: String, action: Map<String, Any?>) {
         traceStart(action.str("id"))
         if (stopgap?.action(node, action) == true) return
-        client?.event("action", mapOf("node" to node, "action" to action.str("id")))
+        // "opens": the screen this shows, built ahead (app.prepared) — shown now, in
+        // the frame after the tap; the engine's answer then only confirms it
+        val opens = action.str("opens")
+        if (opens.isNotEmpty()) showPrepared(opens)
+        client?.event("action", linkedMapOf<String, Any?>("node" to node, "action" to action.str("id")).apply {
+            action["payload"]?.let { put("payload", it) }
+        })
+    }
+
+    private var optimistic: String? = null
+
+    private fun showPrepared(id: String) {
+        val r = renderer ?: return
+        if (!r.isPrepared(id) || screens.lastOrNull() == id || failed) return
+        if (client?.modal?.isNotEmpty() == true) return
+        r.navigate(id, "push")
+        optimistic = id
+        // the engine did not open it after all (refused, or another screen came): show what it says
+        main.postDelayed({
+            if (optimistic == id) {
+                optimistic = null
+                val top = client?.let { (it as? RustCore)?.top } ?: return@postDelayed
+                if (top.isNotEmpty() && top != id && screens.lastOrNull() == id) renderer?.navigate(top, "pop")
+            }
+        }, 1500)
     }
     override fun value(node: String, value: Any?) { client?.event("value", mapOf("node" to node, "value" to value)) }
     override fun submit(node: String, value: Any?) { client?.event("submit", mapOf("node" to node, "value" to value)) }
@@ -826,22 +850,36 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     // ---------------------------------------------------------------- ViewRenderer.Host
 
     override fun showScreen(view: View, id: String, transition: String) {
-        val old = if (screenLayer.childCount > 0) screenLayer.getChildAt(screenLayer.childCount - 1) else null
-        renderer?.let { r -> screens.lastOrNull()?.let { r.saveScroll(it) } }
+        if (optimistic == id) optimistic = null
+        if (screens.lastOrNull() == id && view.parent === screenLayer && view.visibility == View.VISIBLE) {
+            // shown already (at the tap, built ahead): the engine's answer confirms it
+            Log.i(tag, "Native UI: screen $id confirmed ($transition)")
+            return
+        }
+        val top = if (screenLayer.childCount > 0) screenLayer.getChildAt(screenLayer.childCount - 1) else null
+        val old = top?.takeIf { it.visibility == View.VISIBLE }
+        val oldId = screens.lastOrNull()
+        renderer?.let { r -> oldId?.let { r.saveScroll(it) } }
         if (transition != "push" && screens.isNotEmpty()) screens.removeAt(screens.size - 1)
         screens.remove(id)
         screens.add(id)
         hideKeyboard()
-        (view.parent as? ViewGroup)?.removeView(view)
-        screenLayer.addView(view, match())
+        view.animate().cancel()
+        if (view.parent === screenLayer) view.bringToFront() // built ahead: laid out already, no layout pass now
+        else { (view.parent as? ViewGroup)?.removeView(view); screenLayer.addView(view, match()) }
+        view.visibility = View.VISIBLE
+        // the screen that goes: hidden but kept if it is built ahead (Multiplayer
+        // after Back), removed otherwise
+        val keepOld = oldId != null && renderer?.isPrepared(oldId) == true
+        val retire: (View) -> Unit = { v -> if (keepOld) { v.visibility = View.INVISIBLE; v.alpha = 1f; screenLayer.removeView(v); screenLayer.addView(v, 0, match()) } else screenLayer.removeView(v) }
         if (old != null && old !== view && old !== skeleton) {
-            if (Theme.reducedMotion(activity)) screenLayer.removeView(old)
+            if (Theme.reducedMotion(activity)) retire(old)
             else {
-                // a short fade of the new screen in; it takes taps at once
-                view.alpha = 0f
-                view.animate().alpha(1f).setDuration(110).withEndAction { screenLayer.removeView(old) }.start()
+                // a short fade from already visible: the first frame shows the screen
+                view.alpha = 0.6f
+                view.animate().alpha(1f).setDuration(90).withEndAction { if (renderer?.screenView(screens.lastOrNull() ?: "") !== old) retire(old) }.start()
             }
-        }
+        } else view.alpha = 1f
         if (wantVisible && root.visibility != View.VISIBLE) setVisible(true)
         if (skeleton != null) {
             // the one deliberate transition: Home fades in over the banner
@@ -902,6 +940,22 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         traceDraw = l
         root.viewTreeObserver.addOnDrawListener(l)
+    }
+
+    /**
+     * A screen built ahead (app.prepared): in the layer, under the shown one,
+     * INVISIBLE — measured and laid out with its rows bound, never drawn, taking
+     * no touches — so showing it is a visibility change in the next frame.
+     */
+    override fun topScreen(): String? = screens.lastOrNull()
+
+    override fun prepareScreen(view: View, id: String) {
+        if (screens.lastOrNull() == id) return
+        if (view.parent === screenLayer) { view.visibility = View.INVISIBLE; return }
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.visibility = View.INVISIBLE
+        screenLayer.addView(view, 0, match())
+        if (root.visibility != View.VISIBLE) view.requestLayout()
     }
 
     override fun showDialog(view: View?) {
