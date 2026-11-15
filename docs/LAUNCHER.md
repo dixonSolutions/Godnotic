@@ -6,7 +6,7 @@ match. It is Rust, with one cross-platform core and a native UI per platform:
 | Crate | What it is |
 | --- | --- |
 | `loader/crates/core` (`godnotic-loader-core`) | No UI toolkit: the UI-bridge client, the renderer trait, sessions (starting the engine, the secret fd, how a session ended), the pack downloader, paths, launcher.conf, platform detection, `godnotic://` links. Builds for Linux and for `aarch64`/`armv7`/`x86_64-linux-android`. |
-| `loader/crates/gtk` (`godnotic-loader`) | The Linux app: GTK 4 / libadwaita through gtk4-rs, pinned to what the Flatpak runtime has (GNOME 48: GTK 4.18, libadwaita 1.7). |
+| `loader/crates/gtk` (`godnotic-loader`) | The Linux app: GTK 4 / libadwaita through gtk4-rs, built against the Flatpak runtime, GNOME 50, with features pinned to GTK 4.18 and libadwaita 1.7. |
 | `loader/crates/android` | The JNI surface for the Android app's Kotlin UI (stub; filled on `work/androidui`). |
 
 The old Kotlin/Native launcher (`launcher/`) still builds and stays until the engine's
@@ -124,13 +124,13 @@ godnotic-loader [godnotic://join/HOST:PORT]
 ## Build and test
 
 ```sh
-loader/build.sh            # inside org.gnome.Sdk//48 (or the newest installed), -> loader/dist/
+loader/build.sh            # inside org.gnome.Sdk//50 (or the newest installed), -> loader/dist/
 loader/build.sh --check    # + clippy -D warnings (GTK and core) and the core tests
 cd loader && cargo test -p godnotic-loader-core --features http-ureq   # core alone, no GTK
 ```
 
 CI: `.github/workflows/loader.yml` (core tests, clippy, `cargo check` for the three Android
-targets; the GTK app built and linted inside the GNOME 48 SDK on x86_64 and aarch64
+targets; the GTK app built and linted inside the GNOME 50 SDK on x86_64 and aarch64
 runners); `build-and-publish.yml` takes its `loader-bin-*` artifacts for the Flatpak.
 
 Core tests: every fixture in `tests/uibridge/fixtures` deserializes into typed nodes and

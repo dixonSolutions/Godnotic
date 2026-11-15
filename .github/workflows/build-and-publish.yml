@@ -57,7 +57,7 @@ jobs:
     # ubuntu-24.04-arm is free for public repos.
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
     strategy:
       fail-fast: false
@@ -175,10 +175,28 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       version_code: ${{ github.run_number }}
 
+  flatpak-remote-test:
+    name: Flatpak remote publish test
+    # scripts/publish-flatpak-remote.sh end to end with a tiny fake app: parent
+    # links, static deltas, appstream, pruning, signing, no 404s. Runs in every
+    # run (a dispatch on any branch too); the publish below waits for it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flatpak and OSTree
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatpak ostree gnupg
+          flatpak --version
+          ostree --version | head -2
+      - name: Two publishes, an update through the delta, a rollback, a signed publish
+        run: bash scripts/test-flatpak-remote.sh
+
   publish-pages:
     name: Publish Pages (Flatpak + Click remotes)
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    needs: [version, flatpak, click]
+    needs: [version, flatpak, click, flatpak-remote-test]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -204,10 +222,17 @@ jobs:
           FLATPAK_REMOTE_URL: ${{ env.FLATPAK_REMOTE_URL }}
           CLICK_REMOTE_URL: ${{ env.CLICK_REMOTE_URL }}
           CLICK_NAME: ${{ env.CLICK_NAME }}
-          PRUNE_DEPTH: '40'
+          # Builds per ref the Flatpak remote keeps (rollback and history);
+          # each older one costs only the files it changed, plus one delta.
+          KEEP_VERSIONS: '5'
+          # Optional: an ASCII-armored GPG secret key without passphrase. When
+          # the secret exists the remote is signed and the .flatpakref and
+          # .flatpakrepo carry its public key; without it nothing is signed.
+          # Setup: docs/RELEASES.md, "Signing the Flatpak remote".
+          FLATPAK_GPG_KEY: ${{ secrets.FLATPAK_GPG_KEY }}
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatpak ostree
+          sudo apt-get install -y -qq flatpak ostree gnupg
           chmod +x scripts/publish-flatpak-remote.sh scripts/publish-click-remote.sh
           mkdir -p site
           X86_BUNDLE="$(find artifacts/flatpak-x86_64 -name '*.flatpak' | head -1)"
@@ -251,6 +276,8 @@ jobs:
           # menu fetches this plain-text file on every platform.
           bash scripts/release-changelog.sh text "$PACKAGE_VERSION" "$GITHUB_SHA" > site/changelog.txt
           wc -c site/changelog.txt
+          # Pages caps a site at 1 GB (the Web workflow adds web/ to this one).
+          du -sh site site/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

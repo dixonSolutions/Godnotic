@@ -16,12 +16,12 @@
 #      package-manager text).
 #
 #   scripts/test-flatpak-updates.sh    (needs loader/target/release/godnotic-loader from
-#                                       loader/build.sh, Xvfb, org.gnome.Platform//48,
+#                                       loader/build.sh, Xvfb, org.gnome.Platform//50,
 #                                       dbus-daemon and python3-gi)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${GODNOTIC_LOADER_BIN:-$ROOT/loader/target/release/godnotic-loader}"
-RUNTIME="${GODNOTIC_TEST_RUNTIME:-org.gnome.Platform//48}"
+RUNTIME="${GODNOTIC_TEST_RUNTIME:-org.gnome.Platform//50}"
 if [ ! -x "$BIN" ] || ! command -v Xvfb > /dev/null || ! command -v dbus-daemon > /dev/null \
 	|| ! flatpak info "$RUNTIME" > /dev/null 2>&1 || ! python3 -c 'import gi' 2> /dev/null; then
 	echo "SKIP: needs $BIN (loader/build.sh), Xvfb, dbus-daemon, python3-gi and $RUNTIME"
