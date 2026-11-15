@@ -155,6 +155,16 @@ class VirtualList(
 
     fun refresh() = adapter.notifyDataSetChanged()
 
+    /** Rows laid out on screen with their data (not placeholders): the open trace's "rows drawn". */
+    fun shownRows(): Int {
+        var n = 0
+        for (i in 0 until view.childCount) {
+            val p = view.getChildAdapterPosition(view.getChildAt(i))
+            if (p != RecyclerView.NO_POSITION && window.row(p) != null) n++
+        }
+        return n
+    }
+
     /** One horizontal row of cards of [itemWidth] px (a picker inside a scrolling page). */
     var carouselWidth = 0
         private set

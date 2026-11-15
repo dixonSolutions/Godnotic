@@ -48,6 +48,10 @@ while a finger is on it.
 #include "touch_srvlist_logic.h"
 #include "touch_joinfail.h"
 #include <time.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+void UIB_Trace(const char *fmt, ...) DP_FUNC_PRINTF(1); // touch_uib.c: the open trace
 
 #ifdef CONFIG_MENU
 
@@ -612,6 +616,9 @@ static void settle(double now)
 	stats_line(buf, sizeof(buf));
 	if (net_slist_stats_print.integer || developer.integer)
 		Con_Printf("%s\n", buf);
+#ifdef __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "Godnotic", "%s", buf);
+#endif
 }
 
 static void TouchSrvList_Stats_f(cmd_state_t *cmd)
@@ -634,6 +641,8 @@ void TouchSrvList_Refresh(qbool resetcache)
 {
 	unsigned i;
 	double now = now_real();
+	double dt0 = Sys_DirtyTime();
+	extern double touchlan_query_t0;
 	qbool had_rows = false;
 	sync_sides();
 	if (resetcache)
@@ -688,6 +697,9 @@ void TouchSrvList_Refresh(qbool resetcache)
 	// the first wave goes out now, in the frame the list opened, not the next
 	if (sl.fast && !sl.model)
 		TouchSrvList_QueryFrame();
+	UIB_Trace("server list refresh%s: masters and LAN %.1f ms, the list's own %.1f ms, %d rows up, %d seeded",
+		resetcache ? " (reset)" : "", touchlan_query_t0 > 0 ? (dt0 - touchlan_query_t0) * 1000.0 : -1.0,
+		(Sys_DirtyTime() - dt0) * 1000.0, sl.rows_at_open, sl.seeded);
 }
 
 void TouchSrvList_Replied(unsigned n)

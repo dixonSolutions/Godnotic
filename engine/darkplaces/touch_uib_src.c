@@ -505,6 +505,7 @@ void UIBSrc_UpdateCounts(void)
 		int n = dpsnprintf(buf, sizeof(buf), "{\"uib\":1,\"t\":\"source\",\"id\":0,\"source\":\"%s\",\"rev\":%lld,\"total\":%d}",
 			s->name, (long long)s->rev, s->nrows);
 		UIB_Broadcast(buf, n);
+		UIB_Trace("source %s rev %lld: %d rows", s->name, (long long)s->rev, s->nrows);
 	}
 }
 

@@ -11,10 +11,39 @@ docs/UI_BRIDGE.md is the contract; touch_uib_store.c holds the tree.
 #include <sys/eventfd.h>
 #include <unistd.h>
 #endif
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
 cvar_t menu_touch_uib = {CF_CLIENT | CF_ARCHIVE, "menu_touch_uib", "1", "Godnotic: 1 (default) draws the menu from the UI bridge descriptions (touch_uib_*.qc) with the QuakeC renderer wherever no native renderer shows it, and lets the classic menu draw the dialogs it has no screen for; 0 is the classic touch menu everywhere"};
 static cvar_t uib_version = {CF_CLIENT | CF_READONLY, "uib_version", TOUCHUIB_SCHEMA, "Godnotic UI bridge schema version (the menu VM checks it before using the bridge builtins)"};
 static cvar_t uib_debug = {CF_CLIENT, "uib_debug", "0", "Godnotic UI bridge: 1 logs messages, 2 also logs their text"};
+static cvar_t uib_trace = {CF_CLIENT, "uib_trace", "0", "Godnotic UI bridge: 1 prints how a screen opened (the action, the diff, the first rows, in ms after the action); Android always logs it"};
+
+// ---------------------------------------------------------------- open trace
+// For 3 s after an action event: what the engine did for it and when, in ms
+// after the action arrived (docs/UI_BRIDGE.md, "Opening a screen fast").
+static double trace_t0, trace_until;
+
+int UIB_Tracing(void) { return trace_until > 0 && Sys_DirtyTime() < trace_until; }
+
+static double UIB_TraceMs(void) { return (Sys_DirtyTime() - trace_t0) * 1000.0; }
+
+void UIB_Trace(const char *fmt, ...)
+{
+	char buf[512];
+	va_list ap;
+	if (!UIB_Tracing())
+		return;
+	va_start(ap, fmt);
+	dpvsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+#ifdef __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "Godnotic", "uib: +%.1f ms %s", UIB_TraceMs(), buf);
+#endif
+	if (uib_trace.integer)
+		Con_Printf("uib: +%.1f ms %s\n", UIB_TraceMs(), buf);
+}
 
 // ---------------------------------------------------------------- queues
 
@@ -693,6 +722,7 @@ void UIB_Handle(int conn, const char *json, size_t len)
 		const char *filter = UIBJ_Str(m, "filter", NULL);
 		UIBSrc_Window(&b, UIB_NextMsgId(conn), re, UIBJ_Str(m, "source", ""), (int)UIBJ_Num(m, "offset", 0),
 			(int)UIBJ_Num(m, "limit", 50), UIBJ_Str(m, "sort", NULL), UIBJ_Bool(m, "desc", 0), filter ? filter : "", filter != NULL);
+		UIB_Trace("window %s %d+%d answered, %d bytes", UIBJ_Str(m, "source", ""), (int)UIBJ_Num(m, "offset", 0), (int)UIBJ_Num(m, "limit", 50), (int)b.n);
 		UIB_SendTo(conn, b.p, b.n);
 		UIBB_Free(&b);
 	}
@@ -702,7 +732,17 @@ void UIB_Handle(int conn, const char *json, size_t len)
 		UIBImg_Request(conn, re, UIBJ_Str(m, "ref", ""), (int)UIBJ_Num(m, "w", 0), (int)UIBJ_Num(m, "h", 0), !strcmp(as, "bytes"));
 	}
 	else if (!strcmp(t, "ev"))
+	{
+		int act = !strcmp(UIBJ_Str(m, "ev", ""), "action");
+		if (act)
+		{
+			trace_t0 = Sys_DirtyTime();
+			trace_until = trace_t0 + 3;
+		}
 		handle_event(conn, re, m, json, len);
+		if (act)
+			UIB_Trace("action %s %s handled (%s)", UIBJ_Str(m, "node", ""), UIBJ_Str(m, "action", ""), c ? c->name : "console");
+	}
 	else
 		UIB_SendError(conn, re, "unknown", "unknown message type");
 	UIBJ_Free(d);
@@ -733,6 +773,7 @@ static void send_changes(void)
 			continue;
 		}
 		UIB_SendTo(i, s, len);
+		UIB_Trace("diff rev %lld to %s, %d bytes", (long long)rev, c->name, (int)len);
 		free(s);
 		c->sent_rev = rev;
 	}
@@ -1636,6 +1677,7 @@ void TouchUIB_Init(void)
 	Cvar_RegisterVariable(&touch_chat_system_lines);
 	Cvar_RegisterVariable(&uib_version);
 	Cvar_RegisterVariable(&uib_debug);
+	Cvar_RegisterVariable(&uib_trace);
 	Cmd_AddCommand(CF_CLIENT, "uib_dump", UIB_Dump_f, "UI bridge: write the current snapshot to the console or a file (uib_dump <file>)");
 	Cmd_AddCommand(CF_CLIENT, "uib_send", UIB_Send_f, "UI bridge: deliver a renderer message (JSON) on the console loopback and print the replies");
 	Cmd_AddCommand(CF_CLIENT, "uib_event", UIB_Event_f, "UI bridge: deliver an event, e.g. uib_event {\"ev\":\"action\",\"node\":\"home/hero\",\"action\":\"play\"}");

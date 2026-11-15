@@ -688,6 +688,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     // ---------------------------------------------------------------- UiEvents (from the views)
 
     override fun action(node: String, action: Map<String, Any?>) {
+        traceStart(action.str("id"))
         if (stopgap?.action(node, action) == true) return
         client?.event("action", mapOf("node" to node, "action" to action.str("id")))
     }
@@ -851,6 +852,56 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             Log.i(tag, "Native UI: skeleton replaced by $id after ${SystemClock.elapsedRealtime() - started} ms")
         }
         Log.i(tag, "Native UI: screen $id ($transition) ${SystemClock.elapsedRealtime() - started} ms after onCreate")
+        traceScreen(id)
+    }
+
+    // ---------------------------------------------------------------- open trace
+
+    /*
+     * How long a tap took to show its screen and the rows on it, in logcat
+     * (docs/UI_BRIDGE.md, "Opening a screen fast"; the engine's side logs
+     * "uib: +N ms ..."): "open: <action>" at the tap, then "screen <id> up"
+     * when the views are in place, "drawn" at the first frame drawn with it,
+     * "rows drawn" at the first frame with rows of its lists on screen.
+     */
+    private var traceAt = 0L
+    private var traceAction = ""
+    private var traceId: String? = null
+    private var traceDraw: android.view.ViewTreeObserver.OnDrawListener? = null
+
+    private fun traceStart(action: String) {
+        traceAt = SystemClock.uptimeMillis()
+        traceAction = action
+        traceId = null
+        Log.i(tag, "Native UI: open: action $action")
+    }
+
+    private fun traceMs() = SystemClock.uptimeMillis() - traceAt
+
+    private fun traceScreen(id: String) {
+        if (traceAt == 0L || traceId != null || traceMs() > 3000) return
+        traceId = id
+        val r = renderer ?: return
+        Log.i(tag, "Native UI: open: screen $id up +${traceMs()} ms after the tap ($traceAction), rows known ${r.shownRows(id).second}")
+        traceDraw?.let { old -> root.viewTreeObserver.removeOnDrawListener(old) }
+        var drawn = false
+        var done = false
+        val l = object : android.view.ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                if (done) return
+                val (shown, total) = r.shownRows(id)
+                if (!drawn) { drawn = true; Log.i(tag, "Native UI: open: screen $id drawn +${traceMs()} ms after the tap, rows on screen $shown of $total") }
+                if (shown > 0 || traceMs() > 3000 || screens.lastOrNull() != id) {
+                    if (shown > 0) Log.i(tag, "Native UI: open: rows drawn +${traceMs()} ms after the tap, $shown on screen of $total")
+                    done = true
+                    val me = this
+                    root.post { root.viewTreeObserver.removeOnDrawListener(me); if (traceDraw === me) traceDraw = null }
+                    traceAt = 0L
+                }
+            }
+        }
+        traceDraw = l
+        root.viewTreeObserver.addOnDrawListener(l)
     }
 
     override fun showDialog(view: View?) {

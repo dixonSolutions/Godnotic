@@ -155,6 +155,13 @@ class ViewRenderer(
         imageWaiters.remove(ref)?.forEach { it(path) }
     }
 
+    /** Rows shown with data and the rows known, over the lists of [screen] (the open trace). */
+    fun shownRows(screen: String): Pair<Int, Int> {
+        var shown = 0; var total = 0
+        for (l in lists.values.flatten()) if (isUnder(l.id, screen)) { shown += l.shownRows(); total += maxOf(0, l.window.total) }
+        return shown to total
+    }
+
     fun saveScroll(screen: String) {
         val e = nodes[screen] ?: return
         val m = saved.getOrPut(screen) { HashMap() }

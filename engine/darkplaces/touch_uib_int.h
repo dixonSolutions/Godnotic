@@ -210,6 +210,13 @@ int UIBMod_Materialize(const char *screenid);   // build a registered mod page a
 void UIBMod_Event(const char *mod_id, const char *json, size_t len);
 
 double UIB_Time(void);
+// the open trace (uib_trace): lines while one runs, 3 s after an action
+int UIB_Tracing(void);
+void UIB_Trace(const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 1, 2)))
+#endif
+	;
 void *UIB_CvarFind(const char *name);
 const char *UIB_CvarString(void *cvar);
 void UIB_LocalPost(const char *json, size_t len);
