@@ -105,7 +105,8 @@ if until_ 60 status owned; then
 else
 	bad "no portal status: $(tr '\n' '|' < "$STATUS" 2> /dev/null) $(tail -3 "$WORK/app.log")"
 fi
-grep -q '"call": "CreateUpdateMonitor"' "$WORK/portal.log" && ok "it made an update monitor" || bad "no CreateUpdateMonitor call"
+# the monitor can come a moment after the status file says portal=yes
+until_ 10 monitor grep -q '"call": "CreateUpdateMonitor"' "$WORK/portal.log" && ok "it made an update monitor" || bad "no CreateUpdateMonitor call"
 
 ask check
 checked() { st_is available && [ "$(line 4)" = 1.2.206 ] && [ "$(key checked_result)" = available ]; }
