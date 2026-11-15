@@ -133,7 +133,7 @@ class VirtualList(
      * rebound, a new count grows or shrinks the list at its end, and the row the
      * player was looking at (below the top) stays where it was on screen while the
      * order around it changes (a refresh streaming answers in, docs/UI_BRIDGE.md
-     * "Rows that stay put"). Nothing is cleared first, so nothing flashes.
+     * "Lists that stay put while they update"). Nothing is cleared first, so nothing flashes.
      */
     fun rows(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         val before = window.total
