@@ -4,15 +4,15 @@
 # runs on, inside that SDK, with this user's rustup toolchain.
 # Output: loader/dist/godnotic-loader-<arch>
 #
-#   flatpak install --user flathub org.gnome.Sdk//48
+#   flatpak install --user flathub org.gnome.Sdk//50
 #   loader/build.sh            # release build for this machine's arch
 #   loader/build.sh --check    # also clippy -D warnings and the core tests
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
-GNOME="${XT_GNOME_VERSION:-48}"
+GNOME="${XT_GNOME_VERSION:-50}"
 SDK=""
-for b in "$GNOME" 50 49 48; do
+for b in "$GNOME" 51 50; do
     if flatpak info --user "org.gnome.Sdk//$b" >/dev/null 2>&1 || flatpak info "org.gnome.Sdk//$b" >/dev/null 2>&1; then SDK="org.gnome.Sdk//$b"; break; fi
 done
 [ -n "$SDK" ] || { echo "No org.gnome.Sdk installed (flatpak install --user flathub org.gnome.Sdk//$GNOME)" >&2; exit 1; }

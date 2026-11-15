@@ -76,7 +76,7 @@ flatpak install --user https://dixonSolutions.github.io/Godnotic/flatpak/io.gith
 flatpak run io.github.dixonSolutions.Godnotic
 ```
 
-The runtime (GNOME) comes from Flathub. The remote is not GPG-signed: the `.flatpakref` (and [`godnotic.flatpakrepo`](https://dixonSolutions.github.io/Godnotic/flatpak/godnotic.flatpakrepo) for `flatpak remote-add --from`) tell Flatpak so; a plain `flatpak remote-add` of the URL needs `--no-gpg-verify`. Settings > Updates checks for and installs new versions from inside the app (through the Flatpak portal, Flatpak 1.6 or newer); GNOME Software, Discover and `flatpak update` work as well.
+The runtime (GNOME) comes from Flathub. The remote is not GPG-signed: the `.flatpakref` (and [`godnotic.flatpakrepo`](https://dixonSolutions.github.io/Godnotic/flatpak/godnotic.flatpakrepo) for `flatpak remote-add --from`) tell Flatpak so; a plain `flatpak remote-add` of the URL needs `--no-gpg-verify`. Settings > Updates checks for and installs new versions from inside the app (through the Flatpak portal, Flatpak 1.6 or newer); GNOME Software, Discover and `flatpak update` work as well. The remote keeps the last five builds: updates download only what changed, and `flatpak update --commit=<commit>` goes back to an older one (`flatpak remote-info --log godnotic io.github.dixonSolutions.Godnotic` lists them).
 
 Or download offline bundles from [GitHub Releases](https://github.com/dixonSolutions/Godnotic/releases/latest) (new `v1.2.*` tag per build; older tags kept).
 

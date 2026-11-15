@@ -12,12 +12,12 @@
 #                         sliver under a strip of tall mode cards)
 #
 #   scripts/test-gtk-layout.sh   (needs loader/target/release/godnotic-loader:
-#                                 loader/build.sh, Xvfb and org.gnome.Platform//48)
+#                                 loader/build.sh, Xvfb and org.gnome.Platform//50)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${GODNOTIC_LOADER_BIN:-$ROOT/loader/target/release/godnotic-loader}"
-if [ ! -x "$BIN" ] || ! command -v Xvfb > /dev/null || ! flatpak info org.gnome.Platform//48 > /dev/null 2>&1; then
-	echo "SKIP: needs $BIN (loader/build.sh), Xvfb and org.gnome.Platform//48"
+if [ ! -x "$BIN" ] || ! command -v Xvfb > /dev/null || ! flatpak info org.gnome.Platform//50 > /dev/null 2>&1; then
+	echo "SKIP: needs $BIN (loader/build.sh), Xvfb and org.gnome.Platform//50"
 	exit 0
 fi
 # under home: the Flatpak sandbox does not see the host's /tmp

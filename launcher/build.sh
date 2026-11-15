@@ -9,12 +9,12 @@
 # Flatpak runs on (runtime-version in flatpak/*.yml). Override with
 # XT_GTK_INCLUDE (an SDK files/ dir), XT_GTK_LIB_X64, XT_GTK_LIB_ARM64.
 #
-#   flatpak install --user flathub org.gnome.Sdk//48
-#   flatpak install --user --arch=aarch64 flathub org.gnome.Platform//48   # optional
+#   flatpak install --user flathub org.gnome.Sdk//50
+#   flatpak install --user --arch=aarch64 flathub org.gnome.Platform//50   # optional
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-GNOME="${XT_GNOME_VERSION:-48}"
+GNOME="${XT_GNOME_VERSION:-50}"
 
 runtime_files() { # <id> <arch> <branch>
     local base

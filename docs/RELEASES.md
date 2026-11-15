@@ -11,7 +11,7 @@ Packages are slim: compiled game logic and touch configs ship in the app; **text
 
 All builds and publishing run through [GitHub Actions](.github/workflows/build-and-publish.yml).
 
-Each push to `main` creates a **new immutable version** `1.2.<run_number>` (tag `v1.2.<run_number>`). Older GitHub Releases are **not** deleted. The Flatpak remote gets the new commit (see below: the commits carry no parent, so no older ones stay reachable).
+Each push to `main` creates a **new immutable version** `1.2.<run_number>` (tag `v1.2.<run_number>`). Older GitHub Releases are **not** deleted. The Flatpak remote gets the new commit on top of the previous one and keeps the last five builds (see below).
 
 ## Flatpak
 
@@ -29,16 +29,80 @@ flatpak install --user https://dixonSolutions.github.io/Godnotic/flatpak/io.gith
 flatpak update --user io.github.dixonSolutions.Godnotic
 ```
 
-The remote is **not GPG-signed**. `scripts/publish-flatpak-remote.sh` publishes
-`io.github.dixonSolutions.Godnotic.flatpakref` (runtime from Flathub) and
-`godnotic.flatpakrepo` without a `GPGKey`, which tells Flatpak to skip signature checks for
-this remote. A bare `flatpak remote-add <url>` expects signatures and fails ("GPG verification
-enabled, but no summary signatures found"); add `--no-gpg-verify` there. Signing needs a key
-in a repository secret (not set up yet).
+The remote is **not GPG-signed** yet (see *Signing the Flatpak remote* below for turning it
+on). `scripts/publish-flatpak-remote.sh` publishes `io.github.dixonSolutions.Godnotic.flatpakref`
+(runtime from Flathub) and `godnotic.flatpakrepo` without a `GPGKey`, which tells Flatpak to
+skip signature checks for this remote. A bare `flatpak remote-add <url>` expects signatures and
+fails ("GPG verification enabled, but no summary signatures found"); add `--no-gpg-verify`
+there.
 
-The bundles are imported as commits without a parent, so the remote holds only the newest
-commit per ref: `flatpak remote-info --log` shows no history and there is no rollback to an
-older build through the remote (the `.flatpak` bundles on GitHub Releases are the way back).
+### History, deltas and AppStream
+
+Every publish (the "Publish Pages" job, only on `main`) mirrors the repository Pages serves,
+then commits each new bundle **onto the previous head** (`flatpak build-commit-from`), so:
+
+- the remote keeps the last **5** builds of each ref (`KEEP_VERSIONS` in the workflow; older
+  ones are pruned), listed by `flatpak remote-info --user --log godnotic io.github.dixonSolutions.Godnotic`;
+- going back is `flatpak update --user --commit=<commit> io.github.dixonSolutions.Godnotic`
+  (then `flatpak mask` if it should stay there; a plain `flatpak update` goes forward again);
+- an update downloads a **static delta** from the previous build: 138 KB for 1.2.205 to 1.2.206
+  instead of 28.7 MB, measured. An install two or more builds behind fetches only the changed
+  files. New installs use a from-scratch delta;
+- `flatpak build-update-repo` writes the `appstream/<arch>` and `appstream2/<arch>` branches
+  from the metainfo flatpak-builder composes into each build (name, summary, description,
+  icons, screenshots, releases), which GNOME Software, Discover and `flatpak search` read. CI
+  stamps a release per build into `flatpak/io.github.dixonSolutions.Godnotic.metainfo.xml`
+  (`scripts/set-package-version.sh`, with a link to the GitHub release);
+- the app ID from before the rename (`OLD_FLATPAK_APP_ID` in the script) keeps its end-of-life rebase and
+  gets no deltas;
+- every path Flatpak asks for exists: an unsigned repo has no `summary.sig`,
+  `summary.idx.sig`, `<commit>.commitmeta` or delta index for older commits, and Pages answers
+  a cache-cold missing file with 503 about as often as 404. The script writes them as empty
+  files (an empty GVariant `a{sv}`, read as "none").
+
+Size on Pages (1 GB per site, shared with the Click downloads and `web/`): one build is about
+36 MB of objects and 4.4 MB of from-scratch delta per architecture; each older build adds only
+the files it changed (0.1 to 15 MB) plus one parent delta. Five builds of two architectures,
+plus the old ID, come to roughly 150-250 MB; the job prints the site's size in its summary.
+
+`scripts/test-flatpak-remote.sh` (the "Flatpak remote publish test" job of every "Build and
+publish" run, dispatched ones included; the publish waits for it) runs the script four times against a local stand-in for Pages with a
+small fake app: parent links, the delta, appstream, an installed build updating through the
+delta, rollback, pruning, a signed publish, and no request for a missing file.
+
+### Signing the Flatpak remote
+
+Signing is off until the repository has a `FLATPAK_GPG_KEY` secret. With it, the next release
+signs every kept commit and the summary, publishes the public key as `flatpak/godnotic.gpg`,
+and writes it into the `.flatpakref` and `.flatpakrepo` as `GPGKey=`, so new installs verify.
+Without the secret nothing changes. The owner sets it up once, on a trusted machine:
+
+```bash
+export GNUPGHOME="$(mktemp -d)"
+# CI signs unattended, so the key has no passphrase; the secret store protects it.
+gpg --batch --pinentry-mode loopback --passphrase '' \
+    --quick-gen-key "Godnotic Flatpak repository" rsa4096 sign never
+KEYID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ { print $10; exit }')"
+gpg --armor --export-secret-keys "$KEYID" > godnotic-flatpak.secret.asc
+gpg --armor --export "$KEYID" > godnotic-flatpak.public.asc
+gh secret set FLATPAK_GPG_KEY -R dixonSolutions/Godnotic < godnotic-flatpak.secret.asc
+# Keep godnotic-flatpak.secret.asc somewhere safe offline (a password manager): with the
+# key lost, every verifying install has to import a new one by hand. Then:
+shred -u godnotic-flatpak.secret.asc
+gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"; unset GNUPGHOME
+```
+
+Then push or rerun a release. Check: `curl -sI .../flatpak/summary.sig` has a non-zero length
+and the `.flatpakrepo` has a `GPGKey=` line. Installs made before signing keep their
+`no-gpg-verify` remote and keep updating; to verify them too:
+
+```bash
+curl -sO https://dixonSolutions.github.io/Godnotic/flatpak/godnotic.gpg
+flatpak remote-modify --user --gpg-import=godnotic.gpg --gpg-verify godnotic
+```
+
+To rotate the key, replace the secret: the next release re-signs the kept commits with the new
+key, and verifying installs import the new `godnotic.gpg` the same way.
 
 ### Updates from inside the app
 
