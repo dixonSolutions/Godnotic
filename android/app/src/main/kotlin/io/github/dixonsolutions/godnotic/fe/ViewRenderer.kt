@@ -1511,7 +1511,12 @@ class ViewRenderer(
                     bindTap(r, e, id, data)
                 },
                 makeCell = { _ ->
-                    val r = Kit.row(ctx)
+                    // a stale row is dimmed with alpha: without overlapping rendering that is
+                    // a per-text alpha, not an offscreen buffer per row each frame (the GPU
+                    // time that made refresh frames janky on the tablet's Mali)
+                    val r = object : LinearLayout(ctx) { override fun hasOverlappingRendering() = false }
+                    r.orientation = LinearLayout.HORIZONTAL
+                    r.gravity = Gravity.CENTER_VERTICAL
                     r.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, rowH)
                     r.background = Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
                     r.isClickable = true

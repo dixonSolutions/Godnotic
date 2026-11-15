@@ -856,8 +856,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             Log.i(tag, "Native UI: screen $id confirmed ($transition)")
             return
         }
-        val top = if (screenLayer.childCount > 0) screenLayer.getChildAt(screenLayer.childCount - 1) else null
-        val old = top?.takeIf { it.visibility == View.VISIBLE }
+        // the screen shown now: the topmost visible one (screens built ahead sit hidden in the layer)
+        val old = (screenLayer.childCount - 1 downTo 0).map { screenLayer.getChildAt(it) }.firstOrNull { it.visibility == View.VISIBLE && it !== view }
         val oldId = screens.lastOrNull()
         renderer?.let { r -> oldId?.let { r.saveScroll(it) } }
         if (transition != "push" && screens.isNotEmpty()) screens.removeAt(screens.size - 1)
@@ -871,15 +871,12 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // the screen that goes: hidden but kept if it is built ahead (Multiplayer
         // after Back), removed otherwise
         val keepOld = oldId != null && renderer?.isPrepared(oldId) == true
-        val retire: (View) -> Unit = { v -> if (keepOld) { v.visibility = View.INVISIBLE; v.alpha = 1f; screenLayer.removeView(v); screenLayer.addView(v, 0, match()) } else screenLayer.removeView(v) }
-        if (old != null && old !== view && old !== skeleton) {
-            if (Theme.reducedMotion(activity)) retire(old)
-            else {
-                // a short fade from already visible: the first frame shows the screen
-                view.alpha = 0.6f
-                view.animate().alpha(1f).setDuration(90).withEndAction { if (renderer?.screenView(screens.lastOrNull() ?: "") !== old) retire(old) }.start()
-            }
-        } else view.alpha = 1f
+        val retire: (View) -> Unit = { v -> if (keepOld) v.visibility = View.INVISIBLE else screenLayer.removeView(v) }
+        // No cross-fade: the new screen is whole in the next frame. (A fade blended two
+        // full-screen layers for 110 ms, 10 ms of GPU a frame at 120 Hz on the tablet,
+        // and its first frame showed the screen barely visible.)
+        view.alpha = 1f
+        if (old != null && old !== view && old !== skeleton) retire(old)
         if (wantVisible && root.visibility != View.VISIBLE) setVisible(true)
         if (skeleton != null) {
             // the one deliberate transition: Home fades in over the banner
