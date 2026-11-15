@@ -11,15 +11,15 @@
 #   [GODNOTIC_LOADER_BIN=loader/target/release/godnotic-loader] [OUT=<keep the run here>] scripts/test-gtk-mpsort.sh
 #
 # GTK_BASEDIR defaults to BASEDIR; its pk3s must be readable inside the sandbox (not links
-# into ~/.local/share/flatpak). Exit 77: skipped (no loader, engine, data, Xvfb or GNOME 48).
+# into ~/.local/share/flatpak). Exit 77: skipped (no loader, engine, data, Xvfb or GNOME 50).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE="${ENGINE:-$ROOT/build/bin/xonotic}"
 BIN="${GODNOTIC_LOADER_BIN:-$ROOT/loader/target/release/godnotic-loader}"
 B="${GTK_BASEDIR:-${BASEDIR:-${UIB_BASEDIR:-}}}"
 if [ ! -x "$BIN" ] || [ ! -x "$ENGINE" ] || [ ! -d "${B:-/nonexistent}/data" ] || ! command -v Xvfb > /dev/null \
-	|| ! flatpak info org.gnome.Platform//48 > /dev/null 2>&1; then
-	echo "SKIP: needs $BIN (loader/build.sh), ENGINE, GTK_BASEDIR, Xvfb and org.gnome.Platform//48"
+	|| ! flatpak info org.gnome.Platform//50 > /dev/null 2>&1; then
+	echo "SKIP: needs $BIN (loader/build.sh), ENGINE, GTK_BASEDIR, Xvfb and org.gnome.Platform//50"
 	exit 77
 fi
 # under home: the Flatpak sandbox does not see the host's /tmp
@@ -60,7 +60,7 @@ run() { # script -> $WORK/sort.txt
 	( cd "$ROOT/loader" && timeout 150 scripts/run-headless.sh --size 1280x800 -- flatpak run --filesystem=home --share=network \
 		--env=GODNOTIC_START="$WORK/start.sh" --env=GODNOTIC_SKIP_DATA_CHECK=1 --env=GODNOTIC_TEST_NATIVE_BACKEND=1 \
 		--env=XDG_CONFIG_HOME="$WORK/config" --env=GODNOTIC_USER_BASE="$WORK/ub" \
-		--command="$BIN" org.gnome.Platform//48 --size=1180x760 --dark --script="$WORK/run.script" ) >> "$WORK/log.txt" 2>&1
+		--command="$BIN" org.gnome.Platform//50 --size=1180x760 --dark --script="$WORK/run.script" ) >> "$WORK/log.txt" 2>&1
 }
 : > "$WORK/ud/data/mpsort-later.cfg"
 run "$ROOT/tests/mpsort/gtk-open-sort.script"
