@@ -288,6 +288,12 @@ bool TouchUpdate_appUpdater()
 	return via == "" || via == "app";
 }
 
+bool TouchUpdate_flatpakPortal()
+{
+	return touchUpdate_haveStatus && TouchUpdate_stateName() != TOUCH_UPDATE_MANAGED
+		&& TouchUpdate_extra("via") == "flatpak" && TouchUpdate_extra("portal") == "yes";
+}
+
 string TouchUpdate_platform()
 {
 	return cvar_string("_godnotic_platform");

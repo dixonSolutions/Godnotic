@@ -28,14 +28,17 @@ jobs:
           restore-keys: loader-core-
       - name: Toolchain
         run: |
+          # GLib for the Flatpak portal client (feature portal); dbus-daemon for its tests
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-dev dbus-daemon
           rustup toolchain install stable --profile minimal -c clippy
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
       - name: Tests
         working-directory: loader
-        run: cargo test --locked -p godnotic-loader-core --features http-ureq
+        run: cargo test --locked -p godnotic-loader-core --features http-ureq,portal
       - name: Clippy
         working-directory: loader
-        run: cargo clippy --locked -p godnotic-loader-core --features http-ureq --all-targets -- -D warnings
+        run: cargo clippy --locked -p godnotic-loader-core --features http-ureq,portal --all-targets -- -D warnings
       - name: Android driver tests
         working-directory: loader
         run: |
@@ -75,7 +78,8 @@ jobs:
       - name: GNOME SDK
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatpak
+          # build.sh --check also runs the core's portal tests on the runner: GLib and dbus-daemon
+          sudo apt-get install -y -qq flatpak libglib2.0-dev dbus-daemon
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive --no-related flathub "org.gnome.Sdk//$XT_GNOME_VERSION"
           rustup toolchain install stable --profile minimal -c clippy

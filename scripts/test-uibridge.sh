@@ -6,7 +6,8 @@
 #   UIB_BASEDIR=<basedir with game data> [UIB_ENGINE=build/bin/xonotic] [UIB_LIBDIR=...] \
 #   scripts/test-uibridge.sh --engine   also the engine: transport, round trips, images, hostile
 #                                       mods, reconnect, zero cost, the QuakeC renderer under
-#                                       scripted input, the first start, and fixture drift (--check)
+#                                       scripted input, the first start, Flatpak updates, and
+#                                       fixture drift (--check)
 #
 # The first part needs only python3 and a C compiler and runs in CI (.github/workflows/tests.yml).
 set -euo pipefail
@@ -60,6 +61,8 @@ if [ "${1:-}" = "--engine" ]; then
 	python3 tests/uibridge/input_test.py 1280x720 mouse
 	echo "== engine: first start on a touchscreen (welcome, screen keyboard, game data still downloading)"
 	python3 tests/uibridge/firstrun_test.py
+	echo "== engine: Settings > Updates in the Flatpak (portal states, the requests the Linux app serves)"
+	python3 tests/uibridge/flatpak_updates_test.py
 	echo "== engine: fixtures have not drifted"
 	python3 scripts/uib-fixtures.py --check
 fi

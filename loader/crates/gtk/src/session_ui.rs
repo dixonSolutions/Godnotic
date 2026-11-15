@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-fn paths() -> (GamePaths, Config) {
+pub(crate) fn paths() -> (GamePaths, Config) {
     let env: HashMap<String, String> = std::env::vars().collect();
     let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()));
     let cfg = std::fs::read_to_string(GamePaths::config_file(&env)).map(|t| Config::parse(&t)).unwrap_or_default();
@@ -37,6 +37,7 @@ pub fn start_backend() -> std::io::Result<session::Backend> {
     command.envs(env);
     command.env("SDL_VIDEO_X11_WMCLASS", session::APP_ID);
     command.env("SDL_VIDEO_WAYLAND_WMCLASS", session::APP_ID);
+    if let Some((k, v)) = crate::updates::engine_env() { command.env(k, v); }
     session::Backend::start_socket(command)
 }
 
@@ -70,6 +71,7 @@ pub fn start(app: &App, action: Action) {
     let _ = std::fs::remove_file(&result);
     let mut plan = session::plan(&action, &cfg, &start, &result);
     plan.env.insert("GODNOTIC_FE_WATCH_PID".into(), std::process::id().to_string());
+    if let Some((k, v)) = crate::updates::engine_env() { plan.env.insert(k.into(), v.into()); }
     let child = match session::spawn(&plan, &log) {
         Ok(c) => {
             if std::env::var_os("GODNOTIC_TIMING").is_some() {

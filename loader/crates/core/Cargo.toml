@@ -13,15 +13,22 @@ name = "godnotic_core"
 default = []
 # The pack downloader's HTTP over ureq + rustls (desktop). Android can pass its own HttpClient instead.
 http-ureq = ["dep:ureq"]
+# The Flatpak portal client (GIO D-Bus): the Linux app. Android has no use for it.
+portal = ["dep:gio"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 miniz_oxide = "0.8"
+gio = { version = "0.22", optional = true }
 ureq = { version = "3", optional = true, default-features = false, features = ["rustls", "platform-verifier"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[[test]]
+name = "flatpak_portal"
+required-features = ["portal"]
 
 [[test]]
 name = "fetch"

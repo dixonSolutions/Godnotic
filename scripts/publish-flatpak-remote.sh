@@ -113,6 +113,30 @@ rm -rf "$SITE_DIR"
 mkdir -p "$SITE_DIR"
 cp -a "$REPO_DIR"/. "$SITE_DIR"/
 
+# What `flatpak remote-add --from` and `flatpak install` read. The repository is
+# not GPG-signed, and these files say so by carrying no GPGKey: Flatpak then
+# turns signature checks off for this remote. A bare `flatpak remote-add <url>`
+# expects signatures and fails with "GPG verification enabled, but no summary
+# signatures found". The app's runtime comes from Flathub (RuntimeRepo).
+cat > "$SITE_DIR/godnotic.flatpakrepo" <<REPO
+[Flatpak Repo]
+Title=Godnotic
+Url=${FLATPAK_REMOTE_URL}/
+Homepage=https://github.com/dixonSolutions/Godnotic
+Comment=Touch-first Xonotic for Linux phones, tablets and PCs
+REPO
+cat > "$SITE_DIR/${FLATPAK_APP_ID}.flatpakref" <<REF
+[Flatpak Ref]
+Name=${FLATPAK_APP_ID}
+Branch=master
+Title=Godnotic
+Url=${FLATPAK_REMOTE_URL}/
+SuggestRemoteName=godnotic
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+IsRuntime=false
+Homepage=https://github.com/dixonSolutions/Godnotic
+REF
+
 VERSION_NOTE=""
 if [ -n "$PACKAGE_VERSION" ]; then
     VERSION_NOTE="Latest imported build: <code>${PACKAGE_VERSION}</code><br>"
@@ -124,15 +148,17 @@ cat > "$SITE_DIR/index.html" <<EOF
 <head><meta charset="utf-8"><title>Godnotic Flatpak remote</title></head>
 <body>
 <h1>Godnotic Flatpak remote</h1>
-<p>${VERSION_NOTE}OSTree history is retained (last ${PRUNE_DEPTH} commits per ref) so older builds remain available for rollback.</p>
+<p>${VERSION_NOTE}Install with <a href="${FLATPAK_APP_ID}.flatpakref">${FLATPAK_APP_ID}.flatpakref</a>
+(the runtime comes from Flathub), or add the remote with <a href="godnotic.flatpakrepo">godnotic.flatpakrepo</a>.
+The repository is not GPG-signed; these files tell Flatpak so.</p>
 <pre>
-flatpak remote-add --user --if-not-exists godnotic \\
-  ${FLATPAK_REMOTE_URL}
-flatpak install --user godnotic io.github.dixonSolutions.Godnotic
-flatpak update --user io.github.dixonSolutions.Godnotic
+flatpak install --user ${FLATPAK_REMOTE_URL}/${FLATPAK_APP_ID}.flatpakref
 
-# Inspect / roll back to an older commit:
-flatpak remote-info --log godnotic io.github.dixonSolutions.Godnotic
+# or the remote first:
+flatpak remote-add --user --if-not-exists --from godnotic ${FLATPAK_REMOTE_URL}/godnotic.flatpakrepo
+flatpak install --user godnotic ${FLATPAK_APP_ID}
+
+flatpak update --user ${FLATPAK_APP_ID}
 </pre>
 </body>
 </html>

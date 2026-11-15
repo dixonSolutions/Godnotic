@@ -161,11 +161,19 @@ mkdir -p "$USER_DATA" 2>/dev/null || xonotic_log "cannot create $USER_DATA"
 #
 # Format and states are documented in qcsrc/menu/xonotic/touch_update_util.qh.
 xonotic_publish_update_status() {
+    # The Linux app (godnotic-loader) checks and installs Flatpak updates through
+    # the Flatpak portal and keeps this file itself while it runs.
+    [ "${GODNOTIC_UPDATE_STATUS:-}" = loader ] && return 0
     _pus_dir="$USER_DATA/touch"
     mkdir -p "$_pus_dir" 2>/dev/null || return 0
     _pus_version="${GODNOTIC_VERSION:-}"
     if [ -z "$_pus_version" ] && [ -r "$APP_ROOT/share/xonotic/version.txt" ]; then
         _pus_version="$(head -n 1 "$APP_ROOT/share/xonotic/version.txt" 2>/dev/null || true)"
+    fi
+    # Flatpaks built before version.txt was stamped: the version CI wrote into the metainfo.
+    _pus_meta="$APP_ROOT/share/metainfo/io.github.dixonSolutions.Godnotic.metainfo.xml"
+    if [ -z "$_pus_version" ] && [ -r "$_pus_meta" ]; then
+        _pus_version="$(sed -n 's|.*Automated CI build \(.*\)\.</p>.*|\1|p' "$_pus_meta" 2>/dev/null | head -n 1)"
     fi
     {
         printf '%s\n' 1
