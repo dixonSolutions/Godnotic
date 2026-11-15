@@ -143,6 +143,36 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
     header.set_show_end_title_buttons(false);
     let title = adw::WindowTitle::new(&s.title(), &s.str("subtitle").unwrap_or_default());
     header.set_title_widget(Some(&title));
+    {
+        // A new subtitle ("120 servers · refreshing…", a few times a second while the server
+        // list refreshes) is set in place: rebuilding the screen for it threw away the list's
+        // rows and the player's place in them. Any other change rebuilds the screen.
+        let rest = |n: &Node| {
+            let mut p = n.props.clone();
+            p.remove("subtitle");
+            p.remove("title");
+            (Value::Object(p).to_string(), n.children.clone())
+        };
+        let before = RefCell::new(rest(s));
+        let (w, tw, id) = (Rc::downgrade(app), title.downgrade(), s.id.clone());
+        register_updater(app, &s.id, Rc::new(move |n: &Node| {
+            let now = rest(n);
+            if *before.borrow() == now {
+                if let Some(t) = tw.upgrade() {
+                    t.set_title(&n.title());
+                    t.set_subtitle(&n.str("subtitle").unwrap_or_default());
+                }
+                return;
+            }
+            *before.borrow_mut() = now;
+            let (w, id) = (w.clone(), id.clone());
+            glib::idle_add_local_once(move || {
+                if let Some(a) = w.upgrade() {
+                    app::refresh_screen(&a, &id);
+                }
+            });
+        }));
+    }
     let in_stack = store.stack().iter().position(|x| *x == s.id);
     // Dialogs and sheets close with their own button; pages get Back.
     if in_stack.is_some_and(|d| d > 0 || store.app().and_then(|a| a.bool("canBack")).unwrap_or(false)) {
@@ -1507,6 +1537,44 @@ fn cell_text(v: Option<&Value>) -> String {
     }
 }
 
+thread_local! {
+    /// The player's sort per list node (a header click), kept until the engine's props say
+    /// the same (docs/UI_BRIDGE.md, "Lists that stay put while they update"). A list without
+    /// `sortAction` never hears back: there it stays the player's for the session.
+    static USER_SORT: RefCell<std::collections::HashMap<String, (String, bool)>> = RefCell::new(Default::default());
+}
+
+/// The order a list shows: the player's last header click until the engine carries it, else the node's.
+fn shown_sort(n: &Node) -> (Option<String>, bool) {
+    let engine = (n.str("sort"), n.bool("desc").unwrap_or(false));
+    USER_SORT.with(|u| {
+        let mut u = u.borrow_mut();
+        match u.get(&n.id).cloned() {
+            Some((k, d)) if n.obj("sortAction").is_some() && engine.0.as_deref() == Some(k.as_str()) && engine.1 == d => {
+                u.remove(&n.id);
+                engine
+            }
+            Some((k, d)) => (Some(k), d),
+            None => engine,
+        }
+    })
+}
+
+/// Shows `key` as the sorted column in the header, without it counting as a click.
+fn show_sorted(cv: &gtk::ColumnView, quiet: &Cell<bool>, key: Option<&str>, desc: bool) {
+    let cols = cv.columns();
+    let col = key.and_then(|k| (0..cols.n_items()).filter_map(|i| cols.item(i).and_downcast::<gtk::ColumnViewColumn>()).find(|c| c.id().as_deref() == Some(k)));
+    let Some(col) = col else { return };
+    let sorter = cv.sorter().and_downcast::<gtk::ColumnViewSorter>();
+    let order = if desc { gtk::SortType::Descending } else { gtk::SortType::Ascending };
+    if sorter.as_ref().is_some_and(|s| s.primary_sort_column().as_ref() == Some(&col) && s.primary_sort_order() == order) {
+        return;
+    }
+    quiet.set(true);
+    cv.sort_by_column(Some(&col), order);
+    quiet.set(false);
+}
+
 /// A `list`: a GtkColumnView (table) or GtkGridView (cards) over a windowed data source.
 fn list(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     let source = n.str("source").unwrap_or_default();
@@ -1518,8 +1586,8 @@ fn list(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     let lv = Rc::new(RefCell::new(ListView {
         source: source.clone(),
         model: model.clone(),
-        sort: n.str("sort"),
-        desc: n.bool("desc").unwrap_or(false),
+        sort: shown_sort(n).0,
+        desc: shown_sort(n).1,
         filter: n.str("filter").unwrap_or_default(),
         seen: Cell::new((usize::MAX, 0)),
     }));
@@ -1601,37 +1669,59 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
         gtk::ColumnView::new(Some(gtk::NoSelection::new(Some(model))))
     };
     cv.set_single_click_activate(true);
+    // The header's sort: set from the node without counting as a click (`quiet`).
+    let quiet = Rc::new(Cell::new(false));
     if selects {
-        // The engine's answer to a choice changes only `selected`: the view already shows it,
-        // so the screen (and the list's scroll position) stays as it is. Anything else that
-        // changes on the list rebuilds the screen as before.
+        // An update of the list node during a refresh (its `count`), the engine's answer to a
+        // choice (`selected`) or to a header click (`sort`, `desc`) leaves the view as it is: the
+        // rows, the player's sort and the scroll position stay. Anything else that changes on
+        // the list rebuilds the screen as before.
         let rest = |n: &Node| {
             let mut p = n.props.clone();
-            p.remove("selected");
+            for k in ["selected", "count", "sort", "desc"] {
+                p.remove(k);
+            }
             Value::Object(p).to_string()
         };
+        // the empty state is its own page: a list that gets rows, or loses all, is rebuilt
+        let empty = |n: &Node| n.props.get("count").and_then(Value::as_i64) == Some(0);
         let before = RefCell::new(rest(n));
+        let was_empty = Cell::new(empty(n));
         let (w, screen_id) = (Rc::downgrade(app), n.id.split('/').next().unwrap_or_default().to_string());
-        let (cvw, src) = (cv.downgrade(), lv.borrow().source.clone());
+        let (cvw, src, lv2, quiet2) = (cv.downgrade(), lv.borrow().source.clone(), lv.clone(), quiet.clone());
         register_updater(app, &n.id, Rc::new(move |n: &Node| {
             let now = rest(n);
-            if *before.borrow() == now {
-                // only the choice changed: show the engine's chosen row as chosen
+            if *before.borrow() == now && was_empty.get() == empty(n) {
                 let (Some(a), Some(cv)) = (w.upgrade(), cvw.upgrade()) else { return };
-                let Some(sel) = cv.model().and_downcast::<gtk::SingleSelection>() else { return };
-                let key = n.arr("selected").first().and_then(|v| v.as_str()).map(str::to_string);
-                let pos = key.and_then(|k| {
-                    let core = a.core.borrow();
-                    let win = core.store.sources.get(&src)?;
-                    (0..win.total().min(5000)).find(|i| win.row(*i).and_then(|r| r.str_of("key")).as_deref() == Some(&k))
-                });
-                let want = pos.map(|p| p as u32).unwrap_or(gtk::INVALID_LIST_POSITION);
-                if sel.selected() != want {
-                    sel.set_selected(want);
+                // the engine sorts another way (not after a click of ours): follow it in place
+                let (sort, desc) = shown_sort(n);
+                let changed = {
+                    let l = lv2.borrow();
+                    l.sort != sort || l.desc != desc
+                };
+                if changed {
+                    {
+                        let mut l = lv2.borrow_mut();
+                        l.sort = sort.clone();
+                        l.desc = desc;
+                    }
+                    show_sorted(&cv, &quiet2, sort.as_deref(), desc);
+                    // the store is borrowed while updaters run: re-window when it is free
+                    let (w, src, lv3) = (w.clone(), src.clone(), lv2.clone());
+                    glib::idle_add_local_once(move || {
+                        let Some(a) = w.upgrade() else { return };
+                        if let Some(win) = a.core.borrow_mut().store.sources.get_mut(&src) {
+                            win.invalidate();
+                        }
+                        want_rows(&a, &lv3);
+                    });
                 }
+                // show the engine's chosen row as chosen
+                select_key(&a, &cv, &src, n);
                 return;
             }
             *before.borrow_mut() = now;
+            was_empty.set(empty(n));
             let (w, id) = (w.clone(), screen_id.clone());
             glib::idle_add_local_once(move || {
                 if let Some(a) = w.upgrade() {
@@ -1639,6 +1729,26 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
                 }
             });
         }));
+        // a rebuilt screen shows the chosen row too
+        select_key(app, &cv, &lv.borrow().source.clone(), n);
+        // Rows replaced while a refresh streams in drop GTK's selection with them: choose the
+        // engine's row again once the burst is over.
+        let pending = Rc::new(Cell::new(false));
+        let (w, cvw, src, id) = (Rc::downgrade(app), cv.downgrade(), lv.borrow().source.clone(), n.id.clone());
+        lv.borrow().model.connect_items_changed(move |_, _, _, _| {
+            if pending.replace(true) {
+                return;
+            }
+            let (w, cvw, src, id, pending) = (w.clone(), cvw.clone(), src.clone(), id.clone(), pending.clone());
+            glib::idle_add_local_once(move || {
+                pending.set(false);
+                let (Some(a), Some(cv)) = (w.upgrade(), cvw.upgrade()) else { return };
+                let node = a.core.borrow().store.node(&id).cloned();
+                if let Some(n) = node {
+                    select_key(&a, &cv, &src, &n);
+                }
+            });
+        });
     }
     cv.set_show_row_separators(false);
     cv.set_reorderable(false);
@@ -1762,22 +1872,54 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
         }
         cv.append_column(&col);
     }
-    // Header clicks re-window with the engine's sort (the model itself is never sorted here).
+    // The header shows the list's sort from the start.
+    {
+        let l = lv.borrow();
+        show_sorted(&cv, &quiet, l.sort.as_deref(), l.desc);
+    }
+    // A header click re-windows with the engine's sort (the model itself is never sorted here)
+    // and, on a list with `sortAction`, tells the engine, which keeps it for every later build
+    // of the list (and in a saved setting): the next update cannot undo it.
     if let Some(sorter) = cv.sorter().and_downcast::<gtk::ColumnViewSorter>() {
-        let (w, lv2) = (Rc::downgrade(app), lv.clone());
+        let (w, lv2, cvw, quiet2) = (Rc::downgrade(app), lv.clone(), cv.downgrade(), quiet.clone());
+        let (list_id, sort_action) = (n.id.clone(), n.obj("sortAction").cloned());
+        let types: std::collections::HashMap<String, String> = cols.iter().filter_map(|c| Some((c.str_of("key")?, c.str_of("type").unwrap_or_default()))).collect();
         sorter.connect_changed(move |s, _| {
+            if quiet2.get() {
+                return;
+            }
             let Some(app) = w.upgrade() else { return };
-            let col = s.primary_sort_column().and_then(|c| c.id()).map(|g| g.to_string());
+            let Some(col) = s.primary_sort_column() else { return };
+            let Some(key) = col.id().map(|g| g.to_string()) else { return };
+            let mut desc = s.primary_sort_order() == gtk::SortType::Descending;
+            // a count reads best from the most: a first click on Players shows the fullest
+            // servers first, as on Android and the web
+            let new_column = lv2.borrow().sort.as_deref() != Some(key.as_str());
+            if new_column && !desc && matches!(types.get(&key).map(String::as_str), Some("players") | Some("number")) {
+                desc = true;
+                if let Some(cv) = cvw.upgrade() {
+                    show_sorted(&cv, &quiet2, Some(&key), true);
+                }
+            }
             {
                 let mut l = lv2.borrow_mut();
-                l.sort = col;
-                l.desc = s.primary_sort_order() == gtk::SortType::Descending;
+                l.sort = Some(key.clone());
+                l.desc = desc;
+            }
+            USER_SORT.with(|u| u.borrow_mut().insert(list_id.clone(), (key.clone(), desc)));
+            if let Some(id) = sort_action.as_ref().and_then(|a| a.str_of("id")) {
+                let m = app.core.borrow_mut().client.action(&list_id, &id, Some(json!({"sort": key, "desc": desc})));
+                app::send(&app, m);
             }
             let src = lv2.borrow().source.clone();
             if let Some(win) = app.core.borrow_mut().store.sources.get_mut(&src) {
                 win.invalidate();
             }
             want_rows(&app, &lv2);
+            // a new order starts at its top
+            if let Some(cv) = cvw.upgrade() {
+                cv.scroll_to(0, None::<&gtk::ColumnViewColumn>, gtk::ListScrollFlags::NONE, None);
+            }
         });
     }
     let (w, list_id, src) = (Rc::downgrade(app), n.id.clone(), source.clone());
@@ -1788,6 +1930,21 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
     });
     register_activator(app, &n.id, &cv);
     cv.upcast()
+}
+
+/// Shows the node's `selected` row (by key) as chosen in a table.
+fn select_key(app: &App, cv: &gtk::ColumnView, source: &str, n: &Node) {
+    let Some(sel) = cv.model().and_downcast::<gtk::SingleSelection>() else { return };
+    let key = n.arr("selected").first().and_then(|v| v.as_str()).map(str::to_string);
+    let pos = key.and_then(|k| {
+        let core = app.core.borrow();
+        let win = core.store.sources.get(source)?;
+        (0..win.total().min(5000)).find(|i| win.row(*i).and_then(|r| r.str_of("key")).as_deref() == Some(&k))
+    });
+    let want = pos.map(|p| p as u32).unwrap_or(gtk::INVALID_LIST_POSITION);
+    if sel.selected() != want {
+        sel.set_selected(want);
+    }
 }
 
 /// `display: cards` (the map picker): a GtkGridView of preview cards; pictures load only for bound cards.

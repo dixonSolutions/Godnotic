@@ -984,6 +984,24 @@ void UIB_ServerParams()
 	uib_param("servers", "search", UIB_VM("mp.search"));
 }
 
+// The server list's sort columns; anything else in touch_mp_sort reads as Ping.
+bool UIB_ServerSortable(string key)
+{
+	switch (key)
+	{
+		case "ping": case "players": case "name": case "map": case "mode": return true;
+	}
+	return false;
+}
+
+// The column the server list is sorted by: the player's last choice (touch_mp_sort,
+// saved, so Multiplayer opens sorted the same way after Back and after a restart).
+string UIB_ServerSortKey()
+{
+	string key = cvar_string("touch_mp_sort");
+	return UIB_ServerSortable(key) ? key : "ping";
+}
+
 void UIB_BuildServers()
 {
 	UIB_ServerParams();
@@ -1027,9 +1045,10 @@ void UIB_BuildServers()
 		uib_push("columns", UIB_Col("mode", "mode", _("Mode"), "s", 2, true, false));
 		uib_push("columns", UIB_Col("players", "players", _("Players"), "s", 1, true, true));
 		uib_push("columns", UIB_Col("ping", "ping", _("Ping"), "s", 1, true, true));
-		string sort = UIB_VM("mp.sort");
-		uib_s("sort", sort == "" ? "ping" : sort);
-		uib_b("desc", UIB_VMf("mp.desc"));
+		// the player's sort, kept between sessions (UIB_ServerSort)
+		string sort = UIB_ServerSortKey();
+		uib_s("sort", sort);
+		uib_b("desc", sort == cvar_string("touch_mp_sort") && cvar("touch_mp_sortdesc"));
 		// a header tap: the renderer sorts at once and tells us (payload sort, desc), so
 		// every later build of this list keeps the player's order instead of undoing it
 		uib_j("sortAction", UIB_A("server.sort", _("Sort"), ""));
@@ -1842,6 +1861,9 @@ void UIB_Init()
 	registercvar("_uib_server_net", "", 0);
 	registercvar("touch_lan_bots_duel", "1", 32);   // Duel's own Bots (0 or 1); touch_lan_bots stays every other mode's. 32 = CF_ARCHIVE: saved to config.cfg
 	registercvar("_uib_recent", "", 32);            // the recent games list, saved too (UIB_AddRecent sets it)
+	// the server list's sort (UIB_ServerSort); 32 is CF_ARCHIVE: saved in config.cfg
+	registercvar("touch_mp_sort", "ping", 32);
+	registercvar("touch_mp_sortdesc", "0", 32);
 	registercvar("_uib_debug_open", "", 0);
 	registercvar("_uib_debug_toast", "", 0);
 	registercvar("_uib_debug_servers", "", 0);
@@ -1916,7 +1938,7 @@ void UIB_Tick()
 
 // ---------------------------------------------------------------- events
 
-// "server.sort" with payload {"sort":"players","desc":true}
+// "server.sort" with payload {"sort":"players","desc":true}: a header tap on any renderer
 void UIB_ServerSort(string payload)
 {
 	int k = strstrofs(payload, "\"sort\":\"", 0);
@@ -1925,8 +1947,11 @@ void UIB_ServerSort(string payload)
 	int e = strstrofs(key, "\"", 0);
 	if (e <= 0 || e > 32) return;
 	key = substring(key, 0, e);
-	UIB_VMSet("mp.sort", key);
-	UIB_VMSet("mp.desc", (strstrofs(payload, "\"desc\":true", 0) >= 0) ? "1" : "0");
+	if (!UIB_ServerSortable(key)) return;
+	// archived cvars: config.cfg keeps them (saved on exit, on Android when paused, and on
+	// the web within seconds of the change)
+	cvar_set("touch_mp_sort", key);
+	cvar_set("touch_mp_sortdesc", (strstrofs(payload, "\"desc\":true", 0) >= 0) ? "1" : "0");
 	if (UIB_TopScreen() == "mp" || uib_prepared == "mp")
 		UIB_Build("mp");
 }

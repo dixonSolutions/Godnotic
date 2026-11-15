@@ -1,0 +1,10 @@
+# scripts/test-gtk-mpsort.sh, second start of the app: Multiplayer opens sorted as the player left it
+wait 7000
+click home/tiles/mp
+wait 2000
+listsort mp/servers OUT/sort.txt
+snapshot OUT/5-restart.png
+# the engine sorts by Ping on its own (mpsort-later.cfg, as another front end would): the list follows in place
+wait 4500
+listsort mp/servers OUT/sort.txt
+quit

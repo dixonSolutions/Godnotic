@@ -9,6 +9,8 @@
 //! click <node id>     activate the widget of a node (or <node>:<action id> for an action button)
 //! row <list id> <n>   activate row n of a list
 //! scroll <list id> <n>  scroll a list so row n is visible
+//! sort <list id> <col>  what a click on a column's header does (that column, or its other direction)
+//! listsort <list id> <file>  append the header's sort, the scroll position and the first rows
 //! back                the back event
 //! action <node> <id>  invoke an action of a node as the engine sees it (no confirmation dialog)
 //! value <node> <json> send a value event (a Settings section: value settings/split "touch")
@@ -112,6 +114,58 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
                 gv.scroll_to(n, gtk::ListScrollFlags::NONE, None);
             }
             delay = 200;
+        }
+        "sort" => {
+            // a header click: GtkColumnViewSorter makes the column primary (ascending), or
+            // turns the primary one around
+            let list = args.first().copied().unwrap_or("");
+            let key = args.get(1).copied().unwrap_or("");
+            let w = app.ui.borrow().as_ref().and_then(|u| u.activators.get(list).cloned());
+            if let Some(cv) = w.as_ref().and_then(|w| w.downcast_ref::<gtk::ColumnView>()) {
+                let cols = cv.columns();
+                let col = (0..cols.n_items()).filter_map(|i| cols.item(i).and_downcast::<gtk::ColumnViewColumn>()).find(|c| c.id().as_deref() == Some(key));
+                let sorter = cv.sorter().and_downcast::<gtk::ColumnViewSorter>();
+                if let (Some(col), Some(sorter)) = (col, sorter) {
+                    let primary = sorter.primary_sort_column().is_some_and(|p| p == col);
+                    let order = if primary && sorter.primary_sort_order() == gtk::SortType::Ascending { gtk::SortType::Descending } else { gtk::SortType::Ascending };
+                    cv.sort_by_column(Some(&col), order);
+                } else {
+                    eprintln!("script: no sortable column {key:?} on {list:?}");
+                }
+            }
+            delay = 200;
+        }
+        "listsort" => {
+            // sort=<column shown sorted> desc=<0|1> top=<scroll px> then name:players of the first rows
+            let list = args.first().copied().unwrap_or("");
+            let w = app.ui.borrow().as_ref().and_then(|u| u.activators.get(list).cloned());
+            let mut out = format!("t={} ", app.t0.elapsed().as_millis());
+            if let Some(cv) = w.as_ref().and_then(|w| w.downcast_ref::<gtk::ColumnView>()) {
+                let sorter = cv.sorter().and_downcast::<gtk::ColumnViewSorter>();
+                let col = sorter.as_ref().and_then(|s| s.primary_sort_column()).and_then(|c| c.id()).map(|g| g.to_string()).unwrap_or_else(|| "-".into());
+                let desc = sorter.as_ref().is_some_and(|s| s.primary_sort_column().is_some() && s.primary_sort_order() == gtk::SortType::Descending);
+                let top = cv.vadjustment().map(|a| a.value()).unwrap_or(-1.0);
+                let n = cv.model().map(|m| m.n_items()).unwrap_or(0);
+                out.push_str(&format!("sort={col} desc={} top={top:.0} n={n} rows=", desc as u8));
+                let source = app.core.borrow().store.node(list).and_then(|x| x.str("source")).unwrap_or_default();
+                let core = app.core.borrow();
+                if let Some(win) = core.store.sources.get(&source) {
+                    let cells: Vec<String> = (0..12usize).map(|i| win.row(i).and_then(|r| r.get("cells").and_then(|c| c.as_object()).map(|c| {
+                        format!("{}:{}", c.get("name").and_then(|v| v.as_str()).unwrap_or(""), c.get("players").and_then(|v| v.as_i64()).unwrap_or(-1))
+                    })).unwrap_or_else(|| "?".into())).collect();
+                    out.push_str(&cells.join(","));
+                }
+            } else {
+                out.push_str("no list");
+            }
+            if let Some(p) = args.get(1) {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                    let _ = writeln!(f, "{out}");
+                }
+            }
+            println!("listsort {out}");
+            delay = 0;
         }
         "back" => {
             app::back(&app);
