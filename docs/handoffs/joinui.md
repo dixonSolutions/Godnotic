@@ -54,7 +54,7 @@ dialog alone. The owner's later request, a large swipe-right toggle, was never b
 
 ## Tests (all on this tree; commands from the clone root)
 
-Commits: f6b2510 (the work), 4e7a93b (teams share the row: grid `maxColumns`, Kotlin
+Commits (merged with origin/main 35dcf95 in c5153cc; CI green on it): f6b2510 (the work), 4e7a93b (teams share the row: grid `maxColumns`, Kotlin
 honours it), 3eb9c41 (QuakeC dialog's team labels were blank: `Label.setText` keeps the
 pointer, the `sprintf` result died a frame later; the CSQC prompt says "Press SWIPE to join").
 
@@ -101,8 +101,10 @@ Not done on the tablet: the DM case (tap on the slider joins) and the 4e7a93b/3e
 build (APK 1.2.205 code 9416 built at `~/.cache/godnotic-tabtest-joinui/out/`; not
 installed, because the owner was playing on it). `menu.dat` / `csprogs.dat` from 3eb9c41
 are pushed into the `.perf` files dir (they apply at the next start; the old ones are in
-`/data/local/tmp/*.tablet-before-joinui`). The relay and server may still be running:
-`pkill -f udprelay` on the tablet (`adb shell`), the server stops by itself (40 min).
+`/data/local/tmp/*.tablet-before-joinui`). The test server stops by itself (40 min, about
+13:54); a watcher then stops the desktop relay, removes the `adb reverse`, kills the tablet
+relay and deletes `files/xonotic.args` (it writes `joinui-tools/cleanup.done`). To install
+the newer build: `adb install -r ~/.cache/godnotic-tabtest-joinui/out/Godnotic-1.2.205-arm64-v8a.apk`.
 
 Offscreen screenshots (`~/.cache/godnotic-work/joinui-shots/`): the slider on the engine
 HUD (`offscreen_engine_hud_spectating_slider.png`), mid-swipe (`*_slider_mid_swipe.png`),
