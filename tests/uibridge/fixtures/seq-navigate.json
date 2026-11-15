@@ -42,10 +42,14 @@
      ],
      "modal": [],
      "canBack": false,
-     "context": "menu"
+     "context": "menu",
+     "prepared": [
+      "mp"
+     ]
     },
     "children": [
-     "home"
+     "home",
+     "mp"
     ]
    },
    {
@@ -139,7 +143,8 @@
      "primary": {
       "id": "mp",
       "label": "Open",
-      "icon": "chevron"
+      "icon": "chevron",
+      "opens": "mp"
      }
     },
     "children": []
@@ -198,6 +203,270 @@
        "destructive": false
       }
      }
+    },
+    "children": []
+   },
+   {
+    "id": "mp",
+    "type": "screen",
+    "props": {
+     "title": "Multiplayer",
+     "kind": "page",
+     "header": {
+      "collapsible": true
+     }
+    },
+    "children": [
+     "mp/bar",
+     "mp/servers",
+     "mp/join"
+    ]
+   },
+   {
+    "id": "mp/bar",
+    "type": "toolbar",
+    "props": {},
+    "children": [
+     "mp/bar/search",
+     "mp/bar/filters"
+    ]
+   },
+   {
+    "id": "mp/bar/search",
+    "type": "field",
+    "props": {
+     "label": "Search",
+     "bind": "vm:mp.search",
+     "value": "",
+     "kind": "search",
+     "placeholder": "Search servers"
+    },
+    "children": []
+   },
+   {
+    "id": "mp/bar/filters",
+    "type": "row",
+    "props": {
+     "wrap": true
+    },
+    "children": [
+     "mp/bar/filters/lan",
+     "mp/bar/filters/empty",
+     "mp/bar/filters/full",
+     "mp/bar/filters/laggy",
+     "mp/bar/filters/refresh"
+    ]
+   },
+   {
+    "id": "mp/bar/filters/lan",
+    "type": "switch",
+    "props": {
+     "label": "LAN",
+     "style": "checkbox",
+     "bind": "vm:mp.lan",
+     "icon": "lan",
+     "value": false
+    },
+    "children": []
+   },
+   {
+    "id": "mp/bar/filters/empty",
+    "type": "switch",
+    "props": {
+     "label": "Empty",
+     "style": "checkbox",
+     "bind": "cvar:menu_slist_showempty",
+     "value": true
+    },
+    "children": []
+   },
+   {
+    "id": "mp/bar/filters/full",
+    "type": "switch",
+    "props": {
+     "label": "Full",
+     "style": "checkbox",
+     "bind": "cvar:menu_slist_showfull",
+     "value": true
+    },
+    "children": []
+   },
+   {
+    "id": "mp/bar/filters/laggy",
+    "type": "switch",
+    "props": {
+     "label": "Laggy",
+     "style": "checkbox",
+     "bind": "cvar:menu_slist_showlaggy",
+     "value": false
+    },
+    "children": []
+   },
+   {
+    "id": "mp/bar/filters/refresh",
+    "type": "button",
+    "props": {
+     "label": "Refresh",
+     "action": {
+      "id": "refresh",
+      "label": "Refresh",
+      "icon": "refresh"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "mp/servers",
+    "type": "list",
+    "props": {
+     "source": "servers",
+     "columns": [
+      {
+       "key": "lock",
+       "type": "lock",
+       "label": "",
+       "width": "xs",
+       "priority": 2,
+       "sortable": false
+      },
+      {
+       "key": "name",
+       "type": "text",
+       "label": "Server",
+       "width": "fill",
+       "priority": 1,
+       "sortable": true
+      },
+      {
+       "key": "map",
+       "type": "map",
+       "label": "Map",
+       "width": "m",
+       "priority": 2,
+       "sortable": true
+      },
+      {
+       "key": "mode",
+       "type": "mode",
+       "label": "Mode",
+       "width": "s",
+       "priority": 2,
+       "sortable": true
+      },
+      {
+       "key": "players",
+       "type": "players",
+       "label": "Players",
+       "width": "s",
+       "priority": 1,
+       "sortable": true,
+       "align": "end"
+      },
+      {
+       "key": "ping",
+       "type": "ping",
+       "label": "Ping",
+       "width": "s",
+       "priority": 1,
+       "sortable": true,
+       "align": "end"
+      }
+     ],
+     "sort": "ping",
+     "desc": false,
+     "sortAction": {
+      "id": "server.sort",
+      "label": "Sort"
+     },
+     "filter": "",
+     "selection": "single",
+     "density": "compact",
+     "display": "table",
+     "rowHeight": "compact",
+     "state": "ready",
+     "live": true,
+     "rowSelect": {
+      "id": "server.select",
+      "label": "Choose",
+      "icon": "check"
+     },
+     "rowPrimary": {
+      "id": "server.join",
+      "label": "Join",
+      "icon": "play",
+      "style": "primary"
+     },
+     "empty": {
+      "title": "No servers yet",
+      "text": "Check your connection, then Refresh.",
+      "icon": "server",
+      "action": {
+       "id": "refresh",
+       "label": "Refresh",
+       "icon": "refresh"
+      }
+     },
+     "count": 0
+    },
+    "children": []
+   },
+   {
+    "id": "mp/join",
+    "type": "actionbar",
+    "props": {
+     "align": "spread"
+    },
+    "children": [
+     "mp/join/address",
+     "mp/join/create",
+     "mp/join/go"
+    ]
+   },
+   {
+    "id": "mp/join/address",
+    "type": "field",
+    "props": {
+     "label": "Address",
+     "bind": "vm:mp.address",
+     "value": "",
+     "kind": "address",
+     "placeholder": "host:port or godnotic://join/…",
+     "submit": {
+      "id": "join",
+      "label": "Join",
+      "icon": "play"
+     }
+    },
+    "children": []
+   },
+   {
+    "id": "mp/join/create",
+    "type": "button",
+    "props": {
+     "label": "Create",
+     "action": {
+      "id": "create",
+      "label": "Create",
+      "icon": "add"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "mp/join/go",
+    "type": "button",
+    "props": {
+     "label": "Join",
+     "style": "primary",
+     "action": {
+      "id": "join",
+      "label": "Join",
+      "icon": "play",
+      "style": "primary"
+     },
+     "enabled": false
     },
     "children": []
    }
@@ -699,7 +968,22 @@
       "children": []
      }
     ],
-    "del": []
+    "del": [
+     "mp/bar/search",
+     "mp/bar/filters/lan",
+     "mp/bar/filters/empty",
+     "mp/bar/filters/full",
+     "mp/bar/filters/laggy",
+     "mp/bar/filters/refresh",
+     "mp/bar/filters",
+     "mp/bar",
+     "mp/servers",
+     "mp/join/address",
+     "mp/join/create",
+     "mp/join/go",
+     "mp/join",
+     "mp"
+    ]
    }
   },
   {
@@ -721,11 +1005,279 @@
        ],
        "modal": [],
        "canBack": false,
-       "context": "menu"
+       "context": "menu",
+       "prepared": [
+        "mp"
+       ]
       },
       "children": [
-       "home"
+       "home",
+       "mp"
       ]
+     },
+     {
+      "id": "mp",
+      "type": "screen",
+      "props": {
+       "title": "Multiplayer",
+       "kind": "page",
+       "header": {
+        "collapsible": true
+       }
+      },
+      "children": [
+       "mp/bar",
+       "mp/servers",
+       "mp/join"
+      ]
+     },
+     {
+      "id": "mp/bar",
+      "type": "toolbar",
+      "props": {},
+      "children": [
+       "mp/bar/search",
+       "mp/bar/filters"
+      ]
+     },
+     {
+      "id": "mp/join",
+      "type": "actionbar",
+      "props": {
+       "align": "spread"
+      },
+      "children": [
+       "mp/join/address",
+       "mp/join/create",
+       "mp/join/go"
+      ]
+     },
+     {
+      "id": "mp/servers",
+      "type": "list",
+      "props": {
+       "source": "servers",
+       "columns": [
+        {
+         "key": "lock",
+         "type": "lock",
+         "label": "",
+         "width": "xs",
+         "priority": 2,
+         "sortable": false
+        },
+        {
+         "key": "name",
+         "type": "text",
+         "label": "Server",
+         "width": "fill",
+         "priority": 1,
+         "sortable": true
+        },
+        {
+         "key": "map",
+         "type": "map",
+         "label": "Map",
+         "width": "m",
+         "priority": 2,
+         "sortable": true
+        },
+        {
+         "key": "mode",
+         "type": "mode",
+         "label": "Mode",
+         "width": "s",
+         "priority": 2,
+         "sortable": true
+        },
+        {
+         "key": "players",
+         "type": "players",
+         "label": "Players",
+         "width": "s",
+         "priority": 1,
+         "sortable": true,
+         "align": "end"
+        },
+        {
+         "key": "ping",
+         "type": "ping",
+         "label": "Ping",
+         "width": "s",
+         "priority": 1,
+         "sortable": true,
+         "align": "end"
+        }
+       ],
+       "sort": "ping",
+       "desc": false,
+       "sortAction": {
+        "id": "server.sort",
+        "label": "Sort"
+       },
+       "filter": "",
+       "selection": "single",
+       "density": "compact",
+       "display": "table",
+       "rowHeight": "compact",
+       "state": "ready",
+       "live": true,
+       "rowSelect": {
+        "id": "server.select",
+        "label": "Choose",
+        "icon": "check"
+       },
+       "rowPrimary": {
+        "id": "server.join",
+        "label": "Join",
+        "icon": "play",
+        "style": "primary"
+       },
+       "empty": {
+        "title": "No servers yet",
+        "text": "Check your connection, then Refresh.",
+        "icon": "server",
+        "action": {
+         "id": "refresh",
+         "label": "Refresh",
+         "icon": "refresh"
+        }
+       },
+       "count": 0
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters",
+      "type": "row",
+      "props": {
+       "wrap": true
+      },
+      "children": [
+       "mp/bar/filters/lan",
+       "mp/bar/filters/empty",
+       "mp/bar/filters/full",
+       "mp/bar/filters/laggy",
+       "mp/bar/filters/refresh"
+      ]
+     },
+     {
+      "id": "mp/bar/search",
+      "type": "field",
+      "props": {
+       "label": "Search",
+       "bind": "vm:mp.search",
+       "value": "",
+       "kind": "search",
+       "placeholder": "Search servers"
+      },
+      "children": []
+     },
+     {
+      "id": "mp/join/address",
+      "type": "field",
+      "props": {
+       "label": "Address",
+       "bind": "vm:mp.address",
+       "value": "",
+       "kind": "address",
+       "placeholder": "host:port or godnotic://join/…",
+       "submit": {
+        "id": "join",
+        "label": "Join",
+        "icon": "play"
+       }
+      },
+      "children": []
+     },
+     {
+      "id": "mp/join/create",
+      "type": "button",
+      "props": {
+       "label": "Create",
+       "action": {
+        "id": "create",
+        "label": "Create",
+        "icon": "add"
+       },
+       "style": "secondary"
+      },
+      "children": []
+     },
+     {
+      "id": "mp/join/go",
+      "type": "button",
+      "props": {
+       "label": "Join",
+       "style": "primary",
+       "action": {
+        "id": "join",
+        "label": "Join",
+        "icon": "play",
+        "style": "primary"
+       },
+       "enabled": false
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters/empty",
+      "type": "switch",
+      "props": {
+       "label": "Empty",
+       "style": "checkbox",
+       "bind": "cvar:menu_slist_showempty",
+       "value": true
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters/full",
+      "type": "switch",
+      "props": {
+       "label": "Full",
+       "style": "checkbox",
+       "bind": "cvar:menu_slist_showfull",
+       "value": true
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters/laggy",
+      "type": "switch",
+      "props": {
+       "label": "Laggy",
+       "style": "checkbox",
+       "bind": "cvar:menu_slist_showlaggy",
+       "value": false
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters/lan",
+      "type": "switch",
+      "props": {
+       "label": "LAN",
+       "style": "checkbox",
+       "bind": "vm:mp.lan",
+       "icon": "lan",
+       "value": false
+      },
+      "children": []
+     },
+     {
+      "id": "mp/bar/filters/refresh",
+      "type": "button",
+      "props": {
+       "label": "Refresh",
+       "action": {
+        "id": "refresh",
+        "label": "Refresh",
+        "icon": "refresh"
+       },
+       "style": "secondary"
+      },
+      "children": []
      }
     ],
     "del": [

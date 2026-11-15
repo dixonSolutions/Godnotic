@@ -143,7 +143,8 @@
      "primary": {
       "id": "mp",
       "label": "Open",
-      "icon": "chevron"
+      "icon": "chevron",
+      "opens": "mp"
      }
     },
     "children": []
@@ -688,7 +689,7 @@
     "type": "preview",
     "props": {
      "title": "Stormkeep",
-     "subtitle": "Deathmatch, Team Deathmatch, Domination, Last Man Standing and 6 more",
+     "subtitle": "Deathmatch, Team Deathmatch, Last Man Standing, Clan Arena and 10 more",
      "image": "pk3:maps/stormkeep",
      "aspect": "16:9",
      "body": "Medium sized indoor map, well suited for team games",
@@ -700,7 +701,7 @@
       },
       {
        "label": "Modes",
-       "value": "Deathmatch, Team Deathmatch, Domination, Last Man Standing and 6 more",
+       "value": "Deathmatch, Team Deathmatch, Last Man Standing, Clan Arena and 10 more",
        "icon": "mode"
       }
      ],

@@ -143,7 +143,8 @@
      "primary": {
       "id": "mp",
       "label": "Open",
-      "icon": "chevron"
+      "icon": "chevron",
+      "opens": "mp"
      }
     },
     "children": []
@@ -211,6 +212,7 @@
     "props": {
      "title": "Multiplayer",
      "kind": "page",
+     "subtitle": "Looking for servers…",
      "header": {
       "collapsible": true
      }
@@ -374,6 +376,10 @@
      ],
      "sort": "ping",
      "desc": false,
+     "sortAction": {
+      "id": "server.sort",
+      "label": "Sort"
+     },
      "filter": "",
      "selection": "single",
      "density": "compact",

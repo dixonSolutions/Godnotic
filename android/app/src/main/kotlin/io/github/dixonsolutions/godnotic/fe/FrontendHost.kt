@@ -700,12 +700,14 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     }
 
     private var optimistic: String? = null
+    private var showingAhead = false
 
     private fun showPrepared(id: String) {
         val r = renderer ?: return
         if (!r.isPrepared(id) || screens.lastOrNull() == id || failed) return
         if (client?.modal?.isNotEmpty() == true) return
-        r.navigate(id, "push")
+        showingAhead = true // its header binds now: a pushed screen has Back
+        try { r.navigate(id, "push") } finally { showingAhead = false }
         optimistic = id
         // the engine did not open it after all (refused, or another screen came): show what it says
         main.postDelayed({
@@ -986,7 +988,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         main.postDelayed({ toastLayer.removeView(t) }, 3500)
     }
 
-    override fun canBack(): Boolean = client?.canBack ?: false
+    override fun canBack(): Boolean = showingAhead || optimistic != null || (client?.canBack ?: false)
 
     override fun reserved(): List<Map<String, Any?>> = client?.reserved ?: emptyList()
 
