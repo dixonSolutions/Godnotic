@@ -72,11 +72,11 @@ On screen: the **MOVE** stick on the left (drag on the right side of the screen 
 ## Install (Flatpak)
 
 ```bash
-flatpak remote-add --user --if-not-exists godnotic \
-  https://dixonSolutions.github.io/Godnotic/flatpak
-flatpak install --user godnotic io.github.dixonSolutions.Godnotic
+flatpak install --user https://dixonSolutions.github.io/Godnotic/flatpak/io.github.dixonSolutions.Godnotic.flatpakref
 flatpak run io.github.dixonSolutions.Godnotic
 ```
+
+The runtime (GNOME) comes from Flathub. The remote is not GPG-signed: the `.flatpakref` (and [`godnotic.flatpakrepo`](https://dixonSolutions.github.io/Godnotic/flatpak/godnotic.flatpakrepo) for `flatpak remote-add --from`) tell Flatpak so; a plain `flatpak remote-add` of the URL needs `--no-gpg-verify`. Settings > Updates checks for and installs new versions from inside the app (through the Flatpak portal, Flatpak 1.6 or newer); GNOME Software, Discover and `flatpak update` work as well.
 
 Or download offline bundles from [GitHub Releases](https://github.com/dixonSolutions/Godnotic/releases/latest) (new `v1.2.*` tag per build; older tags kept).
 

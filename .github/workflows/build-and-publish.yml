@@ -314,9 +314,7 @@ jobs:
             echo
             echo "### Flatpak (Linux)"
             echo '```bash'
-            echo "flatpak remote-add --user --if-not-exists godnotic \\"
-            echo "  https://dixonSolutions.github.io/Godnotic/flatpak"
-            echo "flatpak install --user godnotic io.github.dixonSolutions.Godnotic"
+            echo "flatpak install --user https://dixonSolutions.github.io/Godnotic/flatpak/io.github.dixonSolutions.Godnotic.flatpakref"
             echo '```'
             echo
             echo "### Ubuntu Touch (.click)"

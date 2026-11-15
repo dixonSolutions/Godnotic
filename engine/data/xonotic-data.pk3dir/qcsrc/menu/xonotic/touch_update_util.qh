@@ -37,11 +37,18 @@
  *   done, total, speed, eta   download progress: bytes, bytes, bytes per second, seconds (-1 unknown)
  *   checked_min, checked_result   minutes since the last check, and how it ended
  *                         (uptodate, available, error)
+ *   portal                Flatpak only, written by the Linux app (loader/crates/gtk/src/updates.rs):
+ *                         yes = it checks and installs through the Flatpak portal (states idle,
+ *                         checking, uptodate, available, downloading, ready = restart to finish,
+ *                         error); none = no portal new enough (state managed, line 7 says why)
+ *   step, steps           Flatpak: which of the update's operations is running
+ *   commit, remote_commit Flatpak: the running and the remote's commit (12 hex digits)
  */
 const string TOUCH_UPDATE_STATUS_FILE = "touch/update-status.txt";
 
 /** Written by the menu, consumed and deleted by the platform layer. One token:
  *  check | download | install | skip | auto-on | auto-off | wifi-on | wifi-off
+ *  | restart (Flatpak: start the installed update in place of this build)
  *
  *  download fetches the new build into the update cache and stops there
  *  (state ready); install fetches it if it is not cached yet and installs it
@@ -179,6 +186,8 @@ bool TouchAndySU_active();
 string TouchUpdate_extra(string key);
 /** Android without an AndySU host: the app's own updater publishes the status. */
 bool TouchUpdate_appUpdater();
+/** The Flatpak with the Linux app behind it: Check now, Update now and Restart through the portal. */
+bool TouchUpdate_flatpakPortal();
 /** The running version as a number ("1.2.204"), or what stands for one: a web build's commit,
  *  "development build". Never the game's name. */
 string TouchUpdate_versionNumber();

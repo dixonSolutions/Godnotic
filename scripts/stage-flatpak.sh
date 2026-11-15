@@ -31,7 +31,17 @@ install -m 755 "$ROOT/scripts/godnotic-fetchd.sh" "$DEST/share/xonotic/godnotic-
 # installed build rather than stock Xonotic's git tag. PACKAGE_VERSION is what
 # CI stamps the metainfo with; a local build without it simply has no version to
 # show, which the menu renders as "development build".
-printf '%s\n' "${PACKAGE_VERSION:-}" > "$DEST/share/xonotic/version.txt"
+#
+# flatpak-builder does not pass CI's environment into the build, so PACKAGE_VERSION
+# is empty there (every Flatpak up to 1.2.206 shipped an empty version.txt); the
+# version scripts/set-package-version.sh stamped into the metainfo is in the
+# copied tree, so read it from there.
+FLATPAK_VERSION="${PACKAGE_VERSION:-}"
+if [ -z "$FLATPAK_VERSION" ]; then
+    FLATPAK_VERSION="$(sed -n 's|.*Automated CI build \(.*\)\.</p>.*|\1|p' \
+        "$ROOT/flatpak/io.github.dixonSolutions.Godnotic.metainfo.xml" | head -n 1)"
+fi
+printf '%s\n' "$FLATPAK_VERSION" > "$DEST/share/xonotic/version.txt"
 chmod 644 "$DEST/share/xonotic/version.txt"
 
 # Slim data + boot assets (menu skin, console, loading screen) so the engine can

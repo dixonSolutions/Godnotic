@@ -1,6 +1,6 @@
 {
  "name": "settings-updates-linux",
- "description": "Settings > updates on Linux: the version, how Flatpak delivers updates, Check now (asks the changelog).",
+ "description": "Settings > updates in the Flatpak: the installed and the newest version, Update now through the Flatpak portal, Check now and when the last check was.",
  "generated": "engine",
  "caps": {
   "nodes": [],
@@ -339,6 +339,8 @@
     "children": [
      "settings/split/updates/how",
      "settings/split/updates/version",
+     "settings/split/updates/newest",
+     "settings/split/updates/available",
      "settings/split/updates/check",
      "settings/split/updates/checked"
     ]
@@ -347,7 +349,7 @@
     "id": "settings/split/updates/how",
     "type": "text",
     "props": {
-     "body": "Godnotic updates through its Flatpak remote: GNOME Software, Discover or flatpak update install new versions.",
+     "body": "Godnotic updates from its Flatpak remote: here, or in GNOME Software, Discover or flatpak update. Your settings and maps stay.",
      "style": "caption"
     },
     "children": []
@@ -356,8 +358,51 @@
     "id": "settings/split/updates/version",
     "type": "text",
     "props": {
-     "body": "Version 1.2.204",
+     "body": "Version 1.2.205",
      "style": "title"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/updates/newest",
+    "type": "text",
+    "props": {
+     "body": "Newest version 1.2.206",
+     "style": "caption"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/updates/available",
+    "type": "section",
+    "props": {
+     "title": "Version 1.2.206 is out"
+    },
+    "children": [
+     "settings/split/updates/available/about",
+     "settings/split/updates/available/install"
+    ]
+   },
+   {
+    "id": "settings/split/updates/available/about",
+    "type": "text",
+    "props": {
+     "body": "Only what changed is downloaded. The first time, your desktop asks whether Godnotic may update itself.",
+     "style": "caption"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/updates/available/install",
+    "type": "button",
+    "props": {
+     "label": "Update now",
+     "action": {
+      "id": "updates.install",
+      "label": "Update now",
+      "icon": "download"
+     },
+     "style": "primary"
     },
     "children": []
    },
@@ -379,7 +424,7 @@
     "id": "settings/split/updates/checked",
     "type": "text",
     "props": {
-     "body": "Not checked yet",
+     "body": "Last checked 3 min ago: an update is available",
      "style": "caption"
     },
     "children": []

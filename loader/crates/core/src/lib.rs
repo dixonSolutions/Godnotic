@@ -11,13 +11,18 @@
 //!   as the Kotlin launcher and the Android app).
 //! - [`config`], [`paths`], [`platform`], [`link`]: settings file, folders,
 //!   what this device is, `godnotic://` links.
+//! - [`flatpak_update`], [`portal`] (feature `portal`): Settings > Updates in
+//!   the Flatpak, through the Flatpak portal.
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod bridge;
 pub mod config;
 pub mod fetch;
+pub mod flatpak_update;
 pub mod link;
 pub mod paths;
 pub mod platform;
+#[cfg(feature = "portal")]
+pub mod portal;
 pub mod render;
 pub mod session;

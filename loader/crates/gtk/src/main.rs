@@ -10,6 +10,7 @@ mod images;
 mod lists;
 mod script;
 mod session_ui;
+mod updates;
 mod widgets;
 
 use adw::prelude::*;
@@ -117,6 +118,7 @@ fn main() -> glib::ExitCode {
     // WM_CLASS on X11 follows the program name: the app id, as the desktop file's StartupWMClass says.
     glib::set_prgname(Some(APP_ID));
     godnotic_core::paths::GamePaths::adopt_old_name(&std::env::vars().collect());
+    updates::wait_for_old_instance(); // after a Flatpak update's restart
     let o = parse_args();
     let test_run = o.snapshot.is_some() || o.script.is_some() || std::env::var_os("GODNOTIC_EXIT_AFTER_FRAME").is_some() || std::env::var_os("GODNOTIC_NON_UNIQUE").is_some();
     let flags = if test_run { gio::ApplicationFlags::NON_UNIQUE } else { gio::ApplicationFlags::HANDLES_OPEN };
@@ -183,6 +185,7 @@ fn main() -> glib::ExitCode {
             glib::ControlFlow::Break
         });
         win.present();
+        if !test_run || std::env::var_os("GODNOTIC_TEST_UPDATES").is_some() { updates::start(&a); }
         *st.borrow_mut() = Some(a);
     });
     let st = state.clone();

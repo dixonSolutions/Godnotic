@@ -373,6 +373,7 @@ dependencies = [
 name = "godnotic-loader-core"
 version = "0.1.0"
 dependencies = [
+ "gio",
  "libc",
  "miniz_oxide",
  "serde",

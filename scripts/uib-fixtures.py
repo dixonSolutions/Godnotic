@@ -261,11 +261,13 @@ APP_STATUS = "\n".join([
 APP_DESC = ("Settings > updates on Android without an AndySU host: the app's own updater (GitHub releases, "
             "Android's installer): the version and channel, a found release with Download and install, Check now, "
             "the last check, Automatic updates and Wi-Fi only, Apply live shown off with why.")
-# Settings > Updates on Linux (packaging/start.sh): Flatpak owns updates; no check is run here
-# (cl_curl_enabled 0), so the screen says it has not checked yet.
-LINUX_STATUS = "\n".join(["1", "managed", "1.2.204", "", "0", "0", "Installed and updated by your package manager.",
-                           "off", "via=flatpak", ""])
-LINUX_DESC = "Settings > updates on Linux: the version, how Flatpak delivers updates, Check now (asks the changelog)."
+# Settings > Updates in the Flatpak, the Linux app checking and installing through the Flatpak
+# portal (loader/crates/gtk/src/updates.rs): a newer build found 3 minutes ago.
+LINUX_STATUS = "\n".join(["1", "available", "1.2.205", "1.2.206", "1", "0", "Version 1.2.206 is available",
+                           "off", "via=flatpak", "portal=yes", "checked_min=3", "checked_result=available",
+                           "commit=03c3d5707b0f", "remote_commit=6909a2fc6c97", ""])
+LINUX_DESC = ("Settings > updates in the Flatpak: the installed and the newest version, Update now through the "
+              "Flatpak portal, Check now and when the last check was.")
 ANDYSU_DESC = ("Settings > updates on an AndySU install (Android): what delivers updates, the version and channel, "
                "a staged release with Apply now, a newer one downloading, Check now, and the three switches. "
                "Elsewhere only the version and What is new.")
@@ -442,6 +444,7 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--report")
+    ap.add_argument("--only", help="with --write or --check: just these fixtures (comma-separated names)")
     args = ap.parse_args()
     out, report = run(args)
     if args.report:
@@ -449,7 +452,10 @@ def main():
             json.dump(report, f, indent=1)
     print(json.dumps(report, indent=1))
     bad = 0
+    only = set(args.only.split(",")) if args.only else None
     for name, fx in sorted(out.items()):
+        if only is not None and name not in only:
+            continue
         path = os.path.join(FIX, name + ".json")
         if args.write:
             with open(path, "w", encoding="utf-8") as f:

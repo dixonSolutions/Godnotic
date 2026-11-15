@@ -619,6 +619,8 @@ void UIB_SecUpdatesManaged()
 	else
 		how = _("This build does not update itself: install a release to get updates.");
 	UIB_Text("how", how, "caption");
+	if (via == "flatpak" && TouchUpdate_extra("portal") == "none")
+		UIB_Text("portal", _("Checking and updating from inside Godnotic needs Flatpak 1.6 or newer."), "note");
 	UIB_UpdVersion("", "");
 
 	// The page always runs the newest release, and a build from source has no release to
@@ -652,11 +654,63 @@ void UIB_SecUpdatesManaged()
 	UIB_Text("checked", line, "caption");
 }
 
+// The Flatpak with the Linux app behind it: the version and the remote's newest, Check now, Update
+// now with its progress, then Restart to finish, all through the Flatpak portal
+// (loader/crates/gtk/src/updates.rs serves the requests and writes the status).
+void UIB_SecUpdatesFlatpak()
+{
+	string state = TouchUpdate_stateName();
+	string latest = TouchUpdate_latest();
+	string fromLog = TouchUpdate_changelogLatest();
+	if (latest == "" && state != TOUCH_UPDATE_UPTODATE && fromLog != "" && vercmp(fromLog, TouchUpdate_installed()) > 0)
+		latest = fromLog;
+	UIB_Text("how", _("Godnotic updates from its Flatpak remote: here, or in GNOME Software, Discover or flatpak update. Your settings and maps stay."), "caption");
+	UIB_UpdVersion("", "");
+	if (latest != "")
+		UIB_Text("newest", sprintf(_("Newest version %s"), latest), "caption");
+
+	if (state == TOUCH_UPDATE_DOWNLOADING)
+	{
+		UIB_UpdProgress(latest, TouchUpdate_percent(), 0, 0, 0, "");
+		if (TouchUpdate_extra("steps") != "")
+			UIB_Text("step", sprintf(_("Step %s of %s"), TouchUpdate_extra("step"), TouchUpdate_extra("steps")), "caption");
+	}
+	else if (state == TOUCH_UPDATE_READY)
+	{
+		UIB_Section("ready", ((latest != "") ? sprintf(_("Version %s is installed"), latest) : _("The update is installed")), false);
+			UIB_Text("about", _("Restart Godnotic to finish: the new version opens in place of this one."), "caption");
+			UIB_Button("restart", _("Restart to finish"), UIB_A("updates.restart", _("Restart to finish"), "refresh"), "primary");
+		UIB_Close();
+	}
+	else if (state == TOUCH_UPDATE_AVAILABLE)
+	{
+		UIB_Section("available", ((latest != "") ? sprintf(_("Version %s is out"), latest) : _("An update is available")), false);
+			UIB_Text("about", _("Only what changed is downloaded. The first time, your desktop asks whether Godnotic may update itself."), "caption");
+			UIB_Button("install", _("Update now"), UIB_A("updates.install", _("Update now"), "download"), "primary");
+		UIB_Close();
+	}
+	if (state == TOUCH_UPDATE_ERROR && TouchUpdate_message() != "")
+	{
+		UIB_Text("error", TouchUpdate_message(), "warning");
+		UIB_Text("elsewhere", _("GNOME Software, Discover or flatpak update can install it too."), "caption");
+	}
+	string remote = TouchUpdate_extra("remote_commit");
+	if (state == TOUCH_UPDATE_ERROR && remote != "" && remote != TouchUpdate_extra("commit"))
+		UIB_Button("install", _("Try again"), UIB_A("updates.install", _("Try again"), "download"), "secondary");
+
+	bool checking = state == TOUCH_UPDATE_CHECKING;
+	UIB_UpdCheckButton(checking, state == TOUCH_UPDATE_DOWNLOADING || state == TOUCH_UPDATE_READY);
+	UIB_Text("checked", (checking ? _("Checking for updates...")
+		: UIB_UpdCheckedLine(TouchUpdate_extra("checked_min"), TouchUpdate_extra("checked_result"))), "caption");
+}
+
 void UIB_SecUpdates()
 {
 	TouchUpdate_read(); // both status files
 	if (TouchAndySU_active())
 		UIB_SecUpdatesAndySU();
+	else if (TouchUpdate_flatpakPortal())
+		UIB_SecUpdatesFlatpak();
 	else if (TouchUpdate_appUpdater())
 		UIB_SecUpdatesApp();
 	else
@@ -984,13 +1038,14 @@ bool UIB_SettingsAction(string node, string a, string payload)
 		case "updates.check":
 			TouchUpdate_read();
 			if (TouchAndySU_active()) TouchAndySU_request("check");
-			else if (TouchUpdate_appUpdater()) TouchUpdate_request("check");
+			else if (TouchUpdate_appUpdater() || TouchUpdate_flatpakPortal()) TouchUpdate_request("check");
 			else TouchUpdate_checkChangelog();
 			UIB_RebuildAll();
 			return true;
 		case "updates.apply": TouchAndySU_request("apply"); return true;
 		case "updates.download": TouchAndySU_request("download"); return true;
 		case "updates.install": TouchUpdate_request("install"); return true;
+		case "updates.restart": TouchUpdate_request("restart"); return true;
 		case "mods.install.link": UIB_Modal("mods.link"); return true;
 		case "mods.install.url":
 		{

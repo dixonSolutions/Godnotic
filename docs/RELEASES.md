@@ -4,14 +4,14 @@
 
 | Format | Targets | Notes |
 |--------|---------|--------|
-| **Flatpak** | Linux desktop + tablets (`x86_64`, `aarch64`) | Versioned OSTree remote on GitHub Pages (history kept) |
+| **Flatpak** | Linux desktop + tablets (`x86_64`, `aarch64`) | OSTree remote on GitHub Pages; updates from Settings > Updates |
 | **Click** | Ubuntu Touch (`arm64`, `armhf`) | GitHub Pages download remote + versioned GitHub Release assets |
 
 Packages are slim: compiled game logic and touch configs ship in the app; **textures, maps, and music download on first launch**.
 
 All builds and publishing run through [GitHub Actions](.github/workflows/build-and-publish.yml).
 
-Each push to `main` creates a **new immutable version** `1.2.<run_number>` (tag `v1.2.<run_number>`). Older GitHub Releases are **not** deleted. The Flatpak remote **appends** the new commit and keeps prior OSTree history (pruned to the last ~40 commits per ref).
+Each push to `main` creates a **new immutable version** `1.2.<run_number>` (tag `v1.2.<run_number>`). Older GitHub Releases are **not** deleted. The Flatpak remote gets the new commit (see below: the commits carry no parent, so no older ones stay reachable).
 
 ## Flatpak
 
@@ -25,19 +25,34 @@ Each push to `main` creates a **new immutable version** `1.2.<run_number>` (tag 
 | **Architectures** | `x86_64` (desktop/laptop), `aarch64` (ARM tablets/phones) |
 
 ```bash
-flatpak remote-add --user --if-not-exists godnotic \
-  https://dixonSolutions.github.io/Godnotic/flatpak
-
-flatpak install --user godnotic io.github.dixonSolutions.Godnotic
+flatpak install --user https://dixonSolutions.github.io/Godnotic/flatpak/io.github.dixonSolutions.Godnotic.flatpakref
 flatpak update --user io.github.dixonSolutions.Godnotic
 ```
 
-List older commits (rollback):
+The remote is **not GPG-signed**. `scripts/publish-flatpak-remote.sh` publishes
+`io.github.dixonSolutions.Godnotic.flatpakref` (runtime from Flathub) and
+`godnotic.flatpakrepo` without a `GPGKey`, which tells Flatpak to skip signature checks for
+this remote. A bare `flatpak remote-add <url>` expects signatures and fails ("GPG verification
+enabled, but no summary signatures found"); add `--no-gpg-verify` there. Signing needs a key
+in a repository secret (not set up yet).
 
-```bash
-flatpak remote-info --log godnotic io.github.dixonSolutions.Godnotic
-# then install/update to a specific commit hash if needed
-```
+The bundles are imported as commits without a parent, so the remote holds only the newest
+commit per ref: `flatpak remote-info --log` shows no history and there is no rollback to an
+older build through the remote (the `.flatpak` bundles on GitHub Releases are the way back).
+
+### Updates from inside the app
+
+Settings > Updates in the Flatpak checks for and installs new versions itself, through the
+Flatpak portal (`org.freedesktop.portal.Flatpak`, Flatpak 1.6 or newer): the Linux app
+(`loader/crates/gtk/src/updates.rs`) keeps an update monitor, Check now reads the remote's
+`summary` and `changelog.txt` (a few KB), Update now is the portal's `Update` with a progress
+bar, and Restart to finish starts the new build through the portal's `Spawn` (latest version)
+and quits the old one. The first update asks, in a desktop dialog, whether Godnotic may update
+itself; an update that would add sandbox permissions is refused by the portal (GNOME Software
+or `flatpak update` then). Without the portal the screen says how updates arrive, as before.
+Tests: `cargo test -p godnotic-loader-core --features portal` (a stub portal on a private
+dbus-daemon), `tests/uibridge/flatpak_updates_test.py` (the screen, in `test-uibridge.sh
+--engine`) and `scripts/test-flatpak-updates.sh` (the GTK app end to end, offscreen and offline).
 
 First launch downloads game assets (~3 GB) into:
 

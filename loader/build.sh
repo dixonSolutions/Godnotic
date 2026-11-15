@@ -21,8 +21,9 @@ export XT_GNOME_SDK="$SDK"
 ./build-in-sdk.sh "cargo build --release --locked -p godnotic-loader"
 if [ "${1:-}" = "--check" ]; then
     ./build-in-sdk.sh "cargo clippy --release --locked -p godnotic-loader -- -D warnings"
-    cargo clippy --locked -p godnotic-loader-core --features http-ureq --all-targets -- -D warnings
-    cargo test --locked -p godnotic-loader-core --features http-ureq
+    # portal: the Flatpak update client, tested against a stub portal on a private dbus-daemon
+    cargo clippy --locked -p godnotic-loader-core --features http-ureq,portal --all-targets -- -D warnings
+    cargo test --locked -p godnotic-loader-core --features http-ureq,portal
 fi
 ARCH="$(uname -m)"
 mkdir -p dist
