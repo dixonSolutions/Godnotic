@@ -1,0 +1,32 @@
+# scripts/test-gtk-mpsort.sh: open Multiplayer, click Players at the top, scroll down, let a
+# Refresh stream 200 servers in, Back, open again (src/script.rs commands; OUT/ is the run dir)
+wait 7000
+click home/tiles/mp
+wait 2500
+listsort mp/servers OUT/sort.txt
+snapshot OUT/1-open.png
+sort mp/servers players
+wait 400
+listsort mp/servers OUT/sort.txt
+snapshot OUT/2-players.png
+scroll mp/servers 60
+wait 400
+listsort mp/servers OUT/sort.txt
+click mp/bar/filters/refresh
+wait 300
+listsort mp/servers OUT/sort.txt
+wait 700
+listsort mp/servers OUT/sort.txt
+wait 1500
+listsort mp/servers OUT/sort.txt
+wait 2500
+listsort mp/servers OUT/sort.txt
+snapshot OUT/3-after-refresh.png
+back
+wait 1500
+click home/tiles/mp
+wait 1500
+listsort mp/servers OUT/sort.txt
+snapshot OUT/4-reopen.png
+wait 500
+quit
