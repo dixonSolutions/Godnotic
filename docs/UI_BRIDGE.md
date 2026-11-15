@@ -141,7 +141,7 @@ Owner rules that the descriptions follow and renderers must not undo:
 | `hello` | reply to the renderer's `hello` | `schema`, `engine` (name/version string), `session` (random per engine process), `limits` (object, section 3), `features` (array of strings) |
 | `snapshot` | after `hello`, on `sync`, and whenever a diff cannot be produced | `rev`, `root` (always `"app"`), `nodes` (array of nodes, parents before children) |
 | `diff` | after the store changes, at most once per engine frame | `base` (the rev it applies to), `rev`, `set` (nodes, whole, parents before children), `del` (node ids) |
-| `rows` | reply to `window` | `source`, `rev` (source revision), `total`, `offset`, `rows` |
+| `rows` | reply to `window`; also unasked with `re: 0`, a new list's first window right after the diff that creates it (4.7, "Opening a screen fast") | `source`, `rev` (source revision), `total`, `offset`, `rows` |
 | `source` | a data source changed (new servers, a ping, a filter) | `source`, `rev`, `total` |
 | `image` | reply to `image` | `ref`, `mime`, `w`, `h`, and `path` or `data` (base64) |
 | `ack` | reply to `sync`, `caps`, `ping` (as `pong`) when nothing else answers | — |
@@ -241,9 +241,11 @@ image/window requests, so a reconnect is cheap.
 | `reserved` | `{id, x, y, w, h}`[] | rects, in dp of the engine's window, that the engine itself draws over the UI (section 4.12). Absent when there are none |
 | `title` | string | application title |
 | `context` | `"menu"` / `"game"` / `"loading"` | menu at start, pause menu over a running match, a loading screen |
+| `prepared` | id[] | screens built ahead and kept while they are not shown (Multiplayer while Home shows). Absent when there are none. See "Opening a screen fast" below |
 
-Children: every screen in `stack` and `modal`, then the `toast` nodes. Screens that leave the
-stack are deleted from the store; renderers may keep their widgets for a back animation.
+Children: every screen in `stack` and `modal`, then the `prepared` screens that are not
+shown, then the `toast` nodes. Screens that leave the stack are deleted from the store
+unless they are `prepared`; renderers may keep their widgets for a back animation.
 
 **`screen`** — one page. Props: `title`, `subtitle`, `presentation`
 (`page` default, `sheet`, `dialog`, `fullscreen`), `kind` (`home`, `page`, `detail`,
@@ -383,8 +385,60 @@ carries the stored value; a refused value comes back as the old value with `erro
 | `url` | `kind: link` only: an `https:` (or `http:`) URL. The renderer shows the host and asks before opening it in the system browser |
 | `accept` | `kind: file` only: file kinds (`"pk3"`, `"zip"`, `"godnotic-mod"`) for the system picker; the chosen file comes back as `payload.path` (a readable path or a content URI) |
 | `text` | `kind: share` / `copy`: the text the renderer shares or copies itself (no event needed; it may still send one) |
+| `opens` | the screen the action shows, one of `app.prepared`: a renderer that has that screen built may show it at the tap and send the event; the engine's answer then confirms it (see below) |
 
 Nothing else in a description can open a URL or a file.
+
+#### Opening a screen fast
+
+A tap that opens a screen must show it in the next frame, with its data. The engine and
+the renderers share the work:
+
+- **Screens built ahead.** The menu VM builds Multiplayer while Home shows and lists it in
+  `app.prepared` (`uib_prepare`). A renderer builds its widgets then, hidden but laid out
+  (Kotlin: `INVISIBLE` in the screen layer; the Rust driver emits a `prepared` op after
+  creating them), and keeps them after Back: the screen stays prepared.
+- **`opens`.** Home's Multiplayer card carries `"opens": "mp"`. The renderer shows the
+  prepared screen in the frame after the tap and sends the action; the engine pushes the
+  screen (a diff with only `app.stack` changed) and the renderer's `navigate` to a screen it
+  already shows is a no-op that keeps the list's scroll. If the engine does not open it
+  (another screen comes, or nothing within 1.5 s), the renderer shows what the engine says.
+- **Counts and first rows with the list.** A `list` that appears gets its `count` in the
+  diff that creates it (not at the next quarter-second poll), and the engine sends the
+  list's first window (offset 0, 50 rows, the node's `sort`, `desc` and `filter`) right
+  after that diff as a `rows` message with `re: 0`, to every native renderer. A renderer
+  treats it like the answer to a `window` request; it may wait a moment before asking for
+  a new list's first window, since it usually has it by then.
+- **Saved rows before the first refresh.** Until the session's first refresh the
+  `servers` source holds the saved list's rows (`stale: true`), so the prepared list has
+  rows before Multiplayer was ever opened; no packet is sent for them.
+- **The engine wakes for the renderer.** The engine idles between frames behind a native
+  screen (`cl_maxidlefps`, 20 a second); a message from the front end ends that sleep at
+  once (an eventfd that the in-process queue, the Android JNI queue and the stream socket
+  poke). Linux and Android; elsewhere the sleep is unchanged.
+
+The open trace shows each step with timestamps: `uib_trace 1` prints the engine's side
+(`uib: +N ms ...`: the action handled, the diff, the first rows, windows, source notices,
+the server list's refresh), always in logcat on Android, and the Kotlin renderer logs
+`Native UI: open: ...` (the tap, the screen up, drawn, rows drawn) with ms after the tap.
+
+#### Lists that stay put while they update
+
+- A `source` notice does not clear a list: the renderer keeps the rows it shows, takes the
+  new `total` at once (growing or shrinking at the end), asks for its visible window again
+  and replaces rows in place when it comes, rebinding only rows whose content changed. The
+  row at the top of the screen (when not at the top of the list) keeps its place on screen
+  while the order around it changes.
+- The player's sort: a list with `sortAction` (an action) wants a header tap reported as
+  that action with `payload: {"sort": <column key>, "desc": <bool>}`. The renderer sorts at
+  once; the menu VM keeps the choice, so every later build of the list carries it. Until
+  the engine's props say the same, a diff in between does not undo the player's sort.
+- Equal sort keys (a dozen servers with 0 players) are ordered by row key, so they never
+  swap places between updates.
+- A filter (a checkbox bound to `cvar:menu_slist_show*`, LAN) applies in the frame it
+  changes: the source is re-read then, its notice follows the diff with the new value. A
+  renderer shows a value it sent until the engine's props carry it (or 1.5 s), so a diff
+  already on its way does not flip the checkbox back.
 
 ### 4.8 Data sources
 
@@ -1039,6 +1093,7 @@ Every line marked `// Touch:`:
 | `engine/darkplaces/host.c` | `#include "touch_uib.h"`; `TouchUIB_Init();` in `Host_InitLocal`; `TouchUIB_Frame();` after `Cbuf_Frame`; `TouchUIB_Shutdown();` first in `Host_Shutdown` |
 | `engine/darkplaces/mvm_cmds.c` | `#include "touch_uib_mvm.h"`; `#include "touch_uib_mvm.inc"` before the last entry of `vm_m_builtins` (designated indices from #1180, so builtins upstream adds below never shift ours) |
 | `engine/darkplaces/makefile.inc` | the seven `touch_uib*.o` in `OBJ_COMMON` (Android's CMake reads this list) |
+| `engine/darkplaces/sys_shared.c` | in `Sys_Frame`, after `TouchLoadTime_SleepTime`: `sleeptime = TouchUIB_SleepTime(sleeptime);` (the idle sleep ends when a front end sends something) |
 | `qcsrc/menu/menu.qc` | `#include "xonotic/touch_uib_render.qh"`; in `m_draw` after `draw_reset_cropped()`: `if (TouchUIB_Draw(menuAlpha)) {...}`; in `m_keydown` and `m_keyup` after `if (!Menu_Active) return;` |
 | `qcsrc/menu/xonotic/_mod.inc`, `_mod.qh` | the `touch_uib_*` includes |
 

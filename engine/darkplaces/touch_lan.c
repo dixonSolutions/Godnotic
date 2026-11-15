@@ -1132,8 +1132,10 @@ static void repeat_frame(void)
 void TouchLAN_Broadcast(lhnetsocket_t *sock) { (void)sock; }
 #endif
 
+double touchlan_query_t0; // ServerList_QueryList asks this right before the masters (the open trace times them)
 qbool TouchLAN_LanOnly(void)
 {
+	touchlan_query_t0 = Sys_DirtyTime();
 	return net_slist_lan_only.integer != 0;
 }
 

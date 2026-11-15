@@ -107,15 +107,39 @@ string UIB_TopScreen()
 	return n ? argv(n - 1) : "";
 }
 
+void UIB_Build(string id);
+void UIB_Prepare();
+
 void UIB_Nav()
 {
 	int n = tokenize_console(uibn_stack);
 	bool canback = n > 1 || uibn_modal != "" || uibn_context == "game";
 	if (uibn_modal == "welcome") canback = false; // a name first (UIB_BuildWelcome)
 	uib_nav(uibn_stack, uibn_modal, canback, uibn_context);
+	UIB_Prepare();
 }
 
-void UIB_Build(string id);
+// Multiplayer is built ahead while Home shows (app.prepared, docs/UI_BRIDGE.md
+// 4.1): a native renderer keeps its views and its rows (the saved list before
+// the first refresh) ready, so a tap on the card shows it in the next frame and
+// the engine's answer only confirms it. Coming back from it, the screen stays
+// prepared, views and all. Nothing for the QuakeC renderer, which draws only
+// what is shown.
+string uib_prepared;
+void UIB_Prepare()
+{
+	if (cvar_string("uib_prepare") == "")
+		return; // an engine without uib_prepare
+	string want = "";
+	if (uib_native() && uibn_context != "game" && uibn_modal == "" && UIB_TopScreen() == "home")
+		want = "mp";
+	if (want != "" && uib_type(want) == "")
+		UIB_Build(want); // tokenize-free: callers of UIB_Nav may still read their argv
+	if (want == uib_prepared)
+		return;
+	strcpy(uib_prepared, want);
+	uib_prepare(want);
+}
 
 void UIB_SetStack(string stack, string modal)
 {
@@ -373,7 +397,8 @@ void UIB_BuildHome()
 			uib_s("aspect", "16:9");
 			uib_b("featured", 1);
 			uib_b("live", 1);
-			uib_j("primary", UIB_A("mp", _("Open"), "chevron"));
+			// "opens": the screen this shows (prepared above): a native renderer shows it at the tap
+			uib_j("primary", sprintf("{\"id\":\"mp\",\"label\":%s,\"icon\":\"chevron\",\"opens\":\"mp\"}", uib_q(_("Open"))));
 		UIB_Close();
 	UIB_Close();
 
@@ -1005,6 +1030,9 @@ void UIB_BuildServers()
 		string sort = UIB_VM("mp.sort");
 		uib_s("sort", sort == "" ? "ping" : sort);
 		uib_b("desc", UIB_VMf("mp.desc"));
+		// a header tap: the renderer sorts at once and tells us (payload sort, desc), so
+		// every later build of this list keeps the player's order instead of undoing it
+		uib_j("sortAction", UIB_A("server.sort", _("Sort"), ""));
 		uib_s("filter", UIB_VM("mp.search"));
 		// one tap chooses a server, the one Join button (or a double tap) joins it;
 		// rows are text only: no per-row buttons, no page behind a row
@@ -1855,7 +1883,11 @@ void UIB_Tick()
 	{
 		uib_next_tick = uib_gettime(1) + 0.5;
 		if (UIB_ServerSummary())
+		{
 			UIB_Build(top);
+			if (top == "home" && uib_prepared == "mp")
+				UIB_Build("mp"); // its subtitle says the same
+		}
 		// while Multiplayer shows: a refresh every 10 s keeps the list live (the engine throttles it)
 		if (top == "mp" && uib_gettime(1) > uib_mp_next_refresh)
 		{
@@ -1883,8 +1915,28 @@ void UIB_Tick()
 
 // ---------------------------------------------------------------- events
 
+// "server.sort" with payload {"sort":"players","desc":true}
+void UIB_ServerSort(string payload)
+{
+	int k = strstrofs(payload, "\"sort\":\"", 0);
+	if (k < 0) return;
+	string key = substring(payload, k + 8, -1);
+	int e = strstrofs(key, "\"", 0);
+	if (e <= 0 || e > 32) return;
+	key = substring(key, 0, e);
+	UIB_VMSet("mp.sort", key);
+	UIB_VMSet("mp.desc", (strstrofs(payload, "\"desc\":true", 0) >= 0) ? "1" : "0");
+	if (UIB_TopScreen() == "mp" || uib_prepared == "mp")
+		UIB_Build("mp");
+}
+
 void UIB_Action(string node, string a, string payload)
 {
+	if (a == "server.sort")
+	{
+		UIB_ServerSort(payload);
+		return;
+	}
 	if (substring(a, 0, 5) == "mode.")
 	{
 		UIB_SetMode(substring(a, 5, -1));

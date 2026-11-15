@@ -48,6 +48,10 @@ while a finger is on it.
 #include "touch_srvlist_logic.h"
 #include "touch_joinfail.h"
 #include <time.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+void UIB_Trace(const char *fmt, ...) DP_FUNC_PRINTF(1); // touch_uib.c: the open trace
 
 #ifdef CONFIG_MENU
 
@@ -612,6 +616,9 @@ static void settle(double now)
 	stats_line(buf, sizeof(buf));
 	if (net_slist_stats_print.integer || developer.integer)
 		Con_Printf("%s\n", buf);
+#ifdef __ANDROID__
+	__android_log_print(ANDROID_LOG_INFO, "Godnotic", "%s", buf);
+#endif
 }
 
 static void TouchSrvList_Stats_f(cmd_state_t *cmd)
@@ -634,6 +641,9 @@ void TouchSrvList_Refresh(qbool resetcache)
 {
 	unsigned i;
 	double now = now_real();
+	double dt0 = Sys_DirtyTime();
+	extern double touchlan_query_t0;
+	double q0 = touchlan_query_t0; // the masters were asked right after it (seed() asks it again)
 	qbool had_rows = false;
 	sync_sides();
 	if (resetcache)
@@ -688,6 +698,9 @@ void TouchSrvList_Refresh(qbool resetcache)
 	// the first wave goes out now, in the frame the list opened, not the next
 	if (sl.fast && !sl.model)
 		TouchSrvList_QueryFrame();
+	UIB_Trace("server list refresh%s: masters and LAN %.1f ms, the list's own %.1f ms, %d rows up, %d seeded",
+		resetcache ? " (reset)" : "", q0 > 0 ? (dt0 - q0) * 1000.0 : -1.0,
+		(Sys_DirtyTime() - dt0) * 1000.0, sl.rows_at_open, sl.seeded);
 }
 
 void TouchSrvList_Replied(unsigned n)
@@ -993,6 +1006,43 @@ void TouchSrvList_FirstFrame(void)
 	summary_from_saved();
 }
 
+// the saved rows the list's first frame would show, until a refresh has run
+static int saved_idx[TOUCHSL_MAX_RECORDS], nsaved_idx = -1;
+int TouchSrvList_SavedRows(void)
+{
+	int i;
+	long long now;
+	if (sl.t0 || !TouchSrvList_Fast() || !net_slist_saved.integer || serverlist_cachecount)
+		return 0;
+	if (nsaved_idx < 0)
+	{
+		recs_load();
+		now = (long long)time(NULL);
+		nsaved_idx = 0;
+		for (i = 0; i < nrecs; i++)
+			if (TouchSL_RecordShown(&recs[i], now))
+				saved_idx[nsaved_idx++] = i;
+	}
+	return nsaved_idx;
+}
+
+qbool TouchSrvList_SavedRow(int i, touchsl_saved_t *out)
+{
+	const touchsl_record_t *r;
+	if (i < 0 || i >= nsaved_idx)
+		return false;
+	r = &recs[saved_idx[i]];
+	out->cname = r->cname;
+	out->name = r->name;
+	out->map = r->map;
+	out->qcstatus = r->qcstatus;
+	out->ping = r->ping;
+	out->numplayers = r->numplayers;
+	out->numbots = r->numbots;
+	out->maxplayers = r->maxplayers;
+	return true;
+}
+
 #else // !CONFIG_MENU: the dedicated server has no server list
 
 qbool TouchSrvList_Fast(void) { return false; }
@@ -1002,5 +1052,7 @@ unsigned TouchSrvList_Serial(void) { return 0; }
 void TouchSrvList_Init(void) {}
 void TouchSrvList_Frame(void) {}
 void TouchSrvList_FirstFrame(void) {}
+int TouchSrvList_SavedRows(void) { return 0; }
+qbool TouchSrvList_SavedRow(int i, touchsl_saved_t *out) { return false; }
 
 #endif

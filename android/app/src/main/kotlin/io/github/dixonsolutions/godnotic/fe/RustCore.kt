@@ -19,6 +19,8 @@ class RustCore private constructor(private val renderer: UiRenderer, private val
     override var ignoreRows = false
         set(v) { field = v; if (handle != 0L) nativeIgnoreRows(handle, v) }
     override val topKind: String get() = state.str("kind")
+    /** The screen on top as the core last read it (app.stack). */
+    val top: String get() = state.str("top")
     override val canBack: Boolean get() = state.bool("canBack")
     override val modal: List<String> get() = state["modal"].list().map { it.toString() }
     override val hero: String get() = state.str("hero")
@@ -54,6 +56,8 @@ class RustCore private constructor(private val renderer: UiRenderer, private val
                 "dialog" -> renderer.dialog(op["id"] as? String)
                 "toast" -> renderer.toast(op.str("text"), op.str("kind", "info"))
                 "rows" -> renderer.listRows(op.str("source"), op.int("offset"), op.int("total"), op["rows"].list().map { it.obj() })
+                "source" -> renderer.sourceChanged(op.str("source"), op.int("total"))
+                "prepared" -> renderer.prepared(op.str("screen"))
                 "image" -> renderer.imageReady(op.str("ref"), op.str("path"))
             }
         }

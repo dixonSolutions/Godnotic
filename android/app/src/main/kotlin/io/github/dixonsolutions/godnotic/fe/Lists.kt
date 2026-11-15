@@ -93,7 +93,10 @@ class VirtualList(
         view.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = ask()
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
-                if (state == RecyclerView.SCROLL_STATE_IDLE && !touching) onVisible?.invoke(shown(), null)
+                if (state == RecyclerView.SCROLL_STATE_IDLE && !touching) {
+                    onVisible?.invoke(shown(), null)
+                    pendingTotal?.let { sourceChanged(it) }
+                }
             }
         })
         // a finger on the list: the engine holds its source still (docs/UI_BRIDGE.md, `visible`)
@@ -101,7 +104,11 @@ class VirtualList(
             override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
                 when (e.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> if (!touching) { touching = true; onVisible?.invoke(shown(), true) }
-                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> if (touching) { touching = false; onVisible?.invoke(shown(), false) }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> if (touching) {
+                        touching = false; onVisible?.invoke(shown(), false)
+                        // a tap or a hold without a fling: catch up now (a fling catches up when it stops)
+                        rv.post { if (!touching && rv.scrollState == RecyclerView.SCROLL_STATE_IDLE) pendingTotal?.let { sourceChanged(it) } }
+                    }
                 }
                 return false
             }
@@ -110,6 +117,8 @@ class VirtualList(
     }
 
     private var touching = false
+    /** A source change that came while the list moved: applied when it stops. */
+    private var pendingTotal: Int? = null
     /** The rows on screen and whether a finger is on the list (null: unchanged). */
     var onVisible: ((IntRange, Boolean?) -> Unit)? = null
 
@@ -128,12 +137,66 @@ class VirtualList(
         window.missing(max(0, first - margin), last + margin)?.let { request(it) }
     }
 
-    /** New rows from the bridge: rebinds only the changed positions. */
+    /**
+     * New rows from the bridge, put in place: only rows whose content changed are
+     * rebound, a new count grows or shrinks the list at its end, and the row the
+     * player was looking at (below the top) stays where it was on screen while the
+     * order around it changes (a refresh streaming answers in, docs/UI_BRIDGE.md
+     * "Lists that stay put while they update"). Nothing is cleared first, so nothing flashes.
+     */
     fun rows(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         val before = window.total
+        if (before < 0) {
+            window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
+            adapter.notifyDataSetChanged()
+            return
+        }
+        val lm = view.layoutManager as? LinearLayoutManager
+        val firstPos = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+        // not while a finger or a fling moves the list: that would stop the fling
+        val anchorKey = if (firstPos > 0 && !touching && view.scrollState == RecyclerView.SCROLL_STATE_IDLE) window.row(firstPos)?.let(::keyOf) else null
+        val anchorTop = if (anchorKey != null) lm?.findViewByPosition(firstPos)?.top ?: 0 else 0
+        val old = rows.indices.map { window.row(offset + it) }
         window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
-        if (before != total) adapter.notifyDataSetChanged() // the count changed: positions stay keyed by id
-        else adapter.notifyItemRangeChanged(offset, rows.size, PAYLOAD_ROW)
+        if (total > before) adapter.notifyItemRangeInserted(before, total - before)
+        else if (total < before) adapter.notifyItemRangeRemoved(total, before - total)
+        var start = -1
+        for (i in rows.indices) {
+            val pos = offset + i
+            val changed = pos < minOf(before, total) && old[i] != rows[i]
+            if (changed && start < 0) start = pos
+            if (!changed && start >= 0) { adapter.notifyItemRangeChanged(start, pos - start, PAYLOAD_ROW); start = -1 }
+        }
+        if (start >= 0) adapter.notifyItemRangeChanged(start, minOf(offset + rows.size, total) - start, PAYLOAD_ROW)
+        if (anchorKey != null && lm != null) {
+            val now = (offset until offset + rows.size).firstOrNull { window.row(it)?.let(::keyOf) == anchorKey }
+            if (now != null && now != firstPos) lm.scrollToPositionWithOffset(now, anchorTop)
+        }
+    }
+
+    /**
+     * The source changed (a refresh, a filter): the rows on screen stay until their
+     * new versions come, the count follows at once, the visible window is asked for
+     * again. Replaces clearing to placeholders on every notice, which flashed the
+     * whole list four times a second while a refresh ran.
+     */
+    fun sourceChanged(total: Int) {
+        val before = window.total
+        if (before < 0 || window.loaded == 0) { reset(total); return }
+        // while a finger or a fling moves the list, the update waits for it to stop:
+        // nothing jumps under the player, and no frame of the fling pays for a rebind
+        if (touching || view.scrollState != RecyclerView.SCROLL_STATE_IDLE) { pendingTotal = total; return }
+        pendingTotal = null
+        window.markStale(total)
+        if (total > before) adapter.notifyItemRangeInserted(before, total - before)
+        else if (total < before) adapter.notifyItemRangeRemoved(total, before - total)
+        if (total <= 0) return
+        val lm = view.layoutManager as? LinearLayoutManager
+        val first = max(0, lm?.findFirstVisibleItemPosition() ?: 0)
+        val last = max(first, lm?.findLastVisibleItemPosition() ?: 0)
+        var r = window.missing(first, last)
+        var guard = 0
+        while (r != null && guard++ < 4) { request(r); r = window.missing(first, last) }
     }
 
     /** All rows at once (a small inline list), diffed against what is shown by key. */
@@ -150,10 +213,22 @@ class VirtualList(
         window.invalidate()
         window.accept(mapOf("offset" to 0.0, "total" to total.toDouble(), "rows" to emptyList<Any>()))
         adapter.notifyDataSetChanged()
-        window.missing(0, window.pageSize)?.let { request(it) }
+        // asked a moment later: the engine pushes a new list's first rows right after
+        // the diff that creates it, in the same batch, and then nothing is missing
+        view.post { window.missing(0, window.pageSize)?.let { request(it) } }
     }
 
     fun refresh() = adapter.notifyDataSetChanged()
+
+    /** Rows laid out on screen with their data (not placeholders): the open trace's "rows drawn". */
+    fun shownRows(): Int {
+        var n = 0
+        for (i in 0 until view.childCount) {
+            val p = view.getChildAdapterPosition(view.getChildAt(i))
+            if (p != RecyclerView.NO_POSITION && window.row(p) != null) n++
+        }
+        return n
+    }
 
     /** One horizontal row of cards of [itemWidth] px (a picker inside a scrolling page). */
     var carouselWidth = 0

@@ -27,6 +27,10 @@ interface UiRenderer {
     fun toast(text: String, kind: String)
     /** Rows [offset, offset + rows.size) of data source [source] of [total] rows. */
     fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>)
+    /** [source] changed (a refresh, a filter): keep the rows shown, ask for them again. */
+    fun sourceChanged(source: String, total: Int) = listRows(source, 0, total, emptyList())
+    /** A screen the engine built ahead (app.prepared): created, not shown; get it ready. */
+    fun prepared(screen: String) {}
     /** A picture asked for with [UiEvents.image] is on disk at [path] ("" if there is none). */
     fun imageReady(ref: String, path: String)
 }

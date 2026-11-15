@@ -42,5 +42,15 @@ qbool TouchSrvList_IsStale(unsigned n);
 qbool TouchSrvList_Hold(void);
 // changes whenever a row was added, removed, answered or went stale
 unsigned TouchSrvList_Serial(void);
+// Before the session's first refresh: how many saved rows the list would put
+// up when it opens (0 once a refresh ran), and each of them. The UI bridge's
+// servers source shows them meanwhile, so a screen built ahead has its rows.
+typedef struct touchsl_saved_s
+{
+	const char *cname, *name, *map, *qcstatus;
+	int ping, numplayers, numbots, maxplayers;
+} touchsl_saved_t;
+int TouchSrvList_SavedRows(void);
+qbool TouchSrvList_SavedRow(int i, touchsl_saved_t *out);
 
 #endif

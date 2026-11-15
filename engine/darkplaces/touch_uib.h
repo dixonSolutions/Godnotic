@@ -70,6 +70,13 @@ void TouchUIB_Frame(void);       /* Host_Frame, after Cbuf_Frame */
 void TouchUIB_Shutdown(void);    /* Host_Shutdown, before CL_Shutdown */
 /* 1 while a native renderer is attached (the menu VM then describes but does not draw). */
 int TouchUIB_NativeAttached(void);
+/* Sleeping on the bridge: Sys_Frame's sleep waits on these too and ends when a
+   message arrives (Linux and Android; elsewhere the sleep is unchanged).
+   TouchUIB_Wake may be called from any thread; the fd is an eventfd a resident
+   Android bridge pokes when the UI queues a command (-1 where there is none). */
+double TouchUIB_SleepTime(double sleeptime);
+int TouchUIB_WakeFd(void);
+void TouchUIB_Wake(void);
 
 #ifdef __cplusplus
 }

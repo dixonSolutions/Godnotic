@@ -361,6 +361,11 @@ things are sent and what is shown meanwhile:
   saved server that stays silent is taken out when its tries are used up and
   is not shown from the saved list again until it has answered once; after
   three such sessions, or a week unseen, it is forgotten.
+- **Before the list is opened.** Until the session's first refresh, the UI bridge's
+  `servers` source shows the saved rows (stale), so the Multiplayer screen a native front
+  end builds ahead while Home shows has them before the first tap, and no packet is sent
+  for them (docs/UI_BRIDGE.md, "Opening a screen fast"). The refresh starts when the
+  screen opens, as before.
 - **No waiting for masters.** A server is asked in the frame a master names
   it. The saved servers and the favourites are asked at once, in the frame
   the list opens, before the masters have answered.
@@ -410,6 +415,10 @@ things are sent and what is shown meanwhile:
   renderer says so itself: `"touching": true|false` in its `visible` event
   (docs/UI_BRIDGE.md). Between those moments a row is inserted where its
   sort key puts it and an answer updates the row in place.
+- **Sorting and filtering while it streams.** Rows with equal sort keys (a dozen servers
+  with no players) are ordered by address, so they keep their places between updates; a
+  filter (Empty, Full, Laggy, LAN) applies in the frame it is changed; the player's sort
+  is kept by the menu VM, so a rebuild during a refresh never undoes it.
 - **"N servers · M players".** `_slist_summary` (and `_slist_servers`,
   `_slist_players`, `_slist_refreshing`, `_slist_saved`) for the Multiplayer
   card: from the saved list at the first frame of the session, live from then

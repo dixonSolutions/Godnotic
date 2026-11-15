@@ -139,6 +139,13 @@ void UIBS_Remove(const char *id);    // a whole subtree
 // Navigation (app props), set by the menu VM
 void UIBS_SetNav(const char *stack, const char *modal, int canback, const char *context);
 void UIBS_SetBusy(const char *json, size_t len);  // NULL/0: not busy
+void UIBS_SetPrepared(const char *ids);  // app.prepared: screens built ahead, space separated
+// lists that appeared since the last commit (no count yet): counted and given rows at once
+void UIBS_MarkFresh(const char *id);
+int UIBS_FreshCount(void);
+const char *UIBS_Fresh(int i);
+void UIBS_ClearFresh(void);
+int UIBSrc_CountFresh(uibnode_t *n);  // touch_uib_src.c: count a fresh list now
 void UIBS_SetReserved(const char *json, size_t len);  // app.reserved; NULL/0: nothing drawn over the UI
 void UIBS_Toast(const char *text, const char *kind, const char *icon, float timeout, const char *actionjson);
 void UIBS_Reset(void);
@@ -203,6 +210,7 @@ void UIBStream_Init(void);
 void UIBStream_Frame(void);
 void UIBStream_Shutdown(void);
 int UIBStream_Active(void);
+int UIBStream_PollFd(void);
 int UIBStream_BackendMode(void);
 
 // mods
@@ -210,6 +218,13 @@ int UIBMod_Materialize(const char *screenid);   // build a registered mod page a
 void UIBMod_Event(const char *mod_id, const char *json, size_t len);
 
 double UIB_Time(void);
+// the open trace (uib_trace): lines while one runs, 3 s after an action
+int UIB_Tracing(void);
+void UIB_Trace(const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 1, 2)))
+#endif
+	;
 void *UIB_CvarFind(const char *name);
 const char *UIB_CvarString(void *cvar);
 void UIB_LocalPost(const char *json, size_t len);

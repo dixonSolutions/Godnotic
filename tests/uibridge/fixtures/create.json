@@ -143,7 +143,8 @@
      "primary": {
       "id": "mp",
       "label": "Open",
-      "icon": "chevron"
+      "icon": "chevron",
+      "opens": "mp"
      }
     },
     "children": []
@@ -375,6 +376,10 @@
      ],
      "sort": "ping",
      "desc": false,
+     "sortAction": {
+      "id": "server.sort",
+      "label": "Sort"
+     },
      "filter": "",
      "selection": "single",
      "density": "compact",

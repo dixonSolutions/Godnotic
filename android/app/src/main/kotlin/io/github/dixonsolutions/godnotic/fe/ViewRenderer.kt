@@ -34,9 +34,28 @@ import kotlin.math.max
  */
 class ViewRenderer(
     private val ctx: Context,
-    private val events: UiEvents,
+    rawEvents: UiEvents,
     private val host: Host,
 ) : UiRenderer {
+
+    /**
+     * Values this renderer sent and the engine has not confirmed yet: a diff that
+     * was already on its way (a rebuild while a refresh runs) carries the old value
+     * and would flip a filter back for a moment; until the engine says the same, or
+     * for 1.5 s, the sent value is what shows.
+     */
+    private val sentValues = HashMap<String, Pair<Any?, Long>>()
+    private val events = object : UiEvents by rawEvents {
+        override fun value(node: String, value: Any?) {
+            sentValues[node] = value to android.os.SystemClock.uptimeMillis()
+            rawEvents.value(node, value)
+        }
+    }
+
+    /** Screens the engine built ahead (app.prepared): their views exist, hidden, ready to show. */
+    private val preparedScreens = HashSet<String>()
+    fun isPrepared(id: String) = id in preparedScreens
+    fun screenView(id: String): View? = nodes[id]?.takeIf { it.type == "screen" }?.view
 
     /** Where screens, dialogs and toasts go, and the platform's actions (FrontendHost). */
     interface Host {
@@ -49,6 +68,10 @@ class ViewRenderer(
         fun confirm(confirm: Map<String, Any?>, ok: () -> Unit)
         /** `app.reserved` rects (dp) while the engine's own controls show through (4.12); empty otherwise. */
         fun reserved(): List<Map<String, Any?>> = emptyList()
+        /** A screen built ahead: kept laid out but not shown, so showing it later costs a frame. */
+        fun prepareScreen(view: View, id: String) {}
+        /** The screen shown on top, if the host keeps track. */
+        fun topScreen(): String? = null
     }
 
     class Entry(val id: String, val type: String, val view: View, val children: ViewGroup?, var props: Map<String, Any?>) {
@@ -109,7 +132,11 @@ class ViewRenderer(
 
     override fun update(id: String, props: Map<String, Any?>) {
         val e = nodes[id] ?: return
-        e.props = props
+        e.props = sentValues[id]?.let { (v, at) ->
+            val same = props["value"] == v || (props["value"] as? Number)?.toDouble() == (v as? Number)?.toDouble()
+            if (same || android.os.SystemClock.uptimeMillis() - at > 1500) { sentValues.remove(id); props }
+            else props + ("value" to v)
+        } ?: props
         bindSafe(e)
         e.view.visibility = if (props.bool("hidden")) View.GONE else View.VISIBLE
     }
@@ -118,7 +145,22 @@ class ViewRenderer(
         try { e.bind?.invoke(e) } catch (ex: RuntimeException) { android.util.Log.w("Godnotic", "Native UI: ${e.type} ${e.id} did not bind: ${ex.message}") }
     }
 
+    override fun prepared(screen: String) {
+        val e = nodes[screen] ?: return
+        preparedScreens.add(screen)
+        host.prepareScreen(e.view, screen)
+    }
+
+    override fun sourceChanged(source: String, total: Int) {
+        for (l in lists[source].orEmpty()) {
+            l.sourceChanged(total)
+            nodes[l.id]?.let { bindEmpty(it) }
+        }
+    }
+
     override fun remove(id: String) {
+        preparedScreens.remove(id)
+        sentValues.remove(id)
         val e = nodes.remove(id) ?: return
         (e.view.parent as? ViewGroup)?.removeView(e.view)
         (e.strip?.parent as? ViewGroup)?.removeView(e.strip)
@@ -128,10 +170,12 @@ class ViewRenderer(
 
     override fun navigate(screen: String, transition: String) {
         val e = nodes[screen] ?: return
-        (e.view.parent as? ViewGroup)?.removeView(e.view)
         bindSafe(e) // the back arrow follows app.canBack
+        // shown already (at the tap, built ahead): the engine's answer only confirms it,
+        // and the list keeps wherever the player has scrolled since
+        val shown = host.topScreen() == screen && e.view.visibility == View.VISIBLE && e.view.parent != null
         host.showScreen(e.view, screen, transition)
-        restoreScroll(e)
+        if (!shown) restoreScroll(e)
     }
 
     override fun dialog(id: String?) {
@@ -153,6 +197,13 @@ class ViewRenderer(
     override fun imageReady(ref: String, path: String) {
         imagePaths[ref] = path
         imageWaiters.remove(ref)?.forEach { it(path) }
+    }
+
+    /** Rows shown with data and the rows known, over the lists of [screen] (the open trace). */
+    fun shownRows(screen: String): Pair<Int, Int> {
+        var shown = 0; var total = 0
+        for (l in lists.values.flatten()) if (isUnder(l.id, screen)) { shown += l.shownRows(); total += maxOf(0, l.window.total) }
+        return shown to total
     }
 
     fun saveScroll(screen: String) {
@@ -1445,16 +1496,27 @@ class ViewRenderer(
                     val cells = data?.get("cells").obj()
                     for ((i, c) in columns.withIndex()) bindCell(r.getChildAt(i) as TextView, c, cells, data == null)
                     // `stale`: a saved server not answered yet this refresh (drawn dimmed)
-                    r.alpha = if (data?.bool("disabled") == true) 0.5f else if (cells.bool("stale") || data?.bool("stale") == true) 0.55f else 1f
+                    val alpha = if (data?.bool("disabled") == true) 0.5f else if (cells.bool("stale") || data?.bool("stale") == true) 0.55f else 1f
+                    if (r.alpha != alpha) r.alpha = alpha
                     val on = data != null && e.props["selected"].list().any { it.toString() == VirtualList.keyOf(data) }
-                    r.isSelected = on
-                    r.background = if (on) Theme.rounded(0xFF1D3A73.toInt(), dp(8f).toFloat(), max(1, dp(1.5f)), Theme.EMBER)
-                        else Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
-                    r.contentDescription = if (data == null) "Loading" else columns.joinToString(", ") { c -> "${c.str("label")} ${cells.str(c.str("key"))}" } + if (on) ", selected" else ""
+                    // a new background only when the selection flips (a rebind every refresh
+                    // made a ripple drawable per row four times a second)
+                    if (r.isSelected != on || r.background == null) {
+                        r.isSelected = on
+                        r.background = if (on) Theme.rounded(0xFF1D3A73.toInt(), dp(8f).toFloat(), max(1, dp(1.5f)), Theme.EMBER)
+                            else Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
+                    }
+                    val cd = if (data == null) "Loading" else columns.joinToString(", ") { c -> "${c.str("label")} ${cells.str(c.str("key"))}" } + if (on) ", selected" else ""
+                    if (r.contentDescription?.toString() != cd) r.contentDescription = cd
                     bindTap(r, e, id, data)
                 },
                 makeCell = { _ ->
-                    val r = Kit.row(ctx)
+                    // a stale row is dimmed with alpha: without overlapping rendering that is
+                    // a per-text alpha, not an offscreen buffer per row each frame (the GPU
+                    // time that made refresh frames janky on the tablet's Mali)
+                    val r = object : LinearLayout(ctx) { override fun hasOverlappingRendering() = false }
+                    r.orientation = LinearLayout.HORIZONTAL
+                    r.gravity = Gravity.CENTER_VERTICAL
                     r.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, rowH)
                     r.background = Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
                     r.isClickable = true
@@ -1480,7 +1542,17 @@ class ViewRenderer(
         vl.onVisible = { r, touching -> events.visible(id, r.first, r.last - r.first + 1, touching) }
         var lastQuery = ""
         var lastSelected: List<Any?> = emptyList()
+        // The player's sort (a header tap): told to the engine (`sortAction`, which keeps
+        // it for every later build) and applied here at once; until the engine's own
+        // props say the same, a diff in between (a refresh's count) does not undo it.
+        // An engine without `sortAction` never says it: then it stays the player's.
+        var userSort: Pair<String, Boolean>? = null
+        var headerSig = ""
         e.bind = { x ->
+            userSort?.let { (k, d) ->
+                if (x.props["sortAction"] != null && x.props.str("sort") == k && x.props.bool("desc") == d) userSort = null
+                else x.props = x.props + mapOf("sort" to k, "desc" to d)
+            }
             val p = x.props
             // a new source (the map picker after a mode change): drop the old rows, window the new ones
             val src = p.str("source")
@@ -1497,7 +1569,9 @@ class ViewRenderer(
             val newCols = visibleColumns(p["columns"].list().map { it.obj() })
             val colsChanged = newCols != columns
             columns = newCols
-            if (!cards) {
+            val sig = "$newCols|${p.str("sort")}|${p.bool("desc")}"
+            if (!cards && sig != headerSig) {
+                headerSig = sig
                 header.removeAllViews()
                 val sortKey = p.str("sort")
                 val desc = p.bool("desc")
@@ -1514,7 +1588,11 @@ class ViewRenderer(
                         t.contentDescription = "Sort by ${c.str("label")}"
                         t.setOnClickListener {
                             val d = if (on) !desc else (c.str("type") in setOf("players", "number"))
+                            userSort = c.str("key") to d
                             x.props = x.props + mapOf("sort" to c.str("key"), "desc" to d)
+                            x.props["sortAction"].obj().takeIf { it.isNotEmpty() }?.let { a ->
+                                events.action(id, a + ("payload" to mapOf("sort" to c.str("key"), "desc" to d)))
+                            }
                             bindSafe(x)
                         }
                     }
@@ -1523,7 +1601,8 @@ class ViewRenderer(
             }
             // a new sort or filter re-windows the visible range
             val query = "${p.str("sort")}|${p.bool("desc")}|${p.str("filter")}"
-            if (lastQuery.isNotEmpty() && query != lastQuery) vl.reset(maxOf(0, vl.window.total))
+            // (the rows shown stay until the new order comes: no flash of empty rows)
+            if (lastQuery.isNotEmpty() && query != lastQuery) { vl.view.scrollToPosition(0); vl.sourceChanged(maxOf(0, vl.window.total)) }
             else if (vl.window.total < 0 && p.containsKey("count")) vl.reset(p.int("count"))
             lastQuery = query
             if (colsChanged) vl.refresh()
@@ -1542,10 +1621,15 @@ class ViewRenderer(
      * the accessibility "Activate" action activates (event row/activate:
      * joins the server, starts the map); without selection a tap activates.
      */
+    private class TapTag(val key: String, val selecting: Boolean)
+
     private fun bindTap(v: View, e: Entry, id: String, row: Map<String, Any?>?) {
-        if (row == null) { v.setOnClickListener(null); v.setOnKeyListener(null); return }
+        if (row == null) { v.setOnClickListener(null); v.setOnKeyListener(null); v.tag = null; return }
         val key = VirtualList.keyOf(row)
         val selecting = e.props.str("selection") in setOf("single", "multi")
+        // the same row bound again (a refresh): its listeners and actions are in place
+        (v.tag as? TapTag)?.let { if (it.key == key && it.selecting == selecting) return }
+        v.tag = TapTag(key, selecting)
         v.setOnClickListener { x ->
             Kit.haptic(x)
             if (!selecting) { events.row(id, key, "activate"); return@setOnClickListener }
@@ -1582,10 +1666,13 @@ class ViewRenderer(
         val empty = e.empty ?: return
         val p = e.props
         val total = e.list?.window?.total ?: -1
-        empty.removeAllViews()
         val st = p.str("state", "ready")
         val m = if (st == "error") p["error"].obj() else p["empty"].obj()
         val show = (st == "error") || (st == "ready" && total == 0)
+        val sig = if (show) "$st|$m" else "-"
+        if (empty.tag == sig) return
+        empty.tag = sig
+        empty.removeAllViews()
         if (show) {
             empty.addView(Kit.text(ctx, Icons.label(m.str("icon"), m.str("title", if (st == "error") "Something went wrong" else "Nothing here yet")), Theme.SP_TITLE, Theme.TEXT, bold = true).apply { gravity = Gravity.CENTER })
             m.str("text").takeIf { it.isNotEmpty() }?.let { empty.addView(Kit.text(ctx, it, Theme.SP_BODY, Theme.TEXT_MUTED).apply { gravity = Gravity.CENTER }) }
@@ -1610,28 +1697,35 @@ class ViewRenderer(
     }
 
     private fun bindCell(t: TextView, c: Map<String, Any?>, cells: Map<String, Any?>, placeholder: Boolean) {
-        if (placeholder) { t.text = ""; t.setBackgroundColor(0x0FFFFFFF); return }
-        t.background = null
+        // Every property is set only when it changes: a refresh rebinds the visible
+        // rows several times a second, and each needless setText or setTypeface asks
+        // the whole list to lay out again (janky frames on the tablet).
+        if (placeholder) { setText(t, ""); if (t.background == null) t.setBackgroundColor(0x0FFFFFFF); return }
+        if (t.background != null) t.background = null
         val key = c.str("key")
-        t.typeface = if (c.str("width") == "fill") Theme.bold else Theme.regular
+        val tf = if (c.str("width") == "fill") Theme.bold else Theme.regular
+        if (t.typeface !== tf) t.typeface = tf
         when (c.str("type")) {
-            "lock" -> { t.text = if (cells.bool(key)) "🔒" else ""; t.setTextColor(Theme.WARN) }
-            "bool" -> { t.text = if (cells.bool(key)) "✓" else ""; t.setTextColor(Theme.GOOD) }
-            "icon" -> { t.text = Icons.glyph(cells.str(key)); t.setTextColor(Theme.TEXT) }
+            "lock" -> { setText(t, if (cells.bool(key)) "🔒" else ""); setColor(t, Theme.WARN) }
+            "bool" -> { setText(t, if (cells.bool(key)) "✓" else ""); setColor(t, Theme.GOOD) }
+            "icon" -> { setText(t, Icons.glyph(cells.str(key))); setColor(t, Theme.TEXT) }
             "ping" -> {
                 val p = cells.int(key)
-                t.text = if (p <= 0) "–" else "$p"
-                t.setTextColor(when { p <= 0 -> Theme.TEXT_DIM; p < 80 -> Theme.GOOD; p < 160 -> Theme.WARN; else -> Theme.BAD })
+                setText(t, if (p <= 0) "–" else "$p")
+                setColor(t, when { p <= 0 -> Theme.TEXT_DIM; p < 80 -> Theme.GOOD; p < 160 -> Theme.WARN; else -> Theme.BAD })
             }
             "players" -> {
                 val n = cells.int(key); val mx = cells.int("max")
-                t.text = if (mx > 0) "$n/$mx" else "$n"
-                t.setTextColor(if (n == 0) Theme.TEXT_DIM else Theme.TEXT)
+                setText(t, if (mx > 0) "$n/$mx" else "$n")
+                setColor(t, if (n == 0) Theme.TEXT_DIM else Theme.TEXT)
             }
-            "mode" -> { t.text = cells.str("modeName").ifEmpty { cells.str(key).uppercase() }; t.setTextColor(Theme.TEXT_MUTED) }
-            else -> { t.text = cells.str(key); t.setTextColor(if (c.str("width") == "fill") Theme.TEXT else Theme.TEXT_MUTED) }
+            "mode" -> { setText(t, cells.str("modeName").ifEmpty { cells.str(key).uppercase() }); setColor(t, Theme.TEXT_MUTED) }
+            else -> { setText(t, cells.str(key)); setColor(t, if (c.str("width") == "fill") Theme.TEXT else Theme.TEXT_MUTED) }
         }
     }
+
+    private fun setText(t: TextView, s: String) { if (!android.text.TextUtils.equals(t.text, s)) t.text = s }
+    private fun setColor(t: TextView, c: Int) { if (t.currentTextColor != c) t.setTextColor(c) }
 }
 
 /**

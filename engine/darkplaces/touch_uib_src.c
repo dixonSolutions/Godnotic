@@ -54,6 +54,7 @@ typedef struct
 static source_t sources[MAX_SOURCES];
 static int nsources;
 static source_t *building;
+static int params_changed; // a filter changed: sources are re-read this frame, not at the next poll
 
 static void freerows(source_t *s)
 {
@@ -119,6 +120,7 @@ void UIBSrc_Param(const char *source, const char *key, const char *value)
 				s->rev++;
 				s->sig = 0;
 				s->next_poll = 0;
+				params_changed = 1;
 			}
 			return;
 		}
@@ -227,6 +229,7 @@ static unsigned server_sig(void)
 {
 	unsigned h = 2166136261u ^ serverlist_cachecount;
 	h = (h ^ TouchSrvList_Serial()) * 16777619u;  // rows added, answered, gone stale or removed
+	h = (h ^ (unsigned)TouchSrvList_SavedRows()) * 16777619u;  // the saved rows shown before the first refresh
 	for (unsigned i = 0; i < serverlist_cachecount; i++)
 	{
 		const serverlist_info_t *in = &serverlist_cache[i].info;
@@ -240,56 +243,115 @@ static unsigned server_sig(void)
 	return h ? h : 1;
 }
 
+// what one server row shows, from the live list or from the saved one
+typedef struct
+{
+	const char *cname, *name, *map, *qcstatus;
+	int name_len, map_len, cname_len;
+	int numplayers, numbots, numhumans, maxplayers, freeslots, ping, isfavorite, stale;
+} srvrow_t;
+
+typedef struct
+{
+	int lanonly, favonly, showempty, showfull, showlaggy, laggyms;
+} srvfilter_t;
+
+static void server_row(source_t *s, const srvfilter_t *f, const srvrow_t *in)
+{
+	const char *net = server_net(in->cname);
+	if (f->lanonly && !strcmp(net, "internet"))
+		return;
+	if (f->favonly && !in->isfavorite)
+		return;
+	if (!f->showempty && in->numhumans <= 0)
+		return;
+	if (!f->showfull && in->freeslots <= 0 && in->maxplayers > 0)
+		return;
+	if (!f->showlaggy && in->ping >= f->laggyms)
+		return;
+	// no row image: the server list is text, dense (no map previews)
+	uibrow_t *r = addrow(s, in->cname, NULL);
+	cell_s(r, "name", in->name, in->name_len);
+	cell_s(r, "map", in->map, in->map_len);
+	char mode[32] = "";
+	const char *colon = strchr(in->qcstatus, ':');
+	if (colon && colon - in->qcstatus < (int)sizeof(mode))
+		memcpy(mode, in->qcstatus, colon - in->qcstatus), mode[colon - in->qcstatus] = 0;
+	cell_s(r, "mode", mode, strlen(mode));
+	cell_n(r, "players", in->numplayers);
+	cell_n(r, "max", in->maxplayers);
+	cell_n(r, "bots", in->numbots);
+	cell_n(r, "ping", in->ping);
+	cell_b(r, "lock", strstr(in->qcstatus, TOUCHLAN_QCSTATUS_LOCK) != NULL);
+	cell_b(r, "fav", in->isfavorite);
+	cell_s(r, "address", in->cname, in->cname_len);
+	cell_s(r, "net", net, strlen(net));
+	const char *ver = colon ? colon + 1 : "";
+	const char *ve = strchr(ver, ':');
+	size_t vl = ve ? (size_t)(ve - ver) : strlen(ver);
+	cell_s(r, "version", ver, vl < 32 ? vl : 31);
+	// from the saved list, not answered yet this refresh (touch_srvlist.c)
+	cell_b(r, "stale", in->stale);
+}
+
 static void build_servers(source_t *s)
 {
 	freerows(s);
 	int all = !strcmp(s->name, "servers.all");  // lookups by address: no filters
-	int lanonly = !all && (!strcmp(s->name, "servers.lan") || atoi(param(s, "lan", "0")));
-	int favonly = !strcmp(s->name, "servers.fav");
-	int showempty = all || atoi(param(s, "empty", "1"));
-	int showfull = all || atoi(param(s, "full", "1"));
-	int showlaggy = all || atoi(param(s, "laggy", "1"));
-	int laggyms = atoi(param(s, "laggyms", "150"));
+	srvfilter_t f;
+	f.lanonly = !all && (!strcmp(s->name, "servers.lan") || atoi(param(s, "lan", "0")));
+	f.favonly = !strcmp(s->name, "servers.fav");
+	f.showempty = all || atoi(param(s, "empty", "1"));
+	f.showfull = all || atoi(param(s, "full", "1"));
+	f.showlaggy = all || atoi(param(s, "laggy", "1"));
+	f.laggyms = atoi(param(s, "laggyms", "150"));
+	int saved = TouchSrvList_SavedRows();
+	if (saved)
+	{
+		// No refresh yet this session: the saved rows, as the list's first frame
+		// will show them (a screen built ahead has them before it is opened)
+		for (int i = 0; i < saved; i++)
+		{
+			touchsl_saved_t saved_row, *rec = &saved_row;
+			if (!TouchSrvList_SavedRow(i, &saved_row))
+				continue;
+			srvrow_t in;
+			in.cname = rec->cname; in.cname_len = (int)strlen(rec->cname);
+			in.name = rec->name; in.name_len = (int)strlen(rec->name);
+			in.map = rec->map; in.map_len = (int)strlen(rec->map);
+			in.qcstatus = rec->qcstatus;
+			in.numplayers = rec->numplayers;
+			in.numbots = rec->numbots;
+			in.numhumans = rec->numplayers - max(0, rec->numbots);
+			in.maxplayers = rec->maxplayers;
+			in.freeslots = rec->maxplayers - rec->numplayers;
+			in.ping = rec->ping;
+			in.isfavorite = 0;
+			in.stale = 1;
+			server_row(s, &f, &in);
+		}
+		return;
+	}
 	for (unsigned i = 0; i < serverlist_cachecount; i++)
 	{
 		const serverlist_entry_t *e = &serverlist_cache[i];
-		const serverlist_info_t *in = &e->info;
-		if (!e->responded || !in->cname[0])
+		const serverlist_info_t *si = &e->info;
+		if (!e->responded || !si->cname[0])
 			continue;
-		const char *net = server_net(in->cname);
-		if (lanonly && !strcmp(net, "internet"))
-			continue;
-		if (favonly && !in->isfavorite)
-			continue;
-		if (!showempty && in->numhumans <= 0)
-			continue;
-		if (!showfull && in->freeslots <= 0 && in->maxplayers > 0)
-			continue;
-		if (!showlaggy && in->ping >= laggyms)
-			continue;
-		// no row image: the server list is text, dense (no map previews)
-		uibrow_t *r = addrow(s, in->cname, NULL);
-		cell_s(r, "name", in->name, in->name_len);
-		cell_s(r, "map", in->map, in->map_len);
-		char mode[32] = "";
-		const char *colon = strchr(in->qcstatus, ':');
-		if (colon && colon - in->qcstatus < (int)sizeof(mode))
-			memcpy(mode, in->qcstatus, colon - in->qcstatus), mode[colon - in->qcstatus] = 0;
-		cell_s(r, "mode", mode, strlen(mode));
-		cell_n(r, "players", in->numplayers);
-		cell_n(r, "max", in->maxplayers);
-		cell_n(r, "bots", in->numbots);
-		cell_n(r, "ping", in->ping);
-		cell_b(r, "lock", strstr(in->qcstatus, TOUCHLAN_QCSTATUS_LOCK) != NULL);
-		cell_b(r, "fav", in->isfavorite);
-		cell_s(r, "address", in->cname, in->cname_len);
-		cell_s(r, "net", net, strlen(net));
-		const char *ver = colon ? colon + 1 : "";
-		const char *ve = strchr(ver, ':');
-		size_t vl = ve ? (size_t)(ve - ver) : strlen(ver);
-		cell_s(r, "version", ver, vl < 32 ? vl : 31);
-		// from the saved list, not answered yet this refresh (touch_srvlist.c)
-		cell_b(r, "stale", TouchSrvList_IsStale(i));
+		srvrow_t in;
+		in.cname = si->cname; in.cname_len = si->cname_len;
+		in.name = si->name; in.name_len = si->name_len;
+		in.map = si->map; in.map_len = si->map_len;
+		in.qcstatus = si->qcstatus;
+		in.numplayers = si->numplayers;
+		in.numbots = si->numbots;
+		in.numhumans = si->numhumans;
+		in.maxplayers = si->maxplayers;
+		in.freeslots = si->freeslots;
+		in.ping = si->ping;
+		in.isfavorite = si->isfavorite;
+		in.stale = TouchSrvList_IsStale(i);
+		server_row(s, &f, &in);
 	}
 }
 
@@ -471,6 +533,36 @@ int64_t UIBSrc_Rev(const char *source)
 	return s ? s->rev : 0;
 }
 
+// a list node's source name (its "source" prop, unquoted); 0 if it has none
+static int list_source(uibnode_t *n, char *name, size_t size)
+{
+	size_t l;
+	const char *sj = UIBS_PropJSON(n, "source", &l);
+	if (!sj || l < 3 || l > sizeof(sources[0].name) || l - 2 >= size)
+		return 0;
+	dpsnprintf(name, size, "%.*s", (int)(l - 2), sj + 1);
+	return 1;
+}
+
+// A list that just appeared (docs/UI_BRIDGE.md, "Opening a screen fast"): its
+// count now, from its source read now, not at the next quarter-second poll, so
+// the diff that creates it already says how many rows it has. Returns the count.
+int UIBSrc_CountFresh(uibnode_t *n)
+{
+	char name[160], cnt[24];
+	if (!n || strcmp(n->type, "list") || !list_source(n, name, sizeof(name)))
+		return -1;
+	source_t *s = getsource(name, 1);
+	if (!s)
+		return -1;
+	s->used = 1;
+	refresh(s, 1);
+	s->notified_rev = s->rev; // the first rows go out with this rev (UIB_PushFirstRows)
+	int c = dpsnprintf(cnt, sizeof(cnt), "%d", s->nrows);
+	UIBS_SetProp(n, "count", cnt, c);
+	return s->nrows;
+}
+
 // the list nodes' count follows their source; renderers get a `source` notice
 void UIBSrc_UpdateCounts(void)
 {
@@ -480,12 +572,9 @@ void UIBSrc_UpdateCounts(void)
 	{
 		if (strcmp(n->type, "list"))
 			continue;
-		size_t l;
-		const char *sj = UIBS_PropJSON(n, "source", &l);
-		if (!sj || l < 3 || l > sizeof(sources[0].name))
-			continue;
 		char name[160];
-		dpsnprintf(name, sizeof(name), "%.*s", (int)(l - 2), sj + 1);
+		if (!list_source(n, name, sizeof(name)))
+			continue;
 		source_t *s = getsource(name, 1);
 		if (!s)
 			continue;
@@ -505,6 +594,7 @@ void UIBSrc_UpdateCounts(void)
 		int n = dpsnprintf(buf, sizeof(buf), "{\"uib\":1,\"t\":\"source\",\"id\":0,\"source\":\"%s\",\"rev\":%lld,\"total\":%d}",
 			s->name, (long long)s->rev, s->nrows);
 		UIB_Broadcast(buf, n);
+		UIB_Trace("source %s rev %lld: %d rows", s->name, (long long)s->rev, s->nrows);
 	}
 }
 
@@ -512,8 +602,11 @@ void UIBSrc_Frame(void)
 {
 	static double next;
 	double now = UIB_Time();
-	if (now < next)
+	// a filter the player just changed applies in this frame (its rows follow the
+	// diff that shows the new checkbox), not up to a quarter second later
+	if (now < next && !params_changed)
 		return;
+	params_changed = 0;
 	next = now + 0.25;
 	UIBSrc_UpdateCounts();
 }
@@ -545,8 +638,13 @@ static int cmp_rows(const void *a, const void *b)
 	}
 	if (sortdesc)
 		r = -r;
+	// equal keys (a dozen servers with 0 players, the same ping) in one fixed order:
+	// by address, not by where the server list happens to hold them, which a
+	// refresh reshuffles (rows swapped places on every update)
+	if (!r && ra->key && rb->key)
+		r = strcmp(ra->key, rb->key);
 	if (!r)
-		r = *(const int *)a - *(const int *)b;  // stable
+		r = *(const int *)a - *(const int *)b;
 	return r;
 }
 

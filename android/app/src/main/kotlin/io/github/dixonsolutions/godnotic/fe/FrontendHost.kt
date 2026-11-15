@@ -688,8 +688,35 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     // ---------------------------------------------------------------- UiEvents (from the views)
 
     override fun action(node: String, action: Map<String, Any?>) {
+        traceStart(action.str("id"))
         if (stopgap?.action(node, action) == true) return
-        client?.event("action", mapOf("node" to node, "action" to action.str("id")))
+        // "opens": the screen this shows, built ahead (app.prepared) — shown now, in
+        // the frame after the tap; the engine's answer then only confirms it
+        val opens = action.str("opens")
+        if (opens.isNotEmpty()) showPrepared(opens)
+        client?.event("action", linkedMapOf<String, Any?>("node" to node, "action" to action.str("id")).apply {
+            action["payload"]?.let { put("payload", it) }
+        })
+    }
+
+    private var optimistic: String? = null
+    private var showingAhead = false
+
+    private fun showPrepared(id: String) {
+        val r = renderer ?: return
+        if (!r.isPrepared(id) || screens.lastOrNull() == id || failed) return
+        if (client?.modal?.isNotEmpty() == true) return
+        showingAhead = true // its header binds now: a pushed screen has Back
+        try { r.navigate(id, "push") } finally { showingAhead = false }
+        optimistic = id
+        // the engine did not open it after all (refused, or another screen came): show what it says
+        main.postDelayed({
+            if (optimistic == id) {
+                optimistic = null
+                val top = client?.let { (it as? RustCore)?.top } ?: return@postDelayed
+                if (top.isNotEmpty() && top != id && screens.lastOrNull() == id) renderer?.navigate(top, "pop")
+            }
+        }, 1500)
     }
     override fun value(node: String, value: Any?) { client?.event("value", mapOf("node" to node, "value" to value)) }
     override fun submit(node: String, value: Any?) { client?.event("submit", mapOf("node" to node, "value" to value)) }
@@ -825,22 +852,33 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     // ---------------------------------------------------------------- ViewRenderer.Host
 
     override fun showScreen(view: View, id: String, transition: String) {
-        val old = if (screenLayer.childCount > 0) screenLayer.getChildAt(screenLayer.childCount - 1) else null
-        renderer?.let { r -> screens.lastOrNull()?.let { r.saveScroll(it) } }
+        if (optimistic == id) optimistic = null
+        if (screens.lastOrNull() == id && view.parent === screenLayer && view.visibility == View.VISIBLE) {
+            // shown already (at the tap, built ahead): the engine's answer confirms it
+            Log.i(tag, "Native UI: screen $id confirmed ($transition)")
+            return
+        }
+        // the screen shown now: the topmost visible one (screens built ahead sit hidden in the layer)
+        val old = (screenLayer.childCount - 1 downTo 0).map { screenLayer.getChildAt(it) }.firstOrNull { it.visibility == View.VISIBLE && it !== view }
+        val oldId = screens.lastOrNull()
+        renderer?.let { r -> oldId?.let { r.saveScroll(it) } }
         if (transition != "push" && screens.isNotEmpty()) screens.removeAt(screens.size - 1)
         screens.remove(id)
         screens.add(id)
         hideKeyboard()
-        (view.parent as? ViewGroup)?.removeView(view)
-        screenLayer.addView(view, match())
-        if (old != null && old !== view && old !== skeleton) {
-            if (Theme.reducedMotion(activity)) screenLayer.removeView(old)
-            else {
-                // a short fade of the new screen in; it takes taps at once
-                view.alpha = 0f
-                view.animate().alpha(1f).setDuration(110).withEndAction { screenLayer.removeView(old) }.start()
-            }
-        }
+        view.animate().cancel()
+        if (view.parent === screenLayer) view.bringToFront() // built ahead: laid out already, no layout pass now
+        else { (view.parent as? ViewGroup)?.removeView(view); screenLayer.addView(view, match()) }
+        view.visibility = View.VISIBLE
+        // the screen that goes: hidden but kept if it is built ahead (Multiplayer
+        // after Back), removed otherwise
+        val keepOld = oldId != null && renderer?.isPrepared(oldId) == true
+        val retire: (View) -> Unit = { v -> if (keepOld) v.visibility = View.INVISIBLE else screenLayer.removeView(v) }
+        // No cross-fade: the new screen is whole in the next frame. (A fade blended two
+        // full-screen layers for 110 ms, 10 ms of GPU a frame at 120 Hz on the tablet,
+        // and its first frame showed the screen barely visible.)
+        view.alpha = 1f
+        if (old != null && old !== view && old !== skeleton) retire(old)
         if (wantVisible && root.visibility != View.VISIBLE) setVisible(true)
         if (skeleton != null) {
             // the one deliberate transition: Home fades in over the banner
@@ -851,6 +889,72 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             Log.i(tag, "Native UI: skeleton replaced by $id after ${SystemClock.elapsedRealtime() - started} ms")
         }
         Log.i(tag, "Native UI: screen $id ($transition) ${SystemClock.elapsedRealtime() - started} ms after onCreate")
+        traceScreen(id)
+    }
+
+    // ---------------------------------------------------------------- open trace
+
+    /*
+     * How long a tap took to show its screen and the rows on it, in logcat
+     * (docs/UI_BRIDGE.md, "Opening a screen fast"; the engine's side logs
+     * "uib: +N ms ..."): "open: <action>" at the tap, then "screen <id> up"
+     * when the views are in place, "drawn" at the first frame drawn with it,
+     * "rows drawn" at the first frame with rows of its lists on screen.
+     */
+    private var traceAt = 0L
+    private var traceAction = ""
+    private var traceId: String? = null
+    private var traceDraw: android.view.ViewTreeObserver.OnDrawListener? = null
+
+    private fun traceStart(action: String) {
+        traceAt = SystemClock.uptimeMillis()
+        traceAction = action
+        traceId = null
+        Log.i(tag, "Native UI: open: action $action")
+    }
+
+    private fun traceMs() = SystemClock.uptimeMillis() - traceAt
+
+    private fun traceScreen(id: String) {
+        if (traceAt == 0L || traceId != null || traceMs() > 3000) return
+        traceId = id
+        val r = renderer ?: return
+        Log.i(tag, "Native UI: open: screen $id up +${traceMs()} ms after the tap ($traceAction), rows known ${r.shownRows(id).second}")
+        traceDraw?.let { old -> root.viewTreeObserver.removeOnDrawListener(old) }
+        var drawn = false
+        var done = false
+        val l = object : android.view.ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                if (done) return
+                val (shown, total) = r.shownRows(id)
+                if (!drawn) { drawn = true; Log.i(tag, "Native UI: open: screen $id drawn +${traceMs()} ms after the tap, rows on screen $shown of $total") }
+                if (shown > 0 || traceMs() > 3000 || screens.lastOrNull() != id) {
+                    if (shown > 0) Log.i(tag, "Native UI: open: rows drawn +${traceMs()} ms after the tap, $shown on screen of $total")
+                    done = true
+                    val me = this
+                    root.post { root.viewTreeObserver.removeOnDrawListener(me); if (traceDraw === me) traceDraw = null }
+                    traceAt = 0L
+                }
+            }
+        }
+        traceDraw = l
+        root.viewTreeObserver.addOnDrawListener(l)
+    }
+
+    /**
+     * A screen built ahead (app.prepared): in the layer, under the shown one,
+     * INVISIBLE — measured and laid out with its rows bound, never drawn, taking
+     * no touches — so showing it is a visibility change in the next frame.
+     */
+    override fun topScreen(): String? = screens.lastOrNull()
+
+    override fun prepareScreen(view: View, id: String) {
+        if (screens.lastOrNull() == id) return
+        if (view.parent === screenLayer) { view.visibility = View.INVISIBLE; return }
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.visibility = View.INVISIBLE
+        screenLayer.addView(view, 0, match())
+        if (root.visibility != View.VISIBLE) view.requestLayout()
     }
 
     override fun showDialog(view: View?) {
@@ -884,7 +988,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         main.postDelayed({ toastLayer.removeView(t) }, 3500)
     }
 
-    override fun canBack(): Boolean = client?.canBack ?: false
+    override fun canBack(): Boolean = showingAhead || optimistic != null || (client?.canBack ?: false)
 
     override fun reserved(): List<Map<String, Any?>> = client?.reserved ?: emptyList()
 

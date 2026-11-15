@@ -142,7 +142,8 @@
      "primary": {
       "id": "mp",
       "label": "Open",
-      "icon": "chevron"
+      "icon": "chevron",
+      "opens": "mp"
      }
     },
     "children": []

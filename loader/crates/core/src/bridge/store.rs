@@ -106,6 +106,11 @@ impl Store {
         self.nodes.get(id).map(|n| n.children.iter().filter_map(|c| self.nodes.get(c)).collect()).unwrap_or_default()
     }
 
+    /// Every node, in no order, without copying (renderers scanning the tree on each batch).
+    pub fn iter(&self) -> impl Iterator<Item = &Node> {
+        self.nodes.values()
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -130,6 +135,12 @@ impl Store {
     /// Sheets and dialogs over the stack, bottom to top.
     pub fn modal(&self) -> Vec<String> {
         self.ids("modal")
+    }
+
+    /// Screens built ahead and kept while not shown (`app.prepared`): a renderer may
+    /// build their views now, so showing one later costs nothing.
+    pub fn prepared(&self) -> Vec<String> {
+        self.ids("prepared")
     }
 
     /// `menu`, `game` or `loading`.
