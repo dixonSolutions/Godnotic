@@ -13,6 +13,7 @@ use crate::app::{self, App};
 use godnotic_core::bridge::fixture::{pk3, Fixture, Player};
 use godnotic_core::bridge::Props;
 use gtk::glib;
+use gtk::prelude::*;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -130,7 +131,7 @@ fn builtin_route(app: &App, action: &str) {
         "mp" => switch_fixture(app, "mp.json", true),
         "credits" => switch_fixture(app, "credits.json", true),
         "play" | "sp" | "campaign" => crate::session_ui::start(app, Action::Play),
-        "settings" => crate::session_ui::start(app, menu("settings")),
+        "settings" => crate::data_ui::settings(app),
         "menu.servers" => crate::session_ui::start(app, menu("servers")),
         "menu.host" => crate::session_ui::start(app, menu("TouchLanHost")),
         "menu.mods" => crate::session_ui::start(app, menu("touchmods")),
@@ -225,7 +226,15 @@ pub fn engine_gone(_app: &App, reason: &str) {
 }
 
 /// `app.context`: in a match the engine's window takes over (see docs/LAUNCHER.md, one window).
-pub fn context_changed(_app: &App, _context: &str) {}
+pub fn context_changed(app: &App, context: &str) {
+    if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
+    let Some(win) = app.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
+    if context == "game" {
+        if win.is_visible() { win.set_visible(false); }
+    } else if !win.is_visible() {
+        win.present();
+    }
+}
 
 /// pk3 image refs answered from the installed game data (fixture mode only; the engine does this itself).
 fn image_resolver() -> Box<godnotic_core::bridge::fixture::ImageResolver> {

@@ -252,7 +252,7 @@ mod fd {
 /// [`Backend::messages`].
 pub struct Backend {
     pub child: Child,
-    input: std::process::ChildStdin,
+    input: Box<dyn Write>,
     pub messages: std::sync::mpsc::Receiver<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -276,7 +276,42 @@ impl Backend {
                 }
             }
         })?;
-        Ok(Self { child, input, messages: rx })
+        Ok(Self { child, input: Box::new(input), messages: rx })
+    }
+
+    /// Use a separate socket: the engine's console also reads stdin, so stdio
+    /// can lose bridge messages to the console before the bridge sees them.
+    #[cfg(unix)]
+    pub fn start_socket(mut cmd: Command) -> io::Result<Self> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::net::UnixStream;
+        use std::os::unix::process::CommandExt;
+        let (parent, peer) = UnixStream::pair()?;
+        let peer_fd = peer.as_raw_fd();
+        cmd.args(["-uibridge", "fd:3"]).stdin(Stdio::null());
+        // SAFETY: only async-signal-safe descriptor operations run between fork and exec.
+        unsafe {
+            cmd.pre_exec(move || {
+                if peer_fd != 3 && libc::dup2(peer_fd, 3) < 0 { return Err(io::Error::last_os_error()); }
+                if libc::fcntl(3, libc::F_SETFD, 0) < 0 { return Err(io::Error::last_os_error()); }
+                Ok(())
+            });
+        }
+        let child = cmd.spawn()?;
+        drop(peer);
+        let mut reader = parent.try_clone()?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new().name("uib-read".into()).spawn(move || {
+            let mut framer = crate::bridge::LineFramer::new();
+            let mut buf = [0u8; 65536];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 { break; }
+                for m in framer.feed(&buf[..n]) {
+                    if tx.send(m).is_err() { return; }
+                }
+            }
+        })?;
+        Ok(Self { child, input: Box::new(parent), messages: rx })
     }
 
     /// Sends one message (a line of JSON).
@@ -290,6 +325,18 @@ impl Backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn bridge_socket_keeps_protocol_separate_from_console_input() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "read -r line <&3; printf '%s\\n' \"$line\" >&3"]);
+        let mut backend = Backend::start_socket(cmd).expect("start socket backend");
+        backend.send(r#"{"uib":1,"t":"hello"}"#).unwrap();
+        let reply = backend.messages.recv_timeout(std::time::Duration::from_secs(5)).expect("socket reply");
+        assert_eq!(reply.get("t").and_then(serde_json::Value::as_str), Some("hello"));
+        assert!(backend.child.wait().unwrap().success());
+    }
 
     #[test]
     fn connect_keeps_the_password_out_of_argv_and_env() {
