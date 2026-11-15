@@ -83,7 +83,7 @@ feed and the chat feed each get a band that touches neither.
 | **i** (vote chip, top bar) | Right of CHAT, at the end of the top bar, while a vote waits for your answer, a red dot while it is new; tap → vote card — see [Votes](#votes) | `vote yes` / `vote no` / `vote abstain`, `impulse N` for the map vote |
 
 Prompts that would normally name a key name the on-screen control instead in a touch
-session: "You are dead, press **HOP** to respawn", "Press **MENU** to join",
+session: "You are dead, press **HOP** to respawn", "Press **SWIPE** to join" (Swipe to join; MENU with `touch_join_slider 0`),
 "Press **FOLLOW** to spectate". Only controls that are actually visible get named, and
 commands with no touch control (gametype info) keep their key name.
 

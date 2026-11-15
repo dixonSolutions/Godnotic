@@ -33,6 +33,10 @@ CLASS(GodnoticJoinDialog, XonoticRootDialog)
 	ATTRIB(GodnoticJoinDialog, wasWatching, bool, false);
 	ATTRIB(GodnoticJoinDialog, armedAt, float, 0);       // no taps before this: it opens by itself, often mid-tap
 	ATTRIB(GodnoticJoinDialog, countsSeen, string, string_null);  // the player counts on the labels
+	ATTRIB(GodnoticJoinDialog, label1, string, string_null);      // the team labels, zoned (Label keeps the pointer)
+	ATTRIB(GodnoticJoinDialog, label2, string, string_null);
+	ATTRIB(GodnoticJoinDialog, label3, string, string_null);
+	ATTRIB(GodnoticJoinDialog, label4, string, string_null);
 	ATTRIB(GodnoticJoinDialog, requiresConnection, bool, true);
 ENDCLASS(GodnoticJoinDialog)
 

@@ -43,10 +43,15 @@ void GodnoticJoinDialog_updateCounts(entity me)
 		return;
 	strcpy(me.countsSeen, c);
 	tokenize_console(cvar_string("_touch_team_players"));
-	me.team1.setText(me.team1, GodnoticJoin_TeamLabel(_("Red"), stof(argv(0))));
-	me.team2.setText(me.team2, GodnoticJoin_TeamLabel(_("Blue"), stof(argv(1))));
-	me.team3.setText(me.team3, GodnoticJoin_TeamLabel(_("Yellow"), stof(argv(2))));
-	me.team4.setText(me.team4, GodnoticJoin_TeamLabel(_("Pink"), stof(argv(3))));
+	// Label.setText keeps the pointer: a sprintf result would be gone next frame
+	strcpy(me.label1, GodnoticJoin_TeamLabel(_("Red"), stof(argv(0))));
+	strcpy(me.label2, GodnoticJoin_TeamLabel(_("Blue"), stof(argv(1))));
+	strcpy(me.label3, GodnoticJoin_TeamLabel(_("Yellow"), stof(argv(2))));
+	strcpy(me.label4, GodnoticJoin_TeamLabel(_("Pink"), stof(argv(3))));
+	me.team1.setText(me.team1, me.label1);
+	me.team2.setText(me.team2, me.label2);
+	me.team3.setText(me.team3, me.label3);
+	me.team4.setText(me.team4, me.label4);
 }
 
 // The first moments it is up, a tap goes nowhere: it opened by itself, and
