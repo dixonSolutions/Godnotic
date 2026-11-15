@@ -72,6 +72,8 @@ void UIB_BuildJoin()
 	{
 		UIB_Open("teams", "grid");
 			uib_f("minItem", 140);
+			// the teams share the row between them, however many the server offers
+			uib_f("maxColumns", (teams & 1) + ((teams & 2) / 2) + ((teams & 4) / 4) + ((teams & 8) / 8));
 			if (teams & 1) UIB_JoinTeam(1, "red", _("Red"), "#e5413b");
 			if (teams & 2) UIB_JoinTeam(2, "blue", _("Blue"), "#3a7dff");
 			if (teams & 4) UIB_JoinTeam(4, "yellow", _("Yellow"), "#f0c419");

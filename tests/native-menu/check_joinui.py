@@ -62,6 +62,7 @@ if teams:
     want(re.match(r"^\d+ players?$", red.get("subtitle", "")) is not None and re.match(r"^\d+ players?$", blue.get("subtitle", "")) is not None,
          f"each with its player count ({red.get('subtitle')!r}, {blue.get('subtitle')!r})")
     want("join/teams/yellow" not in n and "join/teams/pink" not in n, "and no team the server does not offer")
+    want(n.get("join/teams", {}).get("props", {}).get("maxColumns") == 2, "the two teams share the row (maxColumns 2)")
 else:
     want(not any(k.startswith("join/teams") for k in n), "no team row in a game without teams")
     want(re.search(r"in the match|Nobody", screen.get("subtitle", "")) is not None, f"it says who plays ({screen.get('subtitle')!r})")
