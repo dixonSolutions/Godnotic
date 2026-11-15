@@ -720,6 +720,11 @@
          "dismissable": {
           "type": "boolean"
          },
+         "guardMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+         },
          "header": {
           "type": "object",
           "properties": {
@@ -4467,6 +4472,19 @@
            "tonal",
            "destructive",
            "link"
+          ]
+         },
+         "swatch": {
+          "type": "string",
+          "pattern": "^#[0-9a-f]{6}$"
+         },
+         "team": {
+          "type": "string",
+          "enum": [
+           "red",
+           "blue",
+           "yellow",
+           "pink"
           ]
          }
         },

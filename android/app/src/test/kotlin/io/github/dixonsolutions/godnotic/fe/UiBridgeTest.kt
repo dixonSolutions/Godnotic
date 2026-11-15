@@ -22,9 +22,10 @@ class UiBridgeTest {
         val ops = ArrayList<String>()
         val created = LinkedHashMap<String, String>() // id -> type
         val parents = HashMap<String, String?>()
+        val props = HashMap<String, Map<String, Any?>>()
         val rows = HashMap<String, Int>()
         override fun create(id: String, parent: String?, index: Int, type: String, props: Map<String, Any?>, hints: Map<String, Any?>) {
-            ops.add("create $id $type ${parent ?: "-"}"); created[id] = type; parents[id] = parent
+            ops.add("create $id $type ${parent ?: "-"}"); created[id] = type; parents[id] = parent; this.props[id] = props
         }
         override fun update(id: String, props: Map<String, Any?>) { ops.add("update $id") }
         override fun remove(id: String) { ops.add("remove $id"); created.remove(id) }
@@ -169,10 +170,17 @@ class UiBridgeTest {
         client.receive(Json.parse("""{"uib":1,"t":"snapshot","rev":1,"nodes":[
             {"id":"app","type":"app","props":{"stack":["pause"],"modal":["join"],"canBack":true,"context":"game"},"children":["pause","join"]},
             {"id":"pause","type":"screen","props":{"title":"Paused","kind":"game"},"children":[]},
-            {"id":"join","type":"screen","props":{"title":"Join game","presentation":"dialog","dismissable":true},"children":["join/spectate"]},
+            {"id":"join","type":"screen","props":{"title":"Join the match","presentation":"dialog","dismissable":false,"guardMs":450},"children":["join/teams","join/spectate"]},
+            {"id":"join/teams","type":"grid","props":{"minItem":140},"children":["join/teams/red"]},
+            {"id":"join/teams/red","type":"button","props":{"label":"Red","team":"red","swatch":"#e5413b","subtitle":"2 players","action":{"id":"join.red"}},"children":[]},
             {"id":"join/spectate","type":"button","props":{"label":"Spectate","action":{"id":"join.spectate"}},"children":[]}]}""").obj())
         assertTrue(rec.ops.contains("dialog join"))
         assertTrue(client.overGame)
+        // what ViewRenderer needs: no dismiss by a tap beside it, the touch guard, the team's colour and count
+        assertEquals(false, rec.props["join"]?.get("dismissable"))
+        assertEquals(450.0, (rec.props["join"]?.get("guardMs") as Number).toDouble(), 0.0)
+        assertEquals("#e5413b", rec.props["join/teams/red"]?.get("swatch"))
+        assertEquals("2 players", rec.props["join/teams/red"]?.get("subtitle"))
         client.receive(Json.parse("""{"uib":1,"t":"diff","base":1,"rev":2,"del":["join","join/spectate"],
             "set":[{"id":"app","type":"app","props":{"stack":["pause"],"modal":[],"canBack":true,"context":"game"},"children":["pause"]}]}""").obj())
         assertFalse(client.overGame)

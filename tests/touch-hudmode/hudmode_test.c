@@ -109,7 +109,7 @@ static void check_controls(void)
 			| TOUCHCTL_TOSPEC | TOUCHCTL_RESPAWN), "spectating: no play controls");
 		CHECK_INT(TOUCHCTL_SPECBAR | TOUCHCTL_MENU | TOUCHCTL_SCORE, c & (TOUCHCTL_SPECBAR | TOUCHCTL_MENU | TOUCHCTL_SCORE), "spectating: bar, MENU, SCORE");
 		CHECK_INT(TouchMode_FreeFly(mode) ? TOUCHCTL_MOVE | TOUCHCTL_FLY : 0, c & (TOUCHCTL_MOVE | TOUCHCTL_FLY), "stick and rocker only free-flying");
-		CHECK_INT(0, c & TOUCHCTL_JOIN, "no join control on the HUD: joining is the join dialog");
+		CHECK_INT(TouchMode_IsSpectating(mode) ? TOUCHCTL_JOIN : 0, c & TOUCHCTL_JOIN, "Swipe to join: spectators only (not out of the round: that player is in)");
 	}
 	CHECK_INT(TOUCHCTL_TOSPEC, TouchMode_Controls(TOUCHMODE_PLAYING, 0) & TOUCHCTL_TOSPEC, "playing: move to spectators can be placed");
 	CHECK_INT(0, TouchMode_Controls(TOUCHMODE_PLAYING, 0) & (TOUCHCTL_JOIN | TOUCHCTL_SPECBAR | TOUCHCTL_FLY | TOUCHCTL_READY), "playing: no spectator controls, no READY outside warmup");
@@ -226,7 +226,15 @@ static void check_join_dialog(void)
 	memset(&d, 0, sizeof(d));
 	run_dialog(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, NULL);
 	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 0, 1, 1, 10, NULL), "the menu has the screen: waits");
-	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 10, 12, NULL), "the menu closed: opens");
+	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 10, 10.4, NULL), "the pause page just closed: not in the same moments (no race with it)");
+	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 10.4, 12, NULL), "the menu closed half a second ago: opens");
+	// the pause page opened and closed again just before it was due: it still waits half a second
+	memset(&d, 0, sizeof(d));
+	run_dialog(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, NULL);
+	run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 1, 1.6, NULL);
+	run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 0, 1, 1.6, 2.0, NULL);
+	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 2.0, 2.45, NULL), "MENU opened and closed around the moment: waits for a free screen");
+	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 2.45, 4, NULL), "then opens, once");
 	// joining a match under way: the server's questions (statistics, its message) hold the
 	// screen first, the view follows a player; the dialog is owed all the same
 	memset(&d, 0, sizeof(d));
@@ -274,12 +282,57 @@ static void check_join_dialog(void)
 	CHECK_STR("", TouchJoinDlg_Command("quit", 1), "anything else: nothing");
 }
 
+// ---------------------------------------------------------------------------
+// The join slider ("Swipe to join"). u = 2 units per dp, a 600-unit travel.
+// ---------------------------------------------------------------------------
+static int slide(float dx, float dy, double secs, int steps)
+{
+	touchslide_t s;
+	int i;
+	TouchSlide_Begin(&s, 100, 500, 10.0, 600, 2);
+	for (i = 1; i <= steps; i++)
+		if (TouchSlide_Move(&s, 100 + dx * i / steps, 500 + dy * i / steps, 10.0 + secs * i / steps) != TOUCHSLIDE_TRACKING)
+			return s.state;
+	return TouchSlide_End(&s, 100 + dx, 500 + dy, 10.0 + secs);
+}
+
+static void check_slider(void)
+{
+	touchslide_t s;
+	CHECK_INT(TOUCHSLIDE_ACCEPTED, slide(500, 10, 0.4, 10), "pushed 83% of the way: joins");
+	CHECK_INT(TOUCHSLIDE_ACCEPTED, slide(560, -30, 3.0, 30), "slowly, a little crooked: still joins (no speed needed)");
+	CHECK_INT(TOUCHSLIDE_SHORT, slide(300, 0, 0.4, 10), "let go half way: springs back");
+	CHECK_INT(TOUCHSLIDE_TAPPED, slide(6, 4, 0.12, 2), "a tap: joins too");
+	CHECK_INT(TOUCHSLIDE_SHORT, slide(6, 4, 1.2, 4), "a long press without moving: nothing");
+	CHECK_INT(TOUCHSLIDE_LOOK, slide(10, -120, 0.3, 10), "off up: the look's");
+	CHECK_INT(TOUCHSLIDE_LOOK, slide(-5, 90, 0.3, 10), "off down: the look's");
+	CHECK_INT(TOUCHSLIDE_SHORT, slide(-300, 0, 0.4, 10), "to the left: nothing");
+	CHECK_INT(TOUCHSLIDE_ACCEPTED, slide(900, 0, 0.4, 10), "past the end: joins");
+	CHECK_INT(1, TouchSlide_Joins(TOUCHSLIDE_TAPPED) && TouchSlide_Joins(TOUCHSLIDE_ACCEPTED) && !TouchSlide_Joins(TOUCHSLIDE_SHORT) && !TouchSlide_Joins(TOUCHSLIDE_LOOK), "what joins");
+	TouchSlide_Begin(&s, 100, 500, 0, 600, 2);
+	TouchSlide_Move(&s, 400, 505, 0.1);
+	CHECK_INT(50, (int)(TouchSlide_Progress(&s) * 100 + 0.5f), "the knob follows the finger");
+	TouchSlide_Move(&s, 1000, 505, 0.2);
+	CHECK_INT(100, (int)(TouchSlide_Progress(&s) * 100 + 0.5f), "and stops at the end");
+	// once the knob is going, a finger drifting up stays on it
+	TouchSlide_Begin(&s, 100, 500, 0, 600, 2);
+	TouchSlide_Move(&s, 300, 495, 0.1);
+	CHECK_INT(TOUCHSLIDE_TRACKING, TouchSlide_Move(&s, 380, 420, 0.2), "under way, drifting up: still the slider");
+	// the team bits from the scoreboard's colours
+	CHECK_INT(1, TouchJoin_TeamBit(4 * 16 + 4), "red");
+	CHECK_INT(2, TouchJoin_TeamBit(13 * 16 + 13), "blue");
+	CHECK_INT(4, TouchJoin_TeamBit(12), "yellow");
+	CHECK_INT(8, TouchJoin_TeamBit(9), "pink");
+	CHECK_INT(0, TouchJoin_TeamBit(0), "no team");
+}
+
 int main(void)
 {
 	check_modes();
 	check_controls();
 	check_actions();
 	check_join_dialog();
+	check_slider();
 	if (failures)
 	{
 		printf("%d check(s) failed\n", failures);

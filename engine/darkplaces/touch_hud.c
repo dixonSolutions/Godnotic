@@ -548,6 +548,7 @@ static cvar_t cl_touch_weplist_scale = {CF_CLIENT | CF_ARCHIVE, "cl_touch_weplis
 	"Touch controls: size of the weapon strip, 0.7 - 2.4 (also set by dragging the grip under the strip)"};
 
 static cvar_t touch_topbar_auto = {CF_CLIENT | CF_ARCHIVE, "touch_topbar_auto", "1", "Godnotic: 1 lays out the in-match top bar (console button, MENU, SCORE, CHAT, vote chip) in the top corner in dp, clear of each other and of the game's own score list, messages and clock; 0 leaves touch_pause_x/y, touch_scores_x/y and touch_chat_x/y where the layout editor put them"};
+static cvar_t touch_join_slider = {CF_CLIENT | CF_ARCHIVE, "touch_join_slider", "1", "Godnotic: \"Swipe to join\" on the spectator HUD (a tap or click works too); 0 hides it"};
 // Haptics: a short tick when a button takes a finger. The platform says it
 // can vibrate by setting TouchLua_VibrateHook (touch_lua.h); until one does,
 // _touch_haptics_available is 0 and the setting is not offered.
@@ -629,6 +630,7 @@ void TouchHUD_Init(void)
 	Cvar_RegisterVariable(&touch_viewmodel_restored);
 	Cvar_RegisterVariable(&cl_touch_weplist_scale);
 	Cvar_RegisterVariable(&touch_topbar_auto);
+	Cvar_RegisterVariable(&touch_join_slider);
 	Cvar_RegisterVariable(&touch_move_analog_cap);
 	Cvar_RegisterVariable(&touch_haptics);
 	Cvar_RegisterVariable(&touch_haptics_ms);
@@ -2880,6 +2882,294 @@ static void draw_spec_hud(float a)
 }
 
 // ---------------------------------------------------------------------------
+// "Swipe to join" (touch_hudmode.h TouchSlide_*): the spectator's way in, a
+// wide green track at the bottom middle with its knob at the left end. Push
+// the knob right and let go past most of the way: in a team game the join
+// dialog opens (pick a team, or auto-select), else the player joins. Short
+// of that it springs back. A tap, or a click at a desk, does the same as a
+// full swipe. While the server answers it reads JOINING; a refused join
+// turns it amber. It goes once the player is in the game.
+//
+// It takes its fingers before the finger table (TouchHUD_OverlayFinger, from
+// TouchVote_Finger, which vid_sdl.c calls first for every finger), so it is
+// the same under the port's CSQC and a server's. A finger that sets off up
+// or down was looking around: it goes into the finger table there and then.
+// touch_join_slider 0 hides it (the dialog and MENU > Join game remain).
+// ---------------------------------------------------------------------------
+extern float multitouch[TOUCHHUD_ENGINE_FINGERS][3];
+static struct
+{
+	int id;                 // finger on it, 0 none
+	qbool mouse;            // a real mouse holds it
+	touchslide_t s;
+	double end_time;        // when the last push ended
+	int end_state;          // how (TOUCHSLIDE_*)
+	float end_progress;     // where the knob was then
+	double shown_time;      // when it came on screen
+	qbool drawn;
+	touchslide_rect_t r;
+} slide;
+
+static qbool slide_shown(void)
+{
+	const touchmode_t *m = TouchHudMode_Current();
+	if (!TouchMode_IsSpectating(m->mode) || !hud_has(TOUCHCTL_JOIN) || !in_play() || cl.csqc_wantsmousemove)
+		return false;
+	// the CSQC's chat sheet and layout editor are modal
+	if (cv("_touch_owns_screen", 0))
+		return false;
+	return touch_join_slider.integer != 0;
+}
+
+static qbool slide_busy(void)
+{
+	int j = TouchHudMode_Current()->join;
+	return j == TOUCHJOIN_PENDING || j == TOUCHJOIN_QUEUED;
+}
+
+// Between the stick's ring and rocker on one side and the spectator bar on
+// the other, in the bar's row; above that row when the gap is too narrow.
+static void slide_place(void)
+{
+	touchslide_in_t in;
+	float in_l = 0, in_t = 0, in_r = 0, in_b = 0, dens = 0;
+	float px2con = vid.mode.width > 0 ? ui_w() / (float)vid.mode.width : 1.0f;
+	const char *insets = Cvar_VariableString(&cvars_all, "_touch_safe_insets", ~0);
+	float mx, my, mr, cx, cy, hx, hy, r, stick_in, stick_top, bar_in = 0, bar_top = 0, bar_cy = 0;
+	qbool flip = cv("touch_handedness", 0) != 0;
+	int part;
+	if (insets && insets[0])
+		sscanf(insets, "%f %f %f %f %f", &in_l, &in_t, &in_r, &in_b, &dens);
+	memset(&in, 0, sizeof(in));
+	in.w = ui_w();
+	in.h = ui_h();
+	in.u = dp_units();
+	in.in_l = in_l * px2con;
+	in.in_r = in_r * px2con;
+	in.in_b = in_b * px2con;
+	// the stick's side: its ring and the rocker beside it (where they are
+	// while free-flying; the track stays put when following)
+	widget_center(cv("touch_move_x", 0.170f), cv("touch_move_y", 0.680f), &mx, &my);
+	mr = stick_radius();
+	spec_fly_part(true, &cx, &cy, &r);
+	stick_in = flip ? min(mx - mr, cx - r) : max(mx + mr, cx + r);
+	stick_top = cy - r;
+	for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
+	{
+		spec_bar_part(part, &cx, &cy, &hx, &hy);
+		if (part == 0 || (flip ? cx + hx > bar_in : cx - hx < bar_in))
+			bar_in = flip ? cx + hx : cx - hx;
+		bar_top = cy - hy * 1.15f;
+		bar_cy = cy;
+	}
+	in.left = flip ? bar_in : stick_in;
+	in.right = flip ? stick_in : bar_in;
+	in.row_cy = bar_cy;
+	in.row_top = min(stick_top, bar_top);
+	slide.r = TouchSlide_Layout(&in);
+}
+
+static qbool slide_hit(float px, float py)
+{
+	float grow = TOUCHDP_MIN_TARGET * 0.2f * dp_units();
+	return fabs(px - slide.r.cx) <= slide.r.hx + grow && fabs(py - slide.r.cy) <= slide.r.hy + grow;
+}
+
+static void slide_finish(int state)
+{
+	slide.end_time = host.realtime;
+	slide.end_state = state;
+	slide.end_progress = TouchSlide_Progress(&slide.s);
+	Con_DPrintf("Touch HUD: join slider %s (%.0f%% of the way, %.0f ms)\n", TouchSlide_Name(state),
+		slide.end_progress * 100, (slide.s.t - slide.s.t0) * 1000);
+	if (TouchSlide_Joins(state))
+		Cbuf_AddText(cmd_local, "\ntouch_join_slide\n");
+}
+
+static void slide_to_table(int id, float nx, float ny)
+{
+	int i;
+	for (i = 0; i < TOUCHHUD_ENGINE_FINGERS - 1; i++)
+		if (!multitouch[i][0])
+		{
+			multitouch[i][0] = id;
+			multitouch[i][1] = nx;
+			multitouch[i][2] = ny;
+			return;
+		}
+}
+
+static qbool slide_finger(int type, int id, float nx, float ny)
+{
+	float px = nx * ui_w(), py = ny * ui_h();
+	if (type == 0)
+	{
+		if (slide.id || slide.mouse || !slide.drawn || !slide_shown() || slide_busy() || !slide_hit(px, py))
+			return false;
+		slide.id = id;
+		TouchSlide_Begin(&slide.s, px, py, host.realtime, TouchSlide_Travel(&slide.r), dp_units());
+		return true;
+	}
+	if (id != slide.id)
+		return false;
+	if (type == 1)
+	{
+		if (TouchSlide_Move(&slide.s, px, py, host.realtime) == TOUCHSLIDE_LOOK)
+		{
+			slide_finish(TOUCHSLIDE_LOOK);
+			slide.id = 0;
+			slide_to_table(id, nx, ny);
+		}
+		return true;
+	}
+	slide.id = 0;
+	slide_finish(TouchSlide_End(&slide.s, px, py, host.realtime));
+	return true;
+}
+
+// The mouse's place in console units (a held click drags the knob).
+static void slide_mouse_pos(float *px, float *py)
+{
+	*px = vid.mode.width > 0 ? in_windowmouse_x / (float)vid.mode.width * ui_w() : 0;
+	*py = vid.mode.height > 0 ? in_windowmouse_y / (float)vid.mode.height * ui_h() : 0;
+}
+
+// Two strokes of a right-pointing chevron, each drawn both ways (the UI
+// mesh culls one winding, and which one depends on the backend).
+static void draw_chevron_right(float cx, float cy, float s, float lw, const float *rgb, float a)
+{
+	DrawQ_Line(lw, cx - s * 0.5f, cy - s, cx + s * 0.5f, cy, rgb[0], rgb[1], rgb[2], a, 0);
+	DrawQ_Line(lw, cx + s * 0.5f, cy, cx - s * 0.5f, cy - s, rgb[0], rgb[1], rgb[2], a, 0);
+	DrawQ_Line(lw, cx + s * 0.5f, cy, cx - s * 0.5f, cy + s, rgb[0], rgb[1], rgb[2], a, 0);
+	DrawQ_Line(lw, cx - s * 0.5f, cy + s, cx + s * 0.5f, cy, rgb[0], rgb[1], rgb[2], a, 0);
+}
+
+static const char *slide_label(qbool touch)
+{
+	const touchmode_t *m = TouchHudMode_Current();
+	switch (m->join)
+	{
+	case TOUCHJOIN_PENDING: return "JOINING...";
+	case TOUCHJOIN_QUEUED: return "IN THE QUEUE";
+	case TOUCHJOIN_LOCKED: return touch ? "LOCKED - SWIPE AGAIN" : "LOCKED - CLICK AGAIN";
+	default: break;
+	}
+	return touch ? "SWIPE TO JOIN" : "CLICK TO JOIN";
+}
+
+static void draw_join_slider(void)
+{
+	double now = host.realtime;
+	float a = bound(0.3f, cv("touch_opacity", 0.90f), 1.0f);
+	float p = 0, travel, kr, kx, fs, lw, label_l, label_r;
+	const touchmode_t *m = TouchHudMode_Current();
+	qbool touch = vid_touchscreen.integer || touch_device();
+	qbool busy = slide_busy(), held;
+	const float *tint = m->join == TOUCHJOIN_LOCKED ? C_WARNING : C_SUCCESS;
+	const char *label;
+	qbool was = slide.drawn;
+	slide.drawn = false;
+	if (!slide_shown())
+	{
+		slide.id = 0;
+		slide.mouse = false;
+		return;
+	}
+	shapes_probe();
+	slide_place();
+	slide.drawn = true;
+	if (!was)
+		slide.shown_time = now;
+	if (!vid_touchscreen.integer)
+		a *= max(DESK_ALPHA, 0.8f);
+	travel = TouchSlide_Travel(&slide.r);
+	kr = TouchSlide_KnobRadius(&slide.r);
+	if (slide.mouse)
+	{
+		float mx, my;
+		slide_mouse_pos(&mx, &my);
+		TouchSlide_Move(&slide.s, mx, my, now);
+	}
+	held = (slide.id || slide.mouse) && slide.s.state == TOUCHSLIDE_TRACKING;
+	if (busy)
+		p = 1;
+	else if (held)
+		p = TouchSlide_Progress(&slide.s);
+	else if (slide.end_time && now - slide.end_time < 0.35)
+	{
+		// accepted: the knob runs on to the end; short: it springs back
+		float t = (float)((now - slide.end_time) / 0.35);
+		float ease = 1 - (1 - t) * (1 - t);
+		p = TouchSlide_Joins(slide.end_state) ? slide.end_progress + (1 - slide.end_progress) * ease
+			: slide.end_progress * (1 - ease);
+	}
+	else if (!reduce_motion())
+	{
+		// at rest: every 2.4 s the knob nudges right, a hint which way it goes
+		float t = (float)fmod(now - slide.shown_time, 2.4);
+		if (t < 0.6f)
+			p = 0.07f * (float)sin(t / 0.6f * M_PI);
+	}
+	kx = slide.r.cx - slide.r.hx + slide.r.hy + p * travel;
+	// the track: glass, its rim and the part behind the knob in the tint
+	shape_capsule_shadow(slide.r.cx, slide.r.cy + elevation(slide.r.hy), slide.r.hx + slide.r.hy * 0.10f, slide.r.hy * 1.10f, a * A_SHADOW * glass_body(false));
+	shape_capsule(slide.r.cx, slide.r.cy, slide.r.hx, slide.r.hy, C_SURFACE, a * A_CHROME_FILL * 0.85f);
+	if (p > 0.001f)
+	{
+		float l = slide.r.cx - slide.r.hx, hx = (kx + slide.r.hy - l) * 0.5f;
+		shape_capsule(l + hx, slide.r.cy, hx, slide.r.hy, tint, a * (0.30f + 0.30f * p));
+	}
+	widget_capsule_rim(slide.r.cx, slide.r.cy, slide.r.hx, slide.r.hy, tint, a * A_RIM_ACTIVE);
+	// the label in the room right of the knob, fading as the knob covers it
+	label = slide_label(touch);
+	label_l = slide.r.cx - slide.r.hx + slide.r.hy * 2;
+	label_r = slide.r.cx + slide.r.hx - slide.r.hy * 0.9f;
+	fs = bound(FONT_MIN, slide.r.hy * 0.60f, FONT_MAX * 1.2f);
+	if (label_width(fs, label) > (label_r - label_l) * 0.92f)
+		fs *= (label_r - label_l) * 0.92f / label_width(fs, label);
+	{
+		float la = a * A_INK * (busy ? 1.0f : max(0.0f, 1 - p * 1.6f));
+		shape_label((label_l + label_r) * 0.5f, slide.r.cy, fs, label, C_INK, la);
+	}
+	// a chevron trail at the far end, lit one after another (the way to go)
+	if (!busy && p < 0.5f)
+	{
+		int i;
+		float s = slide.r.hy * 0.20f, step = slide.r.hy * 0.42f;
+		float x0 = slide.r.cx + slide.r.hx - slide.r.hy * 0.55f - step * 2;
+		lw = max(1.5f, slide.r.hy * 0.08f);
+		for (i = 0; i < 3; i++)
+		{
+			float glow = 0.35f;
+			if (!reduce_motion())
+			{
+				float t = (float)fmod(now * 1.4 - i * 0.22, 1.0);
+				glow = 0.25f + 0.75f * max(0.0f, 1 - fabs(t - 0.3f) * 3);
+			}
+			draw_chevron_right(x0 + step * i, slide.r.cy, s, lw, C_INK, a * glow * (1 - p * 2));
+		}
+	}
+	// the knob
+	shape_shadow(kx, slide.r.cy + elevation(kr), kr * 1.10f, a * A_SHADOW);
+	shape_disc(kx, slide.r.cy, kr, tint, a * (held ? 1.0f : 0.92f));
+	if (held)
+		shape_glow(kx, slide.r.cy, kr * 1.45f, tint, a * A_GLOW);
+	widget_rim(kx, slide.r.cy, kr, C_RIM, a * A_RIM_ACTIVE);
+	lw = max(2.0f, kr * 0.14f);
+	if (busy)
+	{
+		// waiting for the server: a dot that breathes
+		float b = reduce_motion() ? 0.8f : 0.55f + 0.45f * (float)sin(now * 5);
+		shape_disc(kx, slide.r.cy, kr * 0.22f, C_INK, a * b);
+	}
+	else
+	{
+		draw_chevron_right(kx - kr * 0.16f, slide.r.cy, kr * 0.30f, lw, C_INK, a);
+		draw_chevron_right(kx + kr * 0.20f, slide.r.cy, kr * 0.30f, lw, C_INK, a * 0.7f);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // At a desk (keyboard and mouse, controls off) the spectator bar stays as a
 // quieter strip, clickable while the pointer is free (no grab: the web page
 // before pointer lock, a released mouse). With the mouse grabbed the stock
@@ -2944,8 +3234,7 @@ static qbool desk_bar_held;
 // A real mouse's left button (not SDL's made-up one) on the desk spectator
 // bar, while the pointer is free to point (no grab: the web page before
 // pointer lock, a windowed game with the mouse released). True: eaten.
-// (The name is from when the join handle was clickable too; joining is the
-// join dialog now, touch_hudmode.c.)
+// Also the join slider: a click on it joins, a drag pushes its knob.
 qbool TouchHUD_JoinMouse(qbool down, int button, qbool synthetic, float wx, float wy, qbool pointer_free)
 {
 	float px, py;
@@ -2960,12 +3249,30 @@ qbool TouchHUD_JoinMouse(qbool down, int button, qbool synthetic, float wx, floa
 			desk_bar_held = true;
 			return true;
 		}
+		// Swipe to join: a click joins as a tap does, a drag pushes the knob
+		if (pointer_free && slide.drawn && !slide.id && !slide_busy() && slide_shown() && slide_hit(px, py))
+		{
+			slide.mouse = true;
+			TouchSlide_Begin(&slide.s, px, py, host.realtime, TouchSlide_Travel(&slide.r), dp_units());
+			return true;
+		}
 		return false;
 	}
 	if (desk_bar_held)
 	{
 		desk_bar_held = false;
 		desk_specbar_click(px, py);
+		return true;
+	}
+	if (slide.mouse)
+	{
+		int st;
+		slide.mouse = false;
+		st = TouchSlide_End(&slide.s, px, py, host.realtime);
+		// a click is a tap, however long the button was held on the track
+		if (st == TOUCHSLIDE_SHORT && slide.s.moved < TOUCHSLIDE_TAP_DP * slide.s.u)
+			st = TOUCHSLIDE_TAPPED;
+		slide_finish(st);
 		return true;
 	}
 	return false;
@@ -3056,7 +3363,9 @@ static qbool endmenu_finger(int type, int id, float nx, float ny)
 // Every finger, from TouchVote_Finger before the finger table.
 qbool TouchHUD_OverlayFinger(int type, int id, float nx, float ny)
 {
-	return endmenu_finger(type, id, nx, ny);
+	if (endmenu_finger(type, id, nx, ny))
+		return true;
+	return slide_finger(type, id, nx, ny);
 }
 
 // ---------------------------------------------------------------------------
@@ -3174,6 +3483,7 @@ void TouchHUD_Draw(void)
 	TouchHudMode_Update();
 	TouchDodge_DrawCue(); // over the port's CSQC HUD too
 	draw_endmenu();
+	draw_join_slider(); // over the port's CSQC HUD too
 	if (TouchMode_IsMatchEnd(hud_mode()))
 		return;
 	if (cursor_wanted())
@@ -3353,6 +3663,11 @@ void TouchHUD_PrintRects(void)
 			spec_bar_part(part, &cx, &cy, &hx, &hy);
 			dpsnprintf(name, sizeof(name), "specbar%d", part);
 			rect_box(name, cx, cy, hx, hy);
+		}
+		if (slide_shown())
+		{
+			slide_place();
+			rect_box("JOIN", slide.r.cx, slide.r.cy, slide.r.hx, slide.r.hy);
 		}
 		if (TouchSpec_StickShown(state))
 		{

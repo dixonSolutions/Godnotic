@@ -35,8 +35,19 @@
 #             says it. The connect topic's label, and the pause page's card,
 #             follow. Colour codes are gone and the name ends in an ellipsis.
 #
+#   joinui    Joining from spectating on a stock server, Deathmatch and CTF, at
+#             a tablet's size, with scripted fingers through the real SDL event
+#             path (tests/touch-controls/finj.c). The join dialog (modal
+#             "join") opens by itself at connect: Xonotic's team selection in
+#             our style (each team's colour and player count, Auto-select,
+#             Spectate; Join and Spectate without teams), not dismissable,
+#             taking no touch for its first moments. Taps beside it leave it
+#             up. A team (CTF) or Join (DM) puts the player in. "Swipe to join"
+#             is on the HUD while spectating and gone while playing; in CTF a
+#             swipe on it opens the dialog again, in DM a tap on it joins.
+#
 #   BASEDIR=<Godnotic basedir> STOCKBASE=<basedir with upstream Xonotic data only> \
-#       scripts/test-native-menu-live.sh [uid2name] [joinmid] [joinname]
+#       scripts/test-native-menu-live.sh [uid2name] [joinmid] [joinname] [joinui]
 #
 # Environment: ENGINE (default build/bin/xonotic; it also runs the server),
 # LIBS (extra LD_LIBRARY_PATH), OUT (keep logs there), CPUS (a taskset list).
@@ -202,8 +213,76 @@ case_joinname() {
 	python3 "$ROOT/tests/native-menu/check_joinname.py" "$d/client.log" "$JOINNAME_HOST" "127.0.0.1:$q1" "127.0.0.1:$q2" || fail=1
 }
 
+# Joining from spectating, with a native front end, on a stock server (DM and CTF).
+# The fingers are at a tablet's size: 1920x1200 at 283 dpi, a 960x600 console;
+# check_joinui.py first checks that "Swipe to join" is where they land.
+JOINUI_KNOB="0.3966 0.8849"      # the knob, at the track's left end
+JOINUI_END="0.6400 0.8849"       # past the end of its travel
+JOINUI_TAP="0.5090 0.8849"       # the label
+case_joinui() {
+	local gt map p d finj
+	command -v sdl2-config > /dev/null || { echo "SKIP joinui: sdl2-config (SDL2 headers) builds the finger shim"; return; }
+	finj="$WORK/finj.so"
+	[ -f "$finj" ] || cc -shared -fPIC -O2 -o "$finj" "$ROOT/tests/touch-controls/finj.c" $(sdl2-config --cflags) -ldl || { fail=1; return; }
+	for gt in ctf dm; do
+		if [ $gt = ctf ]; then map=implosion; else map=stormkeep; fi
+		p=$((26700 + RANDOM % 250))
+		d="$WORK/srv_joinui_$gt"; mkdir -p "$d"
+		"${RUN[@]}" "$ENGINE" -dedicated -xonotic -basedir "$STOCKBASE" -userdir "$d" +set port $p +set sv_public 0 \
+			+set bot_number 3 +set skill 1 +set g_warmup 0 +set g_dm 0 +set "g_$gt" 1 +set g_balance_teams 0 \
+			+set timelimit_override 10 +set g_maplist $map +map $map > "$d/server.log" 2>&1 &
+		local n; for n in $(seq 1 600); do grep -q "Server spawned" "$d/server.log" 2> /dev/null && break; sleep 0.1; done
+		sleep 2
+		d="$WORK/joinui_$gt"
+		mkdir -p "$d/data"
+		{
+			echo 'set touch_join_dialog_auto 1; set cl_allow_uid2name 0; set cl_welcome 0; set developer 1; set fe_echo 1; set xt_go 0'
+			echo 'set cl_touch_practice_pilot 0; set cl_touch_autoshoot 0; set cl_touch_aimassist 0'
+			echo 'alias xbeat "fe beat; defer 1 xbeat"'
+			ui '{"uib":1,"t":"hello","id":1,"schema":"1.0","renderer":{"name":"test"},"caps":{"widthClass":"expanded"}}' | sed 's/^/alias xhello "/; s/$/"/'
+			ui '{"uib":1,"t":"ev","id":4,"ev":"action","node":"join/teams/red","action":"join.red"}' | sed 's/^/alias xred "/; s/$/"/'
+			ui '{"uib":1,"t":"ev","id":5,"ev":"action","node":"join","action":"join.auto"}' | sed 's/^/alias xauto "/; s/$/"/'
+			ui '{"uib":1,"t":"ev","id":6,"ev":"action","node":"join/spectate","action":"join.spectate"}' | sed 's/^/alias xspec "/; s/$/"/'
+			echo 'fe attach 1; xbeat; xhello'
+			echo "connect 127.0.0.1:$p"
+			echo 'defer 32 "set xt_go 1"'
+		} > "$d/data/tour.cfg"
+		{
+			mark() { echo "$1 cmd echo MARK $2"; echo "$1.05 cmd touch_hud_state rects"; echo "$1.1 cmd uib_dump"; }
+			mark 0 connect
+			# taps beside the dialog, where a scrim would be: top left, and the bottom middle
+			echo "0.5 fdown 9 0.08 0.15"; echo "0.58 fup 9 0.08 0.15"
+			echo "0.9 fdown 9 0.50 0.95"; echo "0.98 fup 9 0.50 0.95"
+			mark 2 scrim
+			if [ $gt = ctf ]; then echo "3 cmd xred"; else echo "3 cmd xauto"; fi
+			mark 9 joined
+			echo "10 cmd spec"
+			mark 17 spectating
+			if [ $gt = ctf ]; then
+				# a swipe: the knob pushed past the end of the track; a team game opens the dialog
+				echo "18 glide 7 $JOINUI_KNOB $JOINUI_END 0.45 up"
+				mark 20 swiped
+				echo "21 cmd xauto"
+			else
+				# a tap on the track joins a game without teams
+				echo "18 fdown 7 $JOINUI_TAP"; echo "18.1 fup 7 $JOINUI_TAP"
+				mark 20 swiped
+			fi
+			mark 27 rejoined
+			echo "28 cmd quit"
+		} > "$WORK/joinui_$gt.txt"
+		LD_PRELOAD="$finj" XT_INJECT="$WORK/joinui_$gt.txt" timeout -k 5 100 "${RUN[@]}" "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$d" \
+			+vid_fullscreen 0 +vid_width 1920 +vid_height 1200 +set vid_touchscreen 1 +set vid_touchscreen_detected 1 \
+			+set vid_touchscreen_xdpi 283 +set vid_touchscreen_ydpi 283 \
+			+set _touch_assets_ready 1 +set touch_setup_done 1 +set touch_profile_done 1 +set touch_native_frontend 1 \
+			+exec tour.cfg > "$d/client.log" 2>&1
+		kill %1 2> /dev/null; wait 2> /dev/null
+		python3 "$ROOT/tests/native-menu/check_joinui.py" "$d/client.log" $gt "$JOINUI_KNOB" || fail=1
+	done
+}
+
 cases=("$@")
-[ ${#cases[@]} -eq 0 ] && cases=(uid2name joinmid joinname)
+[ ${#cases[@]} -eq 0 ] && cases=(uid2name joinmid joinname joinui)
 for c in "${cases[@]}"; do "case_$c"; done
 [ $fail = 0 ] && echo "native menu live: all checks passed" || echo "native menu live: FAILED (OUT=<dir> keeps the logs)"
 exit $fail

@@ -33,6 +33,11 @@ Commands:
   touch_join <auto|red|blue|yellow|pink|spectate>
                        what the dialog's rows run: the stock join commands,
                        with the answer watched (_touch_hud_join).
+  touch_join_slide     what the HUD's "Swipe to join" does (touch_hud.c): the
+                       join dialog in a team game, else straight in.
+Published for the join dialog (touch_uib_join.qc, dialog_touch_join.qc):
+  _touch_team_players  players in each team, "red blue yellow pink"
+  _touch_match_players players in the match (not spectating)
   touch_hud_state      prints what the mode was derived from.
 The port's CSQC adds what only it can read (touch_mode.qc):
   _touch_hint_round, _touch_hint_carry, _touch_hint_queued.
@@ -67,6 +72,8 @@ static cvar_t touch_local_autojoin = {CF_CLIENT | CF_ARCHIVE, "touch_local_autoj
 static cvar_t hint_round = {CF_CLIENT, "_touch_hint_round", "0", "set by the port's CSQC: a round-based game with a round under way"};
 static cvar_t hint_carry = {CF_CLIENT, "_touch_hint_carry", "0", "set by the port's CSQC: carrying a flag, key or ball"};
 static cvar_t hint_queued = {CF_CLIENT, "_touch_hint_queued", "0", "set by the port's CSQC: the server queued our join"};
+static cvar_t pub_team_players = {CF_CLIENT | CF_READONLY, "_touch_team_players", "0 0 0 0", "players in each team from the scoreboard: red blue yellow pink; read-only"};
+static cvar_t pub_match_players = {CF_CLIENT | CF_READONLY, "_touch_match_players", "0", "players in the match (not spectating) from the scoreboard; read-only"};
 
 typedef struct mglobal_s { int ofs; int type; } mglobal_t;
 static void *bound_globals;
@@ -182,9 +189,28 @@ static void publish(void)
 	set_string(&pub_join, TouchMode_JoinName(current.join));
 	set_number(&pub_controls, TouchMode_Controls(current.mode, current.flags));
 	set_string(&pub_actions, actions);
+	{
+		// who is where, for the join dialog: from the scoreboard, under any CSQC
+		int counts[4] = {0, 0, 0, 0}, playing = 0, i;
+		char text[48];
+		if (current.mode != TOUCHMODE_OFF && cl.scores)
+			for (i = 0; i < cl.maxclients; i++)
+			{
+				int frags = cl.scores[i].frags, bit;
+				if (!cl.scores[i].name[0] || frags == -666 || frags == -616)
+					continue;
+				playing++;
+				bit = TouchJoin_TeamBit(cl.scores[i].colors);
+				if (bit)
+					counts[bit == 1 ? 0 : bit == 2 ? 1 : bit == 4 ? 2 : 3]++;
+			}
+		dpsnprintf(text, sizeof(text), "%d %d %d %d", counts[0], counts[1], counts[2], counts[3]);
+		set_string(&pub_team_players, text);
+		set_number(&pub_match_players, playing);
+	}
 }
 
-static touchjoindlg_t join_dlg = {1, TOUCHJOINDLG_TRIES, 0, 0};
+static touchjoindlg_t join_dlg = {1, TOUCHJOINDLG_TRIES, 0, 0, 0};
 static char join_dlg_map[64];
 static qbool join_dlg_welcome;   // the game's own Welcome dialog (Join! / Spectate) came up for this connection
 
@@ -325,6 +351,24 @@ static void TouchJoin_f(cmd_state_t *cmd)
 	Cbuf_AddText(cmd_local, "\n");
 }
 
+// touch_join_slide: the HUD's "Swipe to join" (touch_hud.c), also for a key.
+// A team game opens the join dialog (a team to pick: auto-select is one
+// tap there); a game without teams joins.
+static void TouchJoinSlide_f(cmd_state_t *cmd)
+{
+	(void)cmd;
+	TouchHudMode_Update();
+	if (!TouchMode_IsSpectating(current.mode))
+	{
+		Con_Printf("touch_join_slide: not spectating (%s)\n", pub_mode.string);
+		return;
+	}
+	if ((current.flags & TOUCHMODE_F_TEAMS) || Cvar_VariableValue(&cvars_all, "_teams_available", ~0))
+		Cbuf_AddText(cmd_local, "touch_join_dialog\n");
+	else
+		Cbuf_AddText(cmd_local, "touch_join auto\n");
+}
+
 void TouchHudMode_Reset(void)
 {
 	memset(&join_req, 0, sizeof(join_req));
@@ -417,9 +461,12 @@ void TouchHudMode_Init(void)
 	Cvar_RegisterVariable(&hint_round);
 	Cvar_RegisterVariable(&hint_carry);
 	Cvar_RegisterVariable(&hint_queued);
+	Cvar_RegisterVariable(&pub_team_players);
+	Cvar_RegisterVariable(&pub_match_players);
 	Cmd_AddCommand(CF_CLIENT, "touch_hud_state", TouchHudState_f, "print what the touch HUD mode is derived from and what the controls are doing (any argument: every scoreboard slot too; \"rects\": every control on screen as a rect)");
 	Cmd_AddCommand(CF_CLIENT, "touch_join_dialog", TouchJoinDialog_f, "open Xonotic's join dialog: auto-select, the teams the server offers, spectate");
 	Cmd_AddCommand(CF_CLIENT, "touch_join_answered", TouchJoinAnswered_f, "the game's own Welcome dialog (Join! / Spectate) was shown: the join dialog is not owed for this match");
+	Cmd_AddCommand(CF_CLIENT, "touch_join_slide", TouchJoinSlide_f, "what the HUD's Swipe to join does: the join dialog in a team game, else join");
 	Cmd_AddCommand(CF_CLIENT, "touch_join", TouchJoin_f, "what the join dialog's rows run: touch_join <auto|red|blue|yellow|pink|spectate>");
 	Cmd_AddCommand(CF_CLIENT, "touch_action", TouchAction_f, "run an in-match menu action: resume, join, spectate, team, settings, leave [confirm] (_touch_hud_actions lists them)");
 }

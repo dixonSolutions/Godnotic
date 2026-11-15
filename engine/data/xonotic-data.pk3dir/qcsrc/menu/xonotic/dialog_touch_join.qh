@@ -7,7 +7,9 @@
 // starts and from MENU > Join game / Change team (touch_hudmode.c), and a
 // server sends it through team_selection_show. A row runs "touch_join
 // <choice>", which sends the stock join commands. In a game without teams
-// the team row is not there: Join and Spectate.
+// the team row is not there: Join and Spectate. Each team button carries how
+// many play in it (_touch_team_players, from the engine's scoreboard read).
+// The first moments it is up it takes no taps; Back (Escape) closes it.
 #include "rootdialog.qh"
 #include "touchbutton.qh"
 CLASS(GodnoticJoinDialog, XonoticRootDialog)
@@ -15,7 +17,9 @@ CLASS(GodnoticJoinDialog, XonoticRootDialog)
 	METHOD(GodnoticJoinDialog, showNotify, void(entity));
 	METHOD(GodnoticJoinDialog, draw, void(entity));
 	METHOD(GodnoticJoinDialog, configureDialog, void(entity));
-	ATTRIB(GodnoticJoinDialog, title, string, _("Join game"));
+	METHOD(GodnoticJoinDialog, mousePress, bool(GodnoticJoinDialog this, vector pos));
+	METHOD(GodnoticJoinDialog, mouseRelease, float(entity, vector));
+	ATTRIB(GodnoticJoinDialog, title, string, _("Join the match"));
 	ATTRIB(GodnoticJoinDialog, color, vector, SKINCOLOR_DIALOG_TEAMSELECT);
 	ATTRIB(GodnoticJoinDialog, intendedWidth, float, 0.56);
 	ATTRIB(GodnoticJoinDialog, rows, float, 8);
@@ -27,6 +31,12 @@ CLASS(GodnoticJoinDialog, XonoticRootDialog)
 	ATTRIB(GodnoticJoinDialog, team3, entity);
 	ATTRIB(GodnoticJoinDialog, team4, entity);
 	ATTRIB(GodnoticJoinDialog, wasWatching, bool, false);
+	ATTRIB(GodnoticJoinDialog, armedAt, float, 0);       // no taps before this: it opens by itself, often mid-tap
+	ATTRIB(GodnoticJoinDialog, countsSeen, string, string_null);  // the player counts on the labels
+	ATTRIB(GodnoticJoinDialog, label1, string, string_null);      // the team labels, zoned (Label keeps the pointer)
+	ATTRIB(GodnoticJoinDialog, label2, string, string_null);
+	ATTRIB(GodnoticJoinDialog, label3, string, string_null);
+	ATTRIB(GodnoticJoinDialog, label4, string, string_null);
 	ATTRIB(GodnoticJoinDialog, requiresConnection, bool, true);
 ENDCLASS(GodnoticJoinDialog)
 
