@@ -434,6 +434,16 @@ the server list's refresh), always in logcat on Android, and the Kotlin renderer
   that action with `payload: {"sort": <column key>, "desc": <bool>}`. The renderer sorts at
   once; the menu VM keeps the choice, so every later build of the list carries it. Until
   the engine's props say the same, a diff in between does not undo the player's sort.
+  Every renderer reports it (Kotlin, GTK, the QuakeC renderer); a first tap on a count
+  column (`type` `players` or `number`) sorts most first, a tap on the sorted column turns
+  it around, and the header shows the list's `sort` from the start. The server list keeps
+  it in the saved cvars `touch_mp_sort` (a column key; anything else reads as `ping`) and
+  `touch_mp_sortdesc`, so Multiplayer opens sorted the same way after Back and after a
+  restart (config.cfg: written on quit, on Android when paused, on the web within seconds).
+- An update of a list node that changes only its `count`, `selected`, `sort` or `desc`
+  leaves the view in place (rows, scroll position, chosen row), and so does a screen whose
+  `subtitle` alone changes (the server list's "N servers · refreshing…"): a GTK renderer
+  that rebuilt the screen for those lost the player's sort and place on every refresh.
 - Equal sort keys (a dozen servers with 0 players) are ordered by row key, so they never
   swap places between updates.
 - A filter (a checkbox bound to `cvar:menu_slist_show*`, LAN) applies in the frame it

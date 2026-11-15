@@ -1570,6 +1570,9 @@ void RB_Layout()
 void RB_ListFetch(int k, float first, float want)
 {
 	string id = lc_id[k];
+	// the player's sort is the list's own once the menu VM carries it (sortAction)
+	if (lc_sort[k] != "" && uib_get(id, "sortAction.id") != "" && uib_get(id, "sort") == lc_sort[k] && (uib_get(id, "desc") == "1") == lc_desc[k])
+		strcpy(lc_sort[k], "");
 	string sort = (lc_sort[k] != "") ? lc_sort[k] : uib_get(id, "sort");
 	float desc = (lc_sort[k] != "") ? lc_desc[k] : (uib_get(id, "desc") == "1");
 	string filter = uib_get(id, "filter");
@@ -2694,8 +2697,17 @@ void RB_TableTap(entity e, vector p, vector m)
 			{
 				string key = uib_get(e.rb_id, sprintf("columns.%d.key", i));
 				string cur = (lc_sort[kk] != "") ? lc_sort[kk] : uib_get(e.rb_id, "sort");
-				lc_desc[kk] = (cur == key) ? !lc_desc[kk] : (key == "players");
+				float curdesc = (lc_sort[kk] != "") ? lc_desc[kk] : (uib_get(e.rb_id, "desc") == "1");
+				string ctype = uib_get(e.rb_id, sprintf("columns.%d.type", i));
+				// the other direction of the sorted column; a count starts from the most
+				lc_desc[kk] = (cur == key) ? !curdesc : (ctype == "players" || ctype == "number");
 				strcpy(lc_sort[kk], key);
+				// a list with sortAction: the menu VM keeps the choice for every later
+				// build of the list, and saves it (docs/UI_BRIDGE.md, "Lists that stay put")
+				string sa = uib_get(e.rb_id, "sortAction.id");
+				if (sa != "")
+					RB_Send(sprintf("{\"ev\":\"action\",\"node\":%s,\"action\":%s,\"payload\":{\"sort\":%s,\"desc\":%s}}",
+						uib_qv(e.rb_id), uib_qv(sa), uib_qv(key), (lc_desc[kk] ? "true" : "false")));
 				return;
 			}
 		return;
@@ -3324,9 +3336,13 @@ bool TouchUIB_Draw(float alpha)
 	if (findid != "")
 	{
 		// tests (uib_input): where the item of a node is on screen; a row of a
-		// list is asked for as <list id>#<row index>
+		// list is asked for as <list id>#<row index>, a table's column header as
+		// <list id>@<column key>
 		string found = "";
 		int hash = strstrofs(findid, "#", 0);
+		int fat = strstrofs(findid, "@", 0);
+		string fcol = (fat >= 0) ? substring(findid, fat + 1, -1) : "";
+		if (fat >= 0) findid = substring(findid, 0, fat);
 		string fid = (hash >= 0) ? substring(findid, 0, hash) : findid;
 		float frow = (hash >= 0) ? stof(substring(findid, hash + 1, -1)) : -1;
 		for (int i = 0; i < rb_n && found == ""; ++i)
@@ -3336,7 +3352,16 @@ bool TouchUIB_Draw(float alpha)
 			if (!fe.rb_focus && fe.rb_list < 0) continue;   // only what can be pressed
 			vector fp = RB_ItemPos(fe);
 			vector fs = fe.rb_s;
-			if (frow >= 0 && fe.rb_list >= 0)
+			if (fcol != "" && fe.rb_list >= 0 && fe.rb_size > 0)
+			{
+				// the header cell (rt_*: the columns of the table drawn last, the only one on screen)
+				int fc;
+				for (fc = 0; fc < 16 && !(rt_ws[fc] > 0 && rt_ck[fc] == fcol); ++fc) {}
+				if (fc >= 16) continue;
+				fp = eX * rt_xs[fc] + eY * fp.y;
+				fs = eX * rt_ws[fc] + eY * fe.rb_size;
+			}
+			else if (frow >= 0 && fe.rb_list >= 0)
 			{
 				int fk = fe.rb_list;
 				if (lc_rows[fk] > 0)
