@@ -20,6 +20,12 @@
 #   focus        The app's window losing the keyboard focus (another window clicked)
 #                mutes the game and gets the idle frame rate; getting it back unmutes
 #                (snd_mutewhenidle through the app's caps; `uib_window` reports it).
+#   uid2name     The statistics question (a stock server, STOCKBASE) shows in the app over
+#                the match and the app's Escape answers No.
+#   restart      Killed mid-match (SIGTERM, SIGKILL), or the game's own window closed in a
+#                match with two windows (GODNOTIC_EMBED=0), then started again: the engine
+#                goes with the app (the app with the engine), and the new start is at Home
+#                from its first frame, never a Paused page of a match that is gone.
 #   settings     On a PC with no touchscreen, Settings has the touch section
 #                (Controls, as on Android) with its on-screen controls switch, and says
 #                when its rows apply instead of leaving them out.
@@ -200,6 +206,102 @@ timeout -k 5 120 "${RUN[@]}" "${SANDBOX[@]}" \
 	--env=GODNOTIC_START="$WORK/start2.sh" --env=GODNOTIC_SKIP_DATA_CHECK=1 --env=GODNOTIC_TEST_NATIVE_BACKEND=1 \
 	--env=XDG_CONFIG_HOME="$WORK/config" --env=GODNOTIC_USER_BASE="$WORK/ub" \
 	--command=env "$RUNTIME" "${INSIDE[@]}" "$BIN" --size=1024x640 --dark --script="$WORK/settings.script" > "$WORK/settings-log.txt" 2>&1
+
+# The statistics question over a match: a server with the stock game code (STOCKBASE, a
+# basedir with upstream Xonotic data only) asks a player whose cl_allow_uid2name is -1.
+# It shows in the app over the match; the app's Escape answers No and the match is back.
+STOCKBASE="${STOCKBASE:-$HOME/.cache/godnotic-work/controls-stock}"
+if ls "$STOCKBASE"/data/xonotic-*-data.pk3 > /dev/null 2>&1; then
+	P2=$((PORT + 100))
+	mkdir -p "$WORK/sv2" "$WORK/ud3"
+	"${RUN[@]}" "$ENGINE" -dedicated -xonotic -basedir "$STOCKBASE" -userdir "$WORK/sv2" +set port $P2 +set sv_public 0 \
+		+set sv_master1 "" +set sv_master2 "" +set sv_master3 "" +set sv_master4 "" +set bot_number 2 +set skill 1 \
+		+set g_warmup 0 +map stormkeep > "$WORK/server2.log" 2>&1 &
+	pids+=($!)
+	for _ in $(seq 1 600); do grep -q "Server spawned" "$WORK/server2.log" 2> /dev/null && break; sleep 0.1; done
+	cat > "$WORK/start3.sh" << EOS
+#!/bin/sh
+export SDL_AUDIODRIVER=dummy
+exec "$ENGINE" -xonotic -basedir "$B" -userdir "$WORK/ud3" "\$@" +vid_width 1024 +vid_height 640 \\
+	+set touch_profile_done 1 +set touch_setup_done 1 +set _touch_assets_ready 1 +set developer 1 \\
+	+set cl_allow_uid2name -1 +set touch_join_dialog_auto 0 \\
+	+set sv_master1 "" +set sv_master2 "" +set sv_master3 "" +set sv_master4 "" \\
+	+set sv_masterextra1 "" +set sv_masterextra2 "" +set sv_masterextra3 "" +connect 127.0.0.1:$P2
+EOS
+	chmod +x "$WORK/start3.sh"
+	printf '%s\n' "waittop uid2name 60000" "wait 1200" "visible $WORK/vis-uid.txt" "labels $WORK/uid2name-labels.txt" \
+		"snapshot $WORK/uid2name-gtk.png" "key Escape" "waitgame 15000" "wait 1000" "visible $WORK/vis-uid.txt" "quit" > "$WORK/uid.script"
+	timeout -k 5 150 "${RUN[@]}" "${SANDBOX[@]}" \
+		--env=GODNOTIC_START="$WORK/start3.sh" --env=GODNOTIC_SKIP_DATA_CHECK=1 --env=GODNOTIC_TEST_NATIVE_BACKEND=1 \
+		--env=XDG_CONFIG_HOME="$WORK/config" --env=GODNOTIC_USER_BASE="$WORK/ub" \
+		--command=env "$RUNTIME" "${INSIDE[@]}" "$BIN" --size=1024x640 --dark --script="$WORK/uid.script" > "$WORK/uid-log.txt" 2>&1
+else
+	echo "SKIP uid2name: no stock game data in $STOCKBASE (set STOCKBASE)"
+fi
+
+# Closed mid-match: the app is killed in a local match (SIGTERM, then a second time with
+# SIGKILL) and started again on the same profile. The engine goes with the app, and the
+# new start opens at Home: never a Paused screen for a match that no longer exists.
+mkdir -p "$WORK/ud4"
+for kind in match plain; do
+	{
+		echo '#!/bin/sh'
+		echo 'export SDL_AUDIODRIVER=dummy'
+		printf 'exec "%s" -xonotic -basedir "%s" -userdir "%s" "$@" +vid_width 1024 +vid_height 640' "$ENGINE" "$B" "$WORK/ud4"
+		# developer 0, as players run it: with developer 1 the engine lists background
+		# downloads (the update check) and the menu shows them as a loading screen
+		printf ' +set touch_profile_done 1 +set touch_setup_done 1 +set _touch_assets_ready 1 +set developer 0'
+		printf ' +set sv_master1 "" +set sv_master2 "" +set sv_master3 "" +set sv_master4 ""'
+		printf ' +set sv_masterextra1 "" +set sv_masterextra2 "" +set sv_masterextra3 ""'
+		[ $kind = match ] && printf ' +set bot_number 1 +map stormkeep'
+		echo
+	} > "$WORK/start-$kind.sh"
+	chmod +x "$WORK/start-$kind.sh"
+done
+app() { # start script, run script, log, timeout
+	timeout -k 5 "$4" "${RUN[@]}" "${SANDBOX[@]}" \
+		--env=GODNOTIC_START="$1" --env=GODNOTIC_SKIP_DATA_CHECK=1 --env=GODNOTIC_TEST_NATIVE_BACKEND=1 \
+		--env=XDG_CONFIG_HOME="$WORK/config" --env=GODNOTIC_USER_BASE="$WORK/ub" \
+		--command=env "$RUNTIME" "${INSIDE[@]}" "$BIN" --size=1024x640 --dark --script="$2" > "$3" 2>&1
+}
+for sig in TERM KILL; do
+	printf '%s\n' "waitgame 90000" "wait 1500" "visible $WORK/vis-kill-$sig.txt" "wait 60000" "quit" > "$WORK/kill-$sig.script"
+	app "$WORK/start-match.sh" "$WORK/kill-$sig.script" "$WORK/restart-$sig-1.log" 150 &
+	job=$!
+	for _ in $(seq 1 1000); do [ -s "$WORK/vis-kill-$sig.txt" ] && break; sleep 0.1; done
+	sleep 1
+	pkill -"$sig" -f "^$BIN .*--script=$WORK/kill-$sig.script" || echo "no app to kill" >> "$WORK/restart-$sig-1.log"
+	wait $job 2> /dev/null
+	gone=alive
+	for _ in $(seq 1 100); do pgrep -f -- "-userdir $WORK/ud4" > /dev/null || { gone=gone; break; }; sleep 0.1; done
+	echo "engine $gone after SIG$sig" > "$WORK/engine-after-$sig.txt"
+	pkill -f -- "-userdir $WORK/ud4" 2> /dev/null
+	{ for _ in $(seq 1 15); do echo "visible $WORK/vis-relaunch-$sig.txt"; echo "wait 200"; done
+	  echo "waittop home 20000"; echo "wait 2000"; echo "visible $WORK/vis-relaunch-$sig.txt"; echo "snapshot $WORK/relaunch-$sig.png"; echo "quit"; } > "$WORK/relaunch-$sig.script"
+	app "$WORK/start-plain.sh" "$WORK/relaunch-$sig.script" "$WORK/restart-$sig-2.log" 90
+done
+
+# The owner's case (2026-11-15): two windows taking turns (GODNOTIC_EMBED=0, what a
+# Wayland-only session gets), the game's own window closed with its close button in a
+# match. The engine quits; the app used to stay running with its window hidden, and the
+# next launch only brought that window back, on the Paused page of a match that no longer
+# existed. Now the app quits with the engine, and the next start is at Home.
+printf '%s\n' "waitgame 90000" "wait 1500" "visible $WORK/vis-close.txt" "wait 60000" "quit" > "$WORK/close.script"
+SANDBOX+=(--env=GODNOTIC_EMBED=0)
+app "$WORK/start-match.sh" "$WORK/close.script" "$WORK/restart-CLOSE-1.log" 150 &
+job=$!
+unset 'SANDBOX[${#SANDBOX[@]}-1]'
+for _ in $(seq 1 1000); do [ -s "$WORK/vis-close.txt" ] && break; sleep 0.1; done
+sleep 1
+"${XENV[@]}" python3 "$ROOT/tests/gtk-live/xwin.py" close-visible >> "$WORK/close-xwin.txt"
+quit=running
+for _ in $(seq 1 100); do kill -0 $job 2> /dev/null || { quit=quit; break; }; sleep 0.1; done
+echo "app $quit after the game window closed" > "$WORK/app-after-close.txt"
+pkill -f "^$BIN .*--script=$WORK/close.script" 2> /dev/null; wait $job 2> /dev/null
+pkill -f -- "-userdir $WORK/ud4" 2> /dev/null
+{ for _ in $(seq 1 15); do echo "visible $WORK/vis-relaunch-CLOSE.txt"; echo "wait 200"; done
+  echo "waittop home 20000"; echo "wait 1000"; echo "visible $WORK/vis-relaunch-CLOSE.txt"; echo "quit"; } > "$WORK/relaunch-CLOSE.script"
+app "$WORK/start-plain.sh" "$WORK/relaunch-CLOSE.script" "$WORK/restart-CLOSE-2.log" 90
 
 python3 "$ROOT/tests/gtk-live/check.py" "$WORK" || fail=1
 [ $fail = 0 ] && echo "gtk live: all checks passed" || echo "gtk live: FAILED (OUT=<dir> keeps the logs)"

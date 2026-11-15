@@ -10,6 +10,8 @@
 #                                   (another app was clicked)
 #   xwin.py focus <title>           give it to the top-level window with that title
 #                                   (a window manager does this on a click or Alt+Tab)
+#   xwin.py close-visible           ask every mapped top-level window to close
+#                                   (WM_DELETE_WINDOW: its title bar's close button)
 import ctypes
 import ctypes.util
 import sys
@@ -80,6 +82,31 @@ if sys.argv[1] == "watch":
             f.write("%.2f %d %s\n" % (time.monotonic() - t0, len(tl), " ".join("%s:%dx%d" % (t, w, h) for _, t, w, h in tl)))
             f.flush()
             time.sleep(0.05)
+elif sys.argv[1] == "close-visible":
+    class ClientMessage(ctypes.Structure):
+        _fields_ = [("type", ctypes.c_int), ("serial", ctypes.c_ulong), ("send_event", ctypes.c_int),
+                    ("display", ctypes.c_void_p), ("window", Window), ("message_type", ctypes.c_ulong),
+                    ("format", ctypes.c_int), ("data", ctypes.c_long * 5)]
+
+    class XEvent(ctypes.Union):
+        _fields_ = [("xclient", ClientMessage), ("pad", ctypes.c_long * 24)]
+
+    x.XInternAtom.restype = ctypes.c_ulong
+    x.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    x.XSendEvent.argtypes = [ctypes.c_void_p, Window, ctypes.c_int, ctypes.c_long, ctypes.POINTER(XEvent)]
+    protocols = x.XInternAtom(d, b"WM_PROTOCOLS", 0)
+    delete = x.XInternAtom(d, b"WM_DELETE_WINDOW", 0)
+    for w, t, _, _ in toplevels():
+        ev = XEvent()
+        ev.xclient.type = 33  # ClientMessage
+        ev.xclient.window = w
+        ev.xclient.message_type = protocols
+        ev.xclient.format = 32
+        ev.xclient.data[0] = delete
+        ev.xclient.data[1] = 0  # CurrentTime
+        x.XSendEvent(d, w, 0, 0, ctypes.byref(ev))
+        print("close", hex(w), t)
+    x.XSync(d, 0)
 elif sys.argv[1] == "focus":
     target = 0  # None
     if sys.argv[2] != "none":

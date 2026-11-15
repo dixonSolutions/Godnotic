@@ -117,6 +117,52 @@ if not missing and (note or (touch and touch.group(2) != "0")):
 else:
     bad("Settings on Linux: missing %s, note %s, touchscreen %s" % (missing, note, touch.groups() if touch else "?"))
 
+# --- the statistics question over a match (only when the script had stock data for it)
+if os.path.exists(os.path.join(work, "uid-log.txt")):
+    vu = [line.split() for line in read("vis-uid.txt").splitlines() if line.strip()]
+    ul = read("uid2name-labels.txt").splitlines()
+    if len(vu) >= 1 and vu[0][:5] == ["visible", "pages", "embedded", "pause", "uid2name"] and any("player statistics" in x for x in ul):
+        ok("the statistics question shows in the app, over the match")
+    else:
+        bad("statistics question: %s / %s" % (vu[:1], "|".join(ul)[:200]))
+    if len(vu) >= 2 and vu[1][:4] == ["visible", "game", "embedded", "pause"] and len(vu[1]) == 5:
+        ok("Escape in the app answers it and the match is back")
+    else:
+        bad("after the app's Escape on the question: %s" % (vu[1:2],))
+
+# --- closed mid-match, started again: Home, no match
+for sig in ("TERM", "KILL", "CLOSE"):
+    if not os.path.exists(os.path.join(work, "restart-%s-1.log" % sig)):
+        continue
+    if sig == "CLOSE":
+        first = read("vis-close.txt").split()
+        if first[:3] != ["hidden", "game", "separate"]:
+            bad("two windows: the game's window did not have the match when it was closed (%s)" % " ".join(first))
+            continue
+        after = read("app-after-close.txt").strip()
+        if after.startswith("app quit"):
+            ok("two windows, the game's window closed in a match: the app quits with the engine")
+        else:
+            bad("two windows, the game's window closed in a match: %s" % after)
+    else:
+        first = read("vis-kill-%s.txt" % sig).split()
+        if first[:2] != ["visible", "game"]:
+            bad("SIG%s: the app was not in a match when killed (%s)" % (sig, " ".join(first)))
+            continue
+        after = read("engine-after-%s.txt" % sig).strip()
+        if after.startswith("engine gone"):
+            ok("SIG%s mid-match: the engine went with the app" % sig)
+        else:
+            bad("SIG%s mid-match: %s" % (sig, after))
+    lines = [line.split(" ") for line in read("vis-relaunch-%s.txt" % sig).splitlines() if line.strip()]
+    tops = [(v[1], v[3]) for v in lines if len(v) > 3]
+    stale = [t for t in tops if t[0] == "game" or t[1] not in ("", "home")]
+    relog = read("restart-%s-2.log" % sig)
+    if tops and not stale and ("pages", "home") in tops and "SpawnServer" not in relog:
+        ok("%s, started again: Home from the first frame (%d looks), no match running" % (sig, len(tops)))
+    else:
+        bad("%s, started again: %s%s" % (sig, stale[:3] or tops[:3], " and a map loaded" if "SpawnServer" in relog else ""))
+
 # --- one top-level window the whole time
 t0 = None
 samples = []

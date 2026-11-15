@@ -233,6 +233,81 @@ fn show_first_download(a: &app::App, use_engine: bool) {
     nav.replace(&[first]);
 }
 
+/// The engine process ended. What it described (a pause page, a match) is gone with it:
+/// never left on screen. A clean exit is the player quitting (Quit, or closing the game's
+/// own window when the two windows take turns): the app quits with it, so the next start
+/// is a fresh one at Home. A crash shows that the game stopped, with Start again (a new
+/// engine, at Home).
+fn engine_exited(a: &app::App) -> bool {
+    let status = match &mut *a.backend.borrow_mut() {
+        Backend::Engine(e) => match e.proc.child.try_wait() {
+            Ok(Some(s)) => s,
+            _ => return false,
+        },
+        _ => return true,
+    };
+    eprintln!("godnotic-loader: the engine exited ({status})");
+    forget_engine_ui(a);
+    if status.success() {
+        if let Some(app) = a.ui.borrow().as_ref().and_then(|u| u.win.application()) {
+            app.quit();
+        }
+        return true;
+    }
+    let why = match status.code() {
+        Some(c) => format!("The game stopped (exit code {c})."),
+        None => "The game stopped unexpectedly.".to_string(),
+    };
+    *a.backend.borrow_mut() = Backend::Offline(why);
+    show_stopped(a);
+    true
+}
+
+/// Drops every page, dialog and node the engine described.
+fn forget_engine_ui(a: &app::App) {
+    *a.core.borrow_mut() = app::Core { store: Default::default(), client: Default::default() };
+    a.out.borrow_mut().clear();
+    a.deferred.borrow_mut().clear();
+    let dialogs: Vec<adw::Dialog> = a.ui.borrow_mut().as_mut().map(|u| {
+        u.pages.clear();
+        u.shown_stack.clear();
+        u.updaters.clear();
+        u.activators.clear();
+        u.lists.clear();
+        u.dialogs.drain().map(|(_, d)| d).collect()
+    }).unwrap_or_default();
+    for d in dialogs {
+        d.force_close();
+    }
+}
+
+/// The engine crashed: say so, with Start again (a new engine, which opens at Home).
+fn show_stopped(a: &app::App) {
+    let why = match &*a.backend.borrow() {
+        Backend::Offline(w) => w.clone(),
+        _ => return,
+    };
+    let Some((nav, win)) = a.ui.borrow().as_ref().map(|u| (u.nav.clone(), u.win.clone())) else { return };
+    let s = adw::StatusPage::builder().icon_name("input-gaming-symbolic").title("Godnotic").description(glib::markup_escape_text(&why)).build();
+    let again = gtk::Button::with_label("Start again");
+    again.add_css_class("gn-play");
+    again.set_halign(gtk::Align::Center);
+    let w = Rc::downgrade(a);
+    again.connect_clicked(move |_| {
+        if let Some(a) = w.upgrade() {
+            start_ui(&a, true);
+        }
+    });
+    s.set_child(Some(&again));
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&adw::HeaderBar::new());
+    tv.set_content(Some(&s));
+    nav.replace(&[adw::NavigationPage::builder().tag("stopped").title("Godnotic").child(&tv).can_pop(false).build()]);
+    if !win.is_visible() {
+        win.present();
+    }
+}
+
 /// Says hello to the backend; the snapshot arrives through the pump.
 fn start_ui(a: &app::App, use_engine: bool) {
     if use_engine {
@@ -248,6 +323,9 @@ fn start_ui(a: &app::App, use_engine: bool) {
                 glib::timeout_add_local(std::time::Duration::from_millis(80), move || {
                     if let Some(a) = weak.upgrade() {
                         app::schedule(&a);
+                        if engine_exited(&a) {
+                            return glib::ControlFlow::Break;
+                        }
                         glib::ControlFlow::Continue
                     } else { glib::ControlFlow::Break }
                 });
