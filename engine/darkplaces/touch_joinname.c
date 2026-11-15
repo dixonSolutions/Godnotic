@@ -83,11 +83,18 @@ void TouchJoinName_Clean(const char *in, char *out, size_t outsize)
 	dpsnprintf(out, outsize, "%s%s", tmp, ellipsis);
 }
 
+static qbool list_name(const char *addr, char *out, size_t outsize);
+
 const char *TouchJoinName_For(const char *addr)
 {
-	if (!addr || !*addr || strcmp(addr, tjn.address))
+	static char peek[128];
+	if (!addr || !*addr)
 		return "";
-	return tjn.name;
+	if (!strcmp(addr, tjn.address))
+		return tjn.name;
+	// a join started this frame, before TouchJoinName_Frame saw it (a front end's
+	// event can run the connect and publish in one go): the server list may know it
+	return list_name(addr, peek, sizeof(peek)) ? peek : "";
 }
 
 const char *TouchJoinName_Label(const char *addr, char *buf, size_t size)
@@ -121,21 +128,26 @@ static void forget(void)
 }
 
 // the server list's name for addr, when it has one
-static qbool from_list(void)
+static qbool list_name(const char *addr, char *out, size_t outsize)
 {
 #ifdef CONFIG_MENU
 	unsigned i;
 	for (i = 0; i < serverlist_cachecount; i++)
 	{
 		serverlist_info_t *info = &serverlist_cache[i].info;
-		if (!info->name[0] || strcmp(info->cname, tjn.address))
+		if (!info->name[0] || strcmp(info->cname, addr))
 			continue;
-		TouchJoinName_Clean(info->name, tjn.name, sizeof(tjn.name));
-		if (tjn.name[0])
+		TouchJoinName_Clean(info->name, out, outsize);
+		if (out[0])
 			return true;
 	}
 #endif
 	return false;
+}
+
+static qbool from_list(void)
+{
+	return list_name(tjn.address, tjn.name, sizeof(tjn.name));
 }
 
 void TouchJoinName_Frame(void)
