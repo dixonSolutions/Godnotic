@@ -34,3 +34,7 @@ required-features = ["http-ureq"]
 [[example]]
 name = "datafetch"
 required-features = ["http-ureq"]
+
+[[example]]
+name = "dataplan"
+required-features = ["http-ureq"]
