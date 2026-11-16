@@ -9,6 +9,7 @@
  */
 #include "quakedef.h"
 #include "andysu_engine.h"
+#include "healthy_gate.h"
 
 extern void Andysu_InputDevices(int touch, int keyboard, int mouse); /* vid_touchdetect.c */
 
@@ -17,10 +18,12 @@ int andysu_swapping;
 int andysu_leave;
 int andysu_in_trial;
 static int andysu_swap_count; /* how many swaps led to this engine (carried in the state) */
+static healthy_gate_t healthy_gate;
 
 static int andysu_run(const andysu_loader_api *loader, int argc, char **argv, int swapped_in)
 {
 	andysu_loader = loader;
+	memset(&healthy_gate, 0, sizeof healthy_gate);
 	andysu_in_trial = (swapped_in == 1);
 	if (loader && loader->emit)
 		loader->emit(swapped_in ? "{\"event\":\"engine_entry\",\"build_id\":\"" ANDYSU_BUILD_ID "\",\"swapped\":1}"
@@ -149,9 +152,11 @@ void Andysu_FrameHook(void)
 	if (frames == 60)
 		*(volatile int *)0 = 1;
 #endif
-	// 90 frames show the engine draws. Any more only costs time on slow devices, where a good update
-	// can miss the host's watchdog and roll back.
-	if (frames == 90 && andysu_in_trial)
+}
+
+void Andysu_DrawnFrame(double now, int menu, int world)
+{
+	if (andysu_loader && healthy_gate_frame(&healthy_gate, now, menu, world))
 	{
 		andysu_in_trial = false;
 #ifndef ANDYSU_NO_HEALTHY // test variant (build.sh ":nohealthy"): never reports healthy

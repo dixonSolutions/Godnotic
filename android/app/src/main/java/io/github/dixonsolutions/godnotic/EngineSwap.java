@@ -171,7 +171,7 @@ final class EngineSwap {
                 break;
             case EV_HEALTHY:
                 try {
-                    Object h = host;
+                    Object h = Class.forName("com.andysu.api.Host").getMethod("current").invoke(null);
                     if (h != null) {
                         Class.forName("com.andysu.api.HostApi").getMethod("markHealthy").invoke(h);
                     }
