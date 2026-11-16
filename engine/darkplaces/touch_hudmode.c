@@ -211,7 +211,7 @@ static qbool join_dialog_here(void)
 // in words, instead of leaving the player wondering.
 static void join_refused_notice(void)
 {
-	SCR_CenterPrint("The server did not let you in (locked or full).\nMENU > Join game tries again.");
+	SCR_CenterPrint("Joining has not completed yet.\nMENU > Join game tries again.");
 }
 
 void TouchHudMode_Update(void)

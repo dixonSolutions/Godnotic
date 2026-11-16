@@ -293,11 +293,14 @@ static void check_join_dialog(void)
 	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 0, 1, 1, 0, 1, NULL);
 	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, TOUCHMODE_F_TEAMS, 1, 0, 1, 1, 1, 10, &joins), "hosted here, a team game: the dialog");
 	CHECK_INT(0, joins, "and no blind join");
-	// the campaign joins by itself
+	// Campaigns do not auto-join on the server: explicitly request it.
 	memset(&d, 0, sizeof(d));
 	joins = 0;
 	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 1, 1, 1, 0, 1, NULL);
-	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 1, 1, 1, 1, 10, &joins) + joins, "campaign: nothing from here");
+	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 1, 1, 1, 1, 3, &joins), "campaign: no dialog before join retries");
+	CHECK_INT(1, joins, "campaign: request join");
+	run_dialog(&d, TOUCHMODE_PLAYING, 0, 1, 1, 1, 1, 3, 5, &joins);
+	CHECK_INT(1, joins, "campaign: stop retrying once playing");
 	// what the rows send: the stock dialog's commands
 	CHECK_STR("cmd join", TouchJoinDlg_Command("auto", 0), "Join, no teams");
 	CHECK_STR("cmd selectteam auto; cmd join", TouchJoinDlg_Command("auto", 1), "auto-select");
