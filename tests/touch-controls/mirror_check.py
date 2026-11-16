@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The port's CSQC mirrors the engine's look and stick constants
 (qcsrc/client/touch_feel.qh from touch_feel.h, the stick radius floor from
-touch_hud.c), and both HUDs register the same defaults for the settings the
-review changed (touch_init.qc's table against touch_hud.c's cv() fallbacks)."""
+touch_hud.c). Cvar fallback parity is checked only where both HUDs share a
+default; the engine HUD's fixed stick deliberately ignores float/follow and
+uses its own .400 size fallback."""
 import re
 import sys
 
@@ -18,7 +19,7 @@ if not qc:
 table = dict(re.findall(r'Touch_RegisterCvar\("(\w+)",\s*"([^"]*)"\)', init_qc))
 for name in ("touch_sens_base", "touch_sens_y_mult", "touch_look_accel", "touch_look_accel_lo", "touch_look_accel_hi",
              "touch_look_fcmin", "touch_look_beta", "touch_look_filter", "touch_stick_deadzone", "touch_stick_run",
-             "touch_stick_float", "touch_stick_follow", "touch_stick_analog", "touch_move_size", "touch_fire_size",
+             "touch_stick_analog", "touch_fire_size",
              "touch_crouch_size", "touch_fire_drag_look", "touch_button_drag_look"):
     engine = set(re.findall(r'cv\(\s*(?:aim_button \? "touch_fire_drag_look" : )?"%s",\s*([\d.]+)f?\)' % name, hud_c))
     if name == "touch_fire_drag_look":
@@ -33,4 +34,4 @@ if bad:
     for line in bad:
         print("MISMATCH", line)
     sys.exit(1)
-print(f"touch_feel.qh mirrors touch_feel.h ({len(qc)} constants); 18 defaults agree between the HUD copies")
+print(f"touch_feel.qh mirrors touch_feel.h ({len(qc)} constants); shared HUD defaults agree")
