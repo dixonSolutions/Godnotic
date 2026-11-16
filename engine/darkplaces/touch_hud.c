@@ -766,13 +766,13 @@ static void topbar_sync(void)
 	topbar_valid = false;
 	if ((TouchLua_VibrateHook != NULL) != (touch_haptics_available.integer != 0))
 		Cvar_SetValueQuick(&touch_haptics_available, TouchLua_VibrateHook != NULL);
-	if (!touch_topbar_auto.integer && vid_touchscreen.integer && cls.state == ca_connected && W >= 16 && H >= 16
+	if (!touch_topbar_auto.integer && (vid_touchscreen.integer || vid_touchscreen_detected.integer) && cls.state == ca_connected && W >= 16 && H >= 16
 		&& topbar_user_overlaps())
 	{
 		Con_Printf("Touch HUD: the saved top bar had overlapping buttons, using the automatic row\n");
 		Cvar_SetValueQuick(&touch_topbar_auto, 1);
 	}
-	if (!touch_topbar_auto.integer || !vid_touchscreen.integer || cls.state != ca_connected || W < 16 || H < 16)
+	if (!touch_topbar_auto.integer || !(vid_touchscreen.integer || vid_touchscreen_detected.integer) || cls.state != ca_connected || W < 16 || H < 16)
 		return;
 	if (insets && insets[0])
 		sscanf(insets, "%f %f %f %f %f", &in_l, &in_t, &in_r, &in_b, &dens);
@@ -791,6 +791,14 @@ static void topbar_sync(void)
 	in.pill_h = max(in.pill_h, hy * 2);
 	widget_half(cv("touch_chat_size", 0.060f), 1, &hx, &hy);
 	in.pill_h = max(in.pill_h, hy * 2);
+	// CSQC gets the requested video dimensions through cvars, which may
+	// differ from the actual framebuffer during a resize or on a tablet.
+	// Reserve whichever density floor produces the larger pill.
+	{
+		float vw = cv("vid_width", 0), vh = cv("vid_height", 0);
+		if (vw > 0 && vh > 0)
+			in.pill_h = max(in.pill_h, TOUCHDP_PILL_HEIGHT * TouchDp_Density(cv("vid_touchscreen_ydpi", 0), min(vw, vh)) * H / vh);
+	}
 	in.aspect = 2.4f;
 	in.console = Cvar_VariableValue(&cvars_all, "touch_shell_button", ~0) >= 2
 		? bound(32.0f, Cvar_VariableValue(&cvars_all, "touch_shell_button_size", ~0), 96.0f) * in.u : 0;
