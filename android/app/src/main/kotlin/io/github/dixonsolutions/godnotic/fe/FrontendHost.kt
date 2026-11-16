@@ -809,15 +809,20 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
 
     // ---------------------------------------------------------------- input
 
+    private val escapeKeyRoute = EscapeKeyRoute()
+
     /** From XonoticActivity.dispatchKeyEvent: true when the overlay took the key. */
     fun dispatchKey(event: KeyEvent): Boolean {
-        if (root.visibility != View.VISIBLE) return false
         val k = event.keyCode
-        if (k == KeyEvent.KEYCODE_VOLUME_UP || k == KeyEvent.KEYCODE_VOLUME_DOWN || k == KeyEvent.KEYCODE_VOLUME_MUTE) return false
-        if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE) {
-            if (event.action == KeyEvent.ACTION_UP) try { back() } catch (e: Exception) { fail("back", e) }
-            return true
+        val visible = root.visibility == View.VISIBLE
+        if ((k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE) &&
+            (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_UP)) {
+            val route = escapeKeyRoute.event(event.deviceId, k, event.action == KeyEvent.ACTION_DOWN, visible, event.isCanceled)
+            if (route == EscapeKeyRoute.BACK) try { back() } catch (e: Exception) { fail("back", e) }
+            return route != EscapeKeyRoute.ENGINE
         }
+        if (!visible) return false
+        if (k == KeyEvent.KEYCODE_VOLUME_UP || k == KeyEvent.KEYCODE_VOLUME_DOWN || k == KeyEvent.KEYCODE_VOLUME_MUTE) return false
         root.dispatchKeyEvent(event)
         return true // never to the engine while a native screen is up
     }
