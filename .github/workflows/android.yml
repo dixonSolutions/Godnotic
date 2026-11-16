@@ -228,8 +228,20 @@ jobs:
             exit "$status"
           }
           trap diagnostics EXIT
-          sdkmanager 'platform-tools' 'emulator' 'system-images;android-31;google_apis;x86_64' >/dev/null
-          echo no | avdmanager create avd -n smoke -k 'system-images;android-31;google_apis;x86_64' --force
+          # Licences first: sdkmanager exits 1 without them, and an unaccepted licence is
+          # infrastructure, not a broken APK.
+          if ! (yes | sdkmanager --licenses >/dev/null 2>&1); then
+            echo "::warning::could not accept the Android SDK licences; the APK boot check was SKIPPED for this run"
+            exit 0
+          fi
+          if ! sdkmanager 'platform-tools' 'emulator' 'system-images;android-31;google_apis;x86_64' >/dev/null; then
+            echo "::warning::could not install the emulator image; the APK boot check was SKIPPED for this run"
+            exit 0
+          fi
+          if ! echo no | avdmanager create avd -n smoke -k 'system-images;android-31;google_apis;x86_64' --force; then
+            echo "::warning::could not create the AVD; the APK boot check was SKIPPED for this run"
+            exit 0
+          fi
           booted=false
           for attempt in 1 2; do
             emulator -avd smoke -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot > emulator.log 2>&1 &
