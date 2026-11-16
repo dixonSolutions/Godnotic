@@ -1,6 +1,6 @@
 <p align="center"><img src="branding/godnotic-banner.png" alt="Godnotic" width="720"></p>
 
-**Godnotic** is a custom fork of [Xonotic](https://xonotic.org), the free arena shooter. It plays on touch devices and on a stock keyboard and mouse alike: **Android**, **Ubuntu Touch**, **any Linux phone, tablet or PC via Flatpak**, and **the browser**. The game underneath is Xonotic (DarkPlaces engine, Xonotic's game code, maps and servers), so you play on the same public servers as everyone else. What Godnotic adds is everything around it: touch controls, an interface drawn by each platform's own toolkit, small fast downloads, self-updating packages, LAN games and Lua mods.
+**Godnotic** is an independent fork of [Xonotic](https://xonotic.org) — the game, its maps and servers, and the **DarkPlaces** engine underneath. It exists to make the game itself better: faster loads, leaner assets, and an interface that is **native-first** on each platform instead of one compromise shared by all of them — the platform's own widgets on **Android**, libadwaita on Linux. Touch is part of that story rather than the definition of it: the controls appear when a touchscreen is present, step aside for a keyboard and mouse, and follow the window as it changes shape and orientation. It ships as **Flatpak** for any Linux phone, tablet or PC, as an **APK** for Android with in-place **AndySU** updates, as a **click** for Ubuntu Touch, and in the **browser** as a WebAssembly build.
 
 | | |
 |---|---|

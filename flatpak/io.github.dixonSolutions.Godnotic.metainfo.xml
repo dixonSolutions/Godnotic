@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>io.github.dixonSolutions.Godnotic</id>
   <name>Godnotic</name>
-  <summary>Touch arena FPS for Linux phones, tablets and PCs</summary>
+  <summary>Arena FPS fork with faster loads, leaner assets and a native-first interface</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.dixonSolutions">
@@ -10,18 +10,26 @@
   </developer>
   <description>
     <p>
-      Godnotic brings the fast-paced arena shooter Xonotic to Linux
-      phones, tablets and touchscreen PCs. Virtual joysticks, weapon wheels, and
-      layout presets are tuned for two-thumb play in landscape. A touchscreen
-      is required; this build is not intended for keyboard-and-mouse play.
+      Godnotic is an independent fork of the Xonotic arena shooter and its
+      DarkPlaces engine. It exists to make the game itself better: faster
+      loads, leaner assets, and an interface that is native-first on each
+      platform instead of one compromise shared by all of them.
     </p>
     <p>
-      The Flatpak is small at install (~60 MB). Textures, maps, and music
-      download on first launch (~3 GB) so updates stay quick.
+      Touch is part of that story, not the whole of it. The on-screen controls
+      appear when a touchscreen is present, step aside for a keyboard and a
+      mouse, and follow the window as it changes shape, in any orientation.
     </p>
     <p>
-      The same game is also available for Android (APK) and Ubuntu Touch
-      (OpenStore).
+      The Flatpak is small at install. Maps, textures and music download on
+      first launch: about 390 MB of ASTC packs where the GPU supports them,
+      about 1 GB otherwise. Updates stay small because they carry the game,
+      not the data.
+    </p>
+    <p>
+      The same game also ships for Android (APK, with in-place updates through
+      AndySU), for Ubuntu Touch (OpenStore), and in the browser as a
+      WebAssembly build that needs no install at all.
     </p>
   </description>
   <launchable type="desktop-id">io.github.dixonSolutions.Godnotic.desktop</launchable>
