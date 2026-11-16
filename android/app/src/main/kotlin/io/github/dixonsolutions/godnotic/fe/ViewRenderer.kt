@@ -1197,7 +1197,11 @@ class ViewRenderer(
             if (inBar) col.setPadding(0, 0, 0, 0)
             input.hint = p.str("placeholder").ifEmpty { title(p) }
             input.isEnabled = !p.containsKey("enabled") || p.bool("enabled")
-            if (!secret && input.text.toString() != p.str("value")) input.setText(p.str("value"))
+            // Never rewrite a field the player is typing in: the value in props is the last
+            // COMMITTED text, so during IME composition (the suggestion strip) it is stale and
+            // setText cancels the composition - the letters stay in the strip and never arrive.
+            if (!secret && !input.hasFocus() && input.text.toString() != p.str("value"))
+                input.setText(p.str("value"))
             // the lock: open while no password applies, closed when one is on and set
             val locked = p.bool("hasValue") && input.isEnabled
             lock.text = if (locked) "🔒" else "🔓"
