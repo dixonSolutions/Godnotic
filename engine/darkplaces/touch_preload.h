@@ -71,6 +71,9 @@ tp;
 // the seed: names as the late list records them
 static const char *tp_seed[] =
 {
+	// Common first-spawn and pickup assets before the wider bot model set.
+	"m models/relics/relic.md3", "m models/weapons/v_shotgun.md3",
+	"m models/weapons/g_electro.md3", "m models/items/a_shells.md3",
 	// player models the bots (bots.txt) and the default player pick from
 	"m models/player/erebus.iqm", "m models/player/erebus_lod1.iqm", "m models/player/erebus_lod2.iqm",
 	"m models/player/megaerebus.iqm", "m models/player/megaerebus_lod1.iqm", "m models/player/megaerebus_lod2.iqm",
@@ -84,7 +87,7 @@ static const char *tp_seed[] =
 	"m models/player/seraphinamasked.iqm", "m models/player/seraphinamasked_lod1.iqm", "m models/player/seraphinamasked_lod2.iqm",
 	"m models/player/umbra.iqm", "m models/player/umbra_lod1.iqm", "m models/player/umbra_lod2.iqm",
 	// start weapons and the most common pickups: view, held and world models
-	"m models/weapons/h_shotgun.iqm", "m models/weapons/v_shotgun.md3", "m models/weapons/g_shotgun.md3",
+	"m models/weapons/h_shotgun.iqm", "m models/weapons/g_shotgun.md3",
 	"m models/weapons/h_laser.iqm", "m models/weapons/v_laser.md3", "m models/weapons/g_laser.md3",
 	"m models/weapons/h_nex.iqm", "m models/weapons/v_nex.md3", "m models/weapons/g_nex.md3",
 	"m models/weapons/h_rl.iqm", "m models/weapons/v_rl.md3",
@@ -95,7 +98,7 @@ static const char *tp_seed[] =
 	"m models/weapons/h_hagar.iqm", "m models/weapons/v_hagar.md3",
 	"m models/weapons/h_ok_mg.iqm", "m models/weapons/v_ok_mg.md3",
 	// what every match showed in its first seconds on the tablet
-	"m models/relics/relic.md3", "m models/misc/chatbubble.spr", "m models/uziflash.md3", "m models/casing_shell.mdl",
+	"m models/misc/chatbubble.spr", "m models/uziflash.md3", "m models/casing_shell.mdl",
 	"m models/gibs/eye.md3", "m models/gibs/bloodyskull.md3", "m models/gibs/arm.md3", "m models/gibs/chest.md3",
 	"m models/gibs/smallchest.md3", "m models/gibs/chunk.mdl",
 	"s misc/spawn.ogg", "s weapons/weapon_switch.wav", "s weapons/weaponpickup.wav", "s weapons/shotgun_fire.wav",
