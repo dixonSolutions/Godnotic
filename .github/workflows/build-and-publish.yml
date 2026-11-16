@@ -488,7 +488,11 @@ jobs:
           signing-key: ${{ secrets.ANDYSU_SIGNING_KEY }}
           signing-cert: ${{ secrets.ANDYSU_SIGNING_CERT }}
           version: ${{ needs.version.outputs.version }}
-          pack-args: --no-rename
+          # No deltas until the host verifies what it reconstructs: an old host that
+          # requests one can end up with a payload that installs and does not start
+          # (1.2.219 -> 1.2.223 on a tablet). Full blobs only until every host in the
+          # field verifies a reconstructed payload before staging it.
+          pack-args: --no-rename --deltas 0
           andysu-version: 0.1.135
       # The AndySU action creates its channel release as a pre-release, and the
       # app's updater ignores pre-releases. Users get full releases, so clear the flag.
