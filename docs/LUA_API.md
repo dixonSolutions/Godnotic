@@ -100,7 +100,7 @@ A mod can use a tier only when its `mod.txt` **declares** it (`permissions:`; `s
 | `xt.effect(name, v [, count])` | standard | yes | yes | 32 a second from all mods | A particle effect of the game (effectinfo name) at a point, seen only by this player. |
 | `xt.clipboard(text) -> bool` | standard | yes | no | 4 KB | Puts text on the clipboard; only inside a key, bind or touch button callback (a player's action). |
 | `xt.vibrate(ms) -> bool` | standard | yes | yes | 10 to 1000 ms, 2 a second | Vibrates the phone when the platform offers it (game.has("vibrate")). |
-| `xt.entities([kind]) -> {{id, kind, x, y, z, team, name, visible}}` | standard | limited online (see doc) | yes | 256 entries | Entities around: kind "player", "projectile", "item" or nil for all. Online, players and projectiles are listed only while they are on screen and not behind a wall (what the player sees); offline against bots everything is listed. |
+| `xt.entities([kind]) -> {{id, kind, x, y, z, team, name, visible}}` | standard | limited online (see doc) | yes | 256 entries | Entities around: kind "player", "projectile", "item" or nil for all. Online, players and projectiles are listed only while they are on screen and not behind a wall (what the player sees); offline against bots with `cl_touch_esp_enabled` on everything is listed, and with it off the list is as limited as online. |
 | `xt.offline() -> bool, why` | standard | yes | yes | - | Whether the offline-only rule is open: this game runs the server, no other human is connected, no demo plays. |
 | `xt.csqc() -> "godnotic"\|"foreign"\|"none"` | standard | yes | yes | - | Whose client game code runs: client hooks and the CSQC events need "godnotic". |
 
@@ -280,13 +280,14 @@ A client mod runs in the player's game. What it gets depends on the server:
 or `"none"` (not connected).
 
 **The offline-only rule.** In an offline match against bots (this game runs the server,
-no other human is connected, no demo plays: `xt.offline()`), `xt.entities` lists every
-player (from the local server, so bots outside the view too), projectile and item, so
-radars and training overlays work. Anywhere else it lists players and projectiles only
-while they are on the screen and not behind a wall, which is what the player sees
-anyway; items are always listed (they are part of the map). This is the same gate as
-the game's see-through practice helpers, checked in the engine on every call: a mod
-cannot get around it.
+no other human is connected, no demo plays: `xt.offline()`) with the player's
+`cl_touch_esp_enabled` on (`local`/`1`; `off`, `0`, `false`, `no` or empty turns it
+off), `xt.entities` lists every player (from the local server, so bots outside the
+view too), projectile and item, so radars and training overlays work. Anywhere else it
+lists players and projectiles only while they are on the screen and not behind a
+wall, which is what the player sees anyway; items are always listed (they are part of
+the map). These are the same gates as the game's see-through practice helpers, checked
+in the engine on every call: a mod cannot get around them.
 
 ## Messages between server and client mods
 

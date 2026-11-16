@@ -1162,8 +1162,10 @@ turn** (`cl_touch_practice_instant`, default 0: the pull moves onto the target
 at once). While they are active the pull also works with the thumb at rest.
 
 They, and the offline tactics below, run only where `cl_touch_esp_enabled`
-allows: `local` (the default) or `off`. There is no server value; any other
-value is taken as `local`, with a console note. `local` means the offline gate
+allows: `local` (the default; the mobile switch writes `1`) or `off`. The
+spellings `0`, `false`, `no` and an empty value also turn it off, noted once
+in the console. There is no server value; any other value is taken as
+`local`, with a console note. `local` means the offline gate
 (`TouchWep_PracticeGate`), checked every frame: this process runs the server,
 this client is connected to it over the loopback, no other human is connected
 (every other slot is a bot or empty), and no demo plays. With the gate closed
@@ -1394,7 +1396,7 @@ mode, a 3-minute local match against 3 skill-8 bots: 5 kills / 2 deaths.
 
 | Cvar | Default | Purpose |
 |------|---------|---------|
-| `cl_touch_esp_enabled` | `local` | `local` (offline gate) or `off`; no server value |
+| `cl_touch_esp_enabled` | `local` | `local`/`1` (offline gate) or `off`/`0`/`false`/`no`/empty; no server value |
 | `cl_touch_practice_intel` | `1` | Enemy labels, target choice, finishing and behind-a-wall weapons |
 | `cl_touch_practice_aimdodge` | `1` | Step out of an aiming enemy's line while the stick is idle |
 | `cl_touch_practice_exact` | `1` | Lead from the local server's velocities; any range |

@@ -87,13 +87,14 @@ A client mod runs in the player's game. What it gets depends on the server:
 or `"none"` (not connected).
 
 **The offline-only rule.** In an offline match against bots (this game runs the server,
-no other human is connected, no demo plays: `xt.offline()`), `xt.entities` lists every
-player (from the local server, so bots outside the view too), projectile and item, so
-radars and training overlays work. Anywhere else it lists players and projectiles only
-while they are on the screen and not behind a wall, which is what the player sees
-anyway; items are always listed (they are part of the map). This is the same gate as
-the game's see-through practice helpers, checked in the engine on every call: a mod
-cannot get around it.
+no other human is connected, no demo plays: `xt.offline()`) with the player's
+`cl_touch_esp_enabled` on (`local`/`1`; `off`, `0`, `false`, `no` or empty turns it
+off), `xt.entities` lists every player (from the local server, so bots outside the
+view too), projectile and item, so radars and training overlays work. Anywhere else it
+lists players and projectiles only while they are on the screen and not behind a
+wall, which is what the player sees anyway; items are always listed (they are part of
+the map). These are the same gates as the game's see-through practice helpers, checked
+in the engine on every call: a mod cannot get around them.
 
 ## Messages between server and client mods
 
