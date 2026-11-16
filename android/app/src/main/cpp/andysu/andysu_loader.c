@@ -225,9 +225,8 @@ static const char *api_get_state(size_t *n) {
 }
 
 static void api_mark_healthy(void) {
-    int was_trial = g_trial;
     g_trial = 0;
-    if (was_trial) notify_java(EV_HEALTHY, "");
+    notify_java(EV_HEALTHY, "");
     emitf("{\"event\":\"engine_healthy\",\"pid\":%d,\"t_ms\":%lld}", (int)getpid(), now_ms());
 }
 

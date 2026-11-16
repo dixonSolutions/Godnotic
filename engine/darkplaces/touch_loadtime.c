@@ -33,6 +33,9 @@ as they arrive. Neither applies in the menu or in the game.
 #include "touch_loadcvar.h"
 #include "touch_net.h"
 #include "image.h"
+#ifdef __ANDROID__
+#include "andysu_engine.h"
+#endif
 #ifdef __linux__
 #include <unistd.h>
 #include <time.h>
@@ -268,6 +271,11 @@ void TouchLoadTime_Frame(void)
 {
 	double now = Sys_DirtyTime();
 	int i;
+
+#ifdef __ANDROID__
+	Andysu_DrawnFrame(now, host.state == host_active && !scr_loading && key_dest == key_menu && cls.state != ca_connected,
+		!scr_loading && cls.state == ca_connected && cls.signon == SIGNONS && cl.worldmodel != NULL);
+#endif
 
 	// cl_screen calls this after drawing, with the render context current.
 	TP_Deferred();
