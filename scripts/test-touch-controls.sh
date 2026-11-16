@@ -11,6 +11,7 @@ set -euo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 CC="${CC:-cc}"
+python3 "$ROOT/tests/touch-detection/check.py"
 dir="$ROOT/tests/touch-controls"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
