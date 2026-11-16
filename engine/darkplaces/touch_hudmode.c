@@ -207,11 +207,10 @@ static qbool join_dialog_here(void)
 		&& (vid_touchscreen.integer || vid_touchscreen_detected.integer || VID_SDL_HasTouchDevices());
 }
 
-// A join the server did not take (locked, full, spectate-only): said once,
-// in words, instead of leaving the player wondering.
+// A join that has not completed: the timeout does not reveal the reason.
 static void join_refused_notice(void)
 {
-	SCR_CenterPrint("The server did not let you in (locked or full).\nMENU > Join game tries again.");
+	SCR_CenterPrint("Joining has not completed yet.\nMENU > Join game tries again.");
 }
 
 void TouchHudMode_Update(void)
@@ -300,6 +299,10 @@ static void TouchJoinDialog_f(cmd_state_t *cmd)
 // connect; 0.8.6 servers have none). The join dialog is then not owed.
 static void TouchJoinAnswered_f(cmd_state_t *cmd)
 {
+	// Campaign Welcome is also the level briefing; merely showing it does
+	// not mean its join request succeeded. Retry after the briefing closes.
+	if (sv.active && Cvar_VariableValue(&cvars_all, "g_campaign", ~0) != 0)
+		return;
 	join_dlg_welcome = true;
 	TouchJoinDlg_Answered(&join_dlg);
 }
