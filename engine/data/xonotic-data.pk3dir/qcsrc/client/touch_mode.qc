@@ -119,8 +119,44 @@ float Touch_DpUnits(void)
 
 float touch_hint_round_sent = -1, touch_hint_carry_sent = -1, touch_hint_queued_sent = -1;
 
+float touch_join_info_next;
+void Touch_JoinPublishInfo()
+{
+	if (time < touch_join_info_next) return;
+	touch_join_info_next = time + 1;
+	registercvar("_touch_join_info_source", "?");
+	registercvar("_touch_join_info_mode", "");
+	registercvar("_touch_join_info_map", "");
+	registercvar("_touch_join_info_counts", "");
+	registercvar("_touch_join_info_limit", "");
+	int playing = 0, spectators = 0;
+	for (int i = 0; i < maxclients; ++i)
+	{
+		if (entcs_GetName(i) == "") continue;
+		if (entcs_GetSpecState(i) == ENTCS_SPEC_PURE) ++spectators;
+		else ++playing;
+	}
+	cvar_set("_touch_join_info_mode", gametype ? MapInfo_Type_ToString(gametype) : "?");
+	cvar_set("_touch_join_info_map", mi_shortname != "" ? mi_shortname : "?");
+	cvar_set("_touch_join_info_counts", (playing + spectators > 0 ? sprintf("%d/%d (%d spectators)", playing, maxclients, spectators) : "?/? (? spectators)"));
+	float tl = STAT(TIMELIMIT);
+	if (!gametype)
+		cvar_set("_touch_join_info_limit", "");
+	else if (tl > 0)
+	{
+		int remaining = max(0, ceil(STAT(GAMESTARTTIME) + tl * 60 - time));
+		cvar_set("_touch_join_info_limit", sprintf("%d:%02d left", floor(remaining / 60), remaining % 60));
+	}
+	else if (STAT(FRAGLIMIT) > 0)
+		cvar_set("_touch_join_info_limit", sprintf("Score limit %d", STAT(FRAGLIMIT)));
+	else
+		cvar_set("_touch_join_info_limit", "No time or score limit");
+	cvar_set("_touch_join_info_source", cvar_string("_touch_join_address"));
+}
+
 void Touch_Mode_PublishHints(void)
 {
+	Touch_JoinPublishInfo();
 	if (!cvar_type("_touch_hint_round"))
 		return;
 	float rs = STAT(ROUNDSTARTTIME);

@@ -11,6 +11,7 @@
 // native renderer the dialog is dialog_touch_join.qc.
 // Each button's action is "join.<choice>" and runs "touch_join <choice>".
 
+float uib_join_refresh;
 bool uib_join_watching;   // opened for a player who was watching: closes once they play
 
 void UIB_BuildJoin()
@@ -23,11 +24,27 @@ void UIB_BuildJoin()
 	bool teamgame = (cvar("_touch_hud_flags") & 4) || teams;
 	if (teamgame)
 		uib_s("subtitle", _("Pick a team, or let the game pick"));
-	uib_j("primary", UIB_AS("join.auto", (teamgame ? _("Auto-select team") : _("Join")), "play", "primary"));
+	string server = cvar_string("_touch_join_name");
+	if (server == "") server = cvar_string("_touch_join_label");
+	if (server == "" && (gamestatus & GAME_ISSERVER)) server = cvar_string("hostname");
+	if (server == "") server = _("Server unknown");
+	bool current = cvar_type("_touch_join_info_source") && cvar_string("_touch_join_info_source") == cvar_string("_touch_join_address");
+	string mode = current ? cvar_string("_touch_join_info_mode") : "";
+	string map = current ? cvar_string("_touch_join_info_map") : "";
+	string counts = current ? cvar_string("_touch_join_info_counts") : "";
+	string limit = current ? cvar_string("_touch_join_info_limit") : "";
+	if (!current && cvar_string("_touch_join_address") != "" && UIB_FindServer(cvar_string("_touch_join_address")))
+	{
+		mode = uib_wcell(0, "mode");
+		map = uib_wcell(0, "map");
+		counts = sprintf("%s/%s (? spectators)", uib_wcell(0, "players"), uib_wcell(0, "max"));
+	}
+	UIB_Text("match", sprintf("%s · %s · %s\n%s: %s · %s", server, (mode != "" ? mode : "?"), (counts != "" ? counts : "?/? (? spectators)"), _("Map"), (map != "" ? map : "?"), (limit != "" ? limit : _("Time/score limit: ?"))), "caption");
 	if (teams)
 	{
 		UIB_Open("teams", "grid");
 			uib_f("minItem", 140);
+			uib_f("maxColumns", 2);
 			if (teams & 1) UIB_Button("red", _("Red"), UIB_A("join.red", _("Red"), "team"), "secondary");
 			if (teams & 2) UIB_Button("blue", _("Blue"), UIB_A("join.blue", _("Blue"), "team"), "secondary");
 			if (teams & 4) UIB_Button("yellow", _("Yellow"), UIB_A("join.yellow", _("Yellow"), "team"), "secondary");
@@ -35,6 +52,7 @@ void UIB_BuildJoin()
 		UIB_Close();
 	}
 	UIB_Button("spectate", _("Spectate"), UIB_A("join.spectate", _("Spectate"), "esp"), "secondary");
+	UIB_Button("auto", (teamgame ? _("Auto-select team") : _("Join")), UIB_A("join.auto", (teamgame ? _("Auto-select team") : _("Join")), "play"), "primary");
 	UIB_Done();
 }
 
@@ -118,6 +136,11 @@ void UIB_JoinTick()
 {
 	if (!UIB_JoinUp())
 		return;
+	if (uib_gettime(1) >= uib_join_refresh)
+	{
+		uib_join_refresh = uib_gettime(1) + 1;
+		UIB_Build("join");
+	}
 	if (uibn_context != "game" || (uib_join_watching && cvar_string("_touch_hud_mode") == "playing"))
 	{
 		uib_join_watching = false;

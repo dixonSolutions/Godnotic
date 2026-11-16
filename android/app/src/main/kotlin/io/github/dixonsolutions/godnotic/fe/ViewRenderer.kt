@@ -496,8 +496,9 @@ class ViewRenderer(
             hs.addView(row)
             return Entry(id, "grid", hs, row, props)
         }
-        val g = FlowGrid(ctx, dp(props.num("minItem", 160.0).toFloat()), gap)
+        val g = FlowGrid(ctx, if (id == "join/teams") 1 else dp(props.num("minItem", 160.0).toFloat()), gap)
         val e = Entry(id, "grid", g, g, props)
+        g.maxColumns = props.num("maxColumns", 0.0).toInt()
         // Home's cards: always side by side in one row, whatever the width (the
         // owner's rule); they shrink, and the description joins two when three
         // do not fit (`compact`)
@@ -1210,7 +1211,13 @@ class ViewRenderer(
     }
 
     private fun button(id: String, props: Map<String, Any?>): Entry {
-        val holder = FrameLayout(ctx)
+        val joinActionHeight = if (id.startsWith("join/")) dp(56f) else 0
+        val holder = object : FrameLayout(ctx) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val height = if (joinActionHeight > 0) MeasureSpec.makeMeasureSpec(joinActionHeight, MeasureSpec.EXACTLY) else heightMeasureSpec
+                super.onMeasure(widthMeasureSpec, height)
+            }
+        }
         val e = Entry(id, "button", holder, null, props)
         e.bind = { x ->
             holder.removeAllViews()
@@ -1219,7 +1226,10 @@ class ViewRenderer(
             val a = act + mapOf("style" to p.str("style", act.str("style")), "label" to p.str("label").ifEmpty { act.str("label") })
             val b = actionButton(id, a)
             b.isEnabled = !p.containsKey("enabled") || p.bool("enabled")
-            holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            if (joinActionHeight > 0) {
+                holder.minimumHeight = joinActionHeight
+                holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            } else holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         return e
     }
@@ -1648,6 +1658,11 @@ class CarouselRow(ctx: Context, private val item: Int, private val gap: Int) : V
 class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, private val wrap: Boolean = false) : ViewGroup(ctx) {
     /** Every child in one row (Home's cards), however narrow. */
     var singleRow = false
+    var maxColumns = 0
+    private fun columns(width: Int, visible: Int): Int {
+        val count = if (singleRow) max(1, visible) else max(1, (width + gap) / (max(1, minChild) + gap))
+        return if (maxColumns > 0) minOf(count, maxColumns) else count
+    }
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val width = MeasureSpec.getSize(wSpec)
         if (wrap) {
@@ -1664,13 +1679,14 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             return
         }
         val visible = (0 until childCount).count { getChildAt(it).visibility != GONE }
-        val cols = if (singleRow) max(1, visible) else max(1, (width + gap) / (max(1, minChild) + gap))
+        val cols = columns(width, visible)
         val cw = (width - gap * (cols - 1)) / cols
         var y = 0; var rowH = 0; var col = 0
         for (i in 0 until childCount) {
             val c = getChildAt(i)
             if (c.visibility == GONE) continue
-            c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            val cellWidth = if (col == cols - 1) width - col * (cw + gap) else cw
+            c.measure(MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
             rowH = max(rowH, c.measuredHeight)
             if (++col == cols) { y += rowH + gap; rowH = 0; col = 0 }
         }
@@ -1694,7 +1710,7 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             return
         }
         val visible = (0 until childCount).map { getChildAt(it) }.filter { it.visibility != GONE }
-        val cols = if (singleRow) max(1, visible.size) else max(1, (width + gap) / (max(1, minChild) + gap))
+        val cols = columns(width, visible.size)
         val cw = (width - gap * (cols - 1)) / cols
         var y = 0
         var i = 0
@@ -1703,8 +1719,8 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             val rowH = row.maxOf { it.measuredHeight }
             for ((k, c) in row.withIndex()) {
                 val x = k * (cw + gap)
-                val left = if (rtl) width - x - cw else x
-                c.layout(left, y, left + cw, y + rowH)
+                val left = if (rtl) width - x - c.measuredWidth else x
+                c.layout(left, y, left + c.measuredWidth, y + rowH)
             }
             y += rowH + gap
             i += cols
