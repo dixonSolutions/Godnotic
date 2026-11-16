@@ -164,7 +164,7 @@
     "id": "credits/godnotic/text",
     "type": "text",
     "props": {
-     "body": "An independent fork of the Xonotic arena shooter and its DarkPlaces engine: faster loads, leaner assets and a native-first interface, on Android, Ubuntu Touch, Linux (Flatpak) and the browser. Touch is part of the story, not the whole of it."
+     "body": "An independent fork of the Xonotic arena shooter and its DarkPlaces engine: faster loads, leaner assets, a sandboxed Lua runtime for server plugins and client mods, and a native-first interface, on Android, Ubuntu Touch, Linux (Flatpak) and the browser. Touch is part of the story, not the whole of it."
     },
     "children": []
    },

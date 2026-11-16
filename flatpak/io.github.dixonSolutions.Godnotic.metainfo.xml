@@ -21,6 +21,11 @@
       mouse, and follow the window as it changes shape, in any orientation.
     </p>
     <p>
+      Lua runs the mods. Server plugins hook every gameplay event in a sandbox
+      that disables a misbehaving plugin instead of crashing the server, and
+      client-side mods extend the game the same way.
+    </p>
+    <p>
       The Flatpak is small at install. Maps, textures and music download on
       first launch: about 390 MB of ASTC packs where the GPU supports them,
       about 1 GB otherwise. Updates stay small because they carry the game,
