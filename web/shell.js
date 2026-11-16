@@ -354,10 +354,16 @@
       }
     });
   }
-  kbd.addEventListener('blur', () => {
-    // A tap on the game blurs the field; raise the keyboard again while the
-    // engine still wants text.
-    if (state.kbdOn) setTimeout(() => { if (state.kbdOn) kbd.focus({ preventScroll: true }); }, 0);
+  // Cancel the focus-changing default, not the action. For HTML buttons the
+  // subsequent click still activates the control. Canvas uses mousedown so
+  // pointerdown does not suppress the mouse events the engine may need.
+  document.addEventListener('pointerdown', (e) => {
+    const active = document.activeElement;
+    if (active && active.matches('input:not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]), textarea, [contenteditable=true]') &&
+        e.target.closest && e.target.closest('button')) e.preventDefault();
+  }, true);
+  canvas.addEventListener('mousedown', (e) => {
+    if (document.activeElement === kbd) e.preventDefault();
   });
 
   // ------------------------------------------------------------ audio
@@ -2410,7 +2416,7 @@
       placePopover(el, btn);
       // Its rows fill in (and change its height) a moment later.
       if (data) showStorage().catch(() => {}).then(() => { if (!el.hidden) placePopover(el, popoverBy); });
-      el.focus({ preventScroll: true });
+      if (document.activeElement !== kbd) el.focus({ preventScroll: true });
     }
   }
   for (const id of MENUS) $(id).onclick = (e) => { e.stopPropagation(); popover(undefined, $(id)); };
