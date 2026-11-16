@@ -167,6 +167,10 @@ jobs:
           if-no-files-found: error
 
   smoke:
+    # Report only until it has passed three real runs: an unproven gate has already
+    # blocked four releases (SDK licences, then an emulator boot that never came up).
+    # Flip this off the moment it goes green twice in a row.
+    continue-on-error: true
     name: Boot x86_64 APK
     needs: apk
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
