@@ -33,6 +33,8 @@ static const screen_t screens[] = {
 	{ "phone 2340x1080", 2340, 1080, 395 },
 	{ "desk 1280x720", 1280, 720, 0 },
 	{ "small phone 1280x720 at 320 dpi", 1280, 720, 320 },
+	{ "tablet window 1200x750", 1200, 750, 283 },
+	{ "small tablet 1024x600", 1024, 600, 200 },
 };
 
 static void check_topbar(void)
