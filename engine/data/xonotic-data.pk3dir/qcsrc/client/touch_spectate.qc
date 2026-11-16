@@ -236,6 +236,22 @@ bool Touch_Spec_DrawOverlay(float alpha)
 	return true;
 }
 
+string Touch_Spec_ObserverHint(string hint, int status, int choice)
+{
+	// Free flight has no speed control in the touch spectator overlay.
+	if (cvar("vid_touchscreen") && status == -1 && choice == 1)
+		return "";
+	return hint;
+}
+
+string Touch_Spec_TeamHint(string hint, string color)
+{
+	// There is no team-selection control in the touch overlay.
+	if (cvar("vid_touchscreen"))
+		return strcat(color, _("Teams are unbalanced!"));
+	return hint;
+}
+
 string Touch_Spec_CommandLabel(string command)
 {
 	int st = Touch_Spec_State();
