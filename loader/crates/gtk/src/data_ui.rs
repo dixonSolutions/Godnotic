@@ -107,6 +107,10 @@ pub fn content(on_ready: Option<Rc<dyn Fn()>>) -> gtk::Box {
     detail.set_wrap(true);
     detail.add_css_class("dim-label");
     detail.add_css_class("caption");
+    let inventory = gtk::Label::new(None);
+    inventory.set_xalign(0.0);
+    inventory.set_wrap(true);
+    inventory.set_selectable(true);
     let bar = gtk::ProgressBar::new();
     bar.set_visible(false);
     let go = gtk::Button::with_label("Download");
@@ -115,16 +119,29 @@ pub fn content(on_ready: Option<Rc<dyn Fn()>>) -> gtk::Box {
     let stop = gtk::Button::with_label("Stop");
     stop.add_css_class("pill");
     stop.set_visible(false);
-    for w in [title.upcast_ref::<gtk::Widget>(), status.upcast_ref(), detail.upcast_ref(), bar.upcast_ref(), go.upcast_ref(), stop.upcast_ref()] {
+    for w in [title.upcast_ref::<gtk::Widget>(), status.upcast_ref(), detail.upcast_ref(), inventory.upcast_ref(), bar.upcast_ref(), go.upcast_ref(), stop.upcast_ref()] {
         v.append(w);
     }
 
     let refresh = {
-        let (status, detail, go) = (status.clone(), detail.clone(), go.clone());
+        let (status, detail, inventory, go) = (status.clone(), detail.clone(), inventory.clone(), go.clone());
         move || {
             let dir = data_dir();
             let (n, bytes, ready) = installed(&dir);
-            status.set_text(&if ready { format!("Installed · {n} packs, {} MB", bytes >> 20) } else if n > 0 { format!("Incomplete · {n} packs, {} MB", bytes >> 20) } else { "Not downloaded yet".into() });
+            if let Some(m) = fetch::manifest::Manifest::stored(&dir) {
+                let lines: Vec<_> = m.packs.iter().map(|p| {
+                    let present = std::fs::metadata(dir.join(&p.install_as)).is_ok_and(|f| f.is_file() && f.len() == p.size);
+                    format!("{}: {}", p.install_as, if present { "present" } else { "missing or incomplete" })
+                }).collect();
+                let missing = m.packs.iter().filter(|p| !std::fs::metadata(dir.join(&p.install_as)).is_ok_and(|f| f.is_file() && f.len() == p.size)).count();
+                status.set_text(&if missing == 0 { "All planned packs are present".into() } else { format!("{missing} packs missing or incomplete") });
+                inventory.set_text(&lines.join("\n"));
+            } else {
+                status.set_text(&if ready { format!("Installed · {n} packs, {} MB", bytes >> 20) } else if n > 0 { format!("Incomplete · {n} packs, {} MB", bytes >> 20) } else { "Not downloaded yet".into() });
+                let mut names: Vec<_> = std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".pk3")).collect();
+                names.sort();
+                inventory.set_text(&format!("Present: {}\nMissing: unknown until the download plan is checked", if names.is_empty() { "none".into() } else { names.join(", ") }));
+            }
             let choice = datasets::choose(None, std::env::var(datasets::ENV).ok().as_deref(), None, None);
             let free = free_space(&dir);
             detail.set_text(&if free == u64::MAX { choice.reason } else { format!("{} · {} MB free", choice.reason, free >> 20) });
