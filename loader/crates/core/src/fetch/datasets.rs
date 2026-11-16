@@ -71,14 +71,18 @@ pub fn split_manifest(http: &dyn Http, choice: &Choice, astc: Option<bool>, dir:
 
 /// Plans a choice; an automatic slim choice falls back to the full set when the slim archive is missing (404).
 pub fn plan_choice(http: &dyn Http, choice: &Choice, token: &CancelToken, full_url: &str) -> Result<(Choice, Plan)> {
-    match plan(http, &choice.url, token, FOLDER) {
+    let result = match plan(http, &choice.url, token, FOLDER) {
         Err(Error::Http { code: 404, .. }) if choice.automatic && choice.kind == Kind::Slim => {
             let full = Choice { kind: Kind::Full, url: full_url.into(), reason: "The slim set is not on the server yet; using the full set".into(), automatic: true };
             let p = plan(http, full_url, token, FOLDER)?;
             Ok((full, p))
         }
         r => r.map(|p| (choice.clone(), p)),
+    }?;
+    if result.0.kind == Kind::Slim && !result.1.entries.iter().any(|e| e.is_music()) {
+        return Err(Error::Fatal("The slim set is missing its music pack".into()));
     }
+    Ok(result)
 }
 
 /// After a run: the marker the shell scripts look for, and the menu's music flag.
@@ -127,6 +131,9 @@ pub fn fetch_all(http: &dyn Http, choice: &Choice, astc: Option<bool>, dir: &Pat
         first_play_ready();
         return Ok(());
     };
+    if choice.kind == Kind::Slim && !m.packs.iter().any(|p| p.kind == "music") {
+        return Err(Error::Fatal("The slim set is missing its music pack".into()));
+    }
     let started = SystemTime::now();
     let last = Mutex::new(String::new());
     let phase = Mutex::new(Phase::FirstPlay);

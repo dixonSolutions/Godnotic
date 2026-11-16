@@ -437,6 +437,15 @@ fn a_missing_archive_fails_at_once_and_automatic_slim_falls_back_to_full() {
 }
 
 #[test]
+fn slim_plan_requires_music() {
+    let zip = make_zip(&[ZipEntry { name: "Xonotic/data/xonotic-20261107-data.pk3".into(), data: vec![1; 100], deflate: false }]);
+    let server = RangeServer::start(zip);
+    let choice = Choice { kind: Kind::Slim, url: server.url.clone(), reason: String::new(), automatic: false };
+    let error = datasets::plan_choice(&UreqHttp::new(), &choice, &CancelToken::new(), &server.url).unwrap_err();
+    assert!(error.to_string().contains("missing its music pack"));
+}
+
+#[test]
 fn no_space_stops_before_fetching_anything() {
     let (zip, _) = build("20261107", 12);
     let s = RangeServer::start(zip);
