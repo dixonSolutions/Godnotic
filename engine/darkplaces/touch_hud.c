@@ -785,6 +785,12 @@ static void topbar_sync(void)
 	in.in_r = in_r * px2con;
 	widget_half(cv("touch_pause_size", 0.060f), 1, &hx, &hy);
 	in.pill_h = hy * 2;
+	// The three saved sizes can differ. Reserve space for the largest drawn
+	// pill; using MENU's size alone lets SCORE or CHAT cover its neighbours.
+	widget_half(cv("touch_scores_size", 0.060f), 1, &hx, &hy);
+	in.pill_h = max(in.pill_h, hy * 2);
+	widget_half(cv("touch_chat_size", 0.060f), 1, &hx, &hy);
+	in.pill_h = max(in.pill_h, hy * 2);
 	in.aspect = 2.4f;
 	in.console = Cvar_VariableValue(&cvars_all, "touch_shell_button", ~0) >= 2
 		? bound(32.0f, Cvar_VariableValue(&cvars_all, "touch_shell_button_size", ~0), 96.0f) * in.u : 0;
