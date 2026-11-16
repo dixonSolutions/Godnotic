@@ -42,6 +42,19 @@ class UiBridgeTest {
 
     private fun load(f: File) = Json.parse(f.readText()).obj()
 
+    @Test fun serverListStateSurvivesRefreshAndRebuild() {
+        val state = ServerListState()
+        state.choose("players", true)
+        val refreshed = mapOf<String, Any?>("sort" to "ping", "desc" to false,
+            "selected" to listOf("example:26000"), "empty" to true, "full" to true, "laggy" to true)
+        val merged = state.merge(refreshed)
+        assertEquals("players", merged["sort"])
+        assertEquals(true, merged["desc"])
+        assertEquals(listOf("example:26000"), merged["selected"])
+        for (chip in listOf("empty", "full", "laggy")) assertEquals(true, merged[chip])
+        assertEquals(merged, state.merge(refreshed)) // a newly built list uses the same state
+    }
+
     @Test fun jsonRoundTrip() {
         val text = """{"a":[1,2.5,"x\n\"y\"",true,null],"b":{"c":"é"}}"""
         val v = Json.parse(text)

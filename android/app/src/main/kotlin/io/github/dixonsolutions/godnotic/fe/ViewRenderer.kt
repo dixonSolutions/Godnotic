@@ -64,6 +64,7 @@ class ViewRenderer(
         var strip: View? = null
     }
 
+    private val serverListState = ServerListState()
     private val nodes = HashMap<String, Entry>()
     private val lists = HashMap<String, MutableList<VirtualList>>() // by source
     private val saved = HashMap<String, MutableMap<String, Any?>>()
@@ -80,7 +81,7 @@ class ViewRenderer(
         nodes[id]?.let { remove(id) }
         // a child of Home's bar is drawn as one of its joined segments (a button)
         val inTabBar = parent?.let { nodes[it] }?.type == "tabbar"
-        val e = try { if (inTabBar) tab(id, props) else build(id, type, props) } catch (ex: RuntimeException) { generic(id, type, props) }
+        val e = try { if (inTabBar) tab(id, props) else build(id, type, if (id == "mp/servers") serverListState.merge(props) else props) } catch (ex: RuntimeException) { generic(id, type, props) }
         e.parent = parent
         nodes[id] = e
         bindSafe(e)
@@ -107,7 +108,7 @@ class ViewRenderer(
 
     override fun update(id: String, props: Map<String, Any?>) {
         val e = nodes[id] ?: return
-        e.props = props
+        e.props = if (id == "mp/servers") serverListState.merge(props) else props
         bindSafe(e)
         e.view.visibility = if (props.bool("hidden")) View.GONE else View.VISIBLE
     }
@@ -1166,8 +1167,10 @@ class ViewRenderer(
         val e = Entry(id, "field", col, null, props)
         val input = Kit.input(ctx, if (secret) "" else props.str("value"), props.str("placeholder"), secret) { text ->
             val p = e.props
-            if (p["submit"].obj().isNotEmpty()) return@input
-            if (secret) { if (text.isNotEmpty()) events.value(id, text) } else if (text != p.str("value")) events.value(id, text)
+            if (secret) { if (text.isNotEmpty()) events.value(id, text) } else if (text != p.str("value")) {
+                e.props = e.props + ("value" to text)
+                events.value(id, text)
+            }
         }
         input.setOnEditorActionListener { v, action, _ ->
             if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || action == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
@@ -1194,7 +1197,7 @@ class ViewRenderer(
             if (inBar) col.setPadding(0, 0, 0, 0)
             input.hint = p.str("placeholder").ifEmpty { title(p) }
             input.isEnabled = !p.containsKey("enabled") || p.bool("enabled")
-            if (!secret && !input.hasFocus() && input.text.toString() != p.str("value")) input.setText(p.str("value"))
+            if (!secret && input.text.toString() != p.str("value")) input.setText(p.str("value"))
             // the lock: open while no password applies, closed when one is on and set
             val locked = p.bool("hasValue") && input.isEnabled
             lock.text = if (locked) "🔒" else "🔓"
@@ -1458,6 +1461,7 @@ class ViewRenderer(
                         t.contentDescription = "Sort by ${c.str("label")}"
                         t.setOnClickListener {
                             val d = if (on) !desc else (c.str("type") in setOf("players", "number"))
+                            if (id == "mp/servers") serverListState.choose(c.str("key"), d)
                             x.props = x.props + mapOf("sort" to c.str("key"), "desc" to d)
                             bindSafe(x)
                         }

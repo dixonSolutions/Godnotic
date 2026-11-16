@@ -169,6 +169,29 @@ def modes_and_match():
         c = Conn(connect(sock))
         hello(c)
         c.settle()
+        c.send({"t": "ev", "ev": "action", "node": "home/tiles/mp", "action": "mp"})
+        wait_for(c, lambda: "mp/servers" in c.nodes, 15)
+        c.settle()
+        address = "203.0.113.7:26000"
+        c.send({"t": "ev", "ev": "row", "node": "mp/servers", "row": address, "kind": "select"})
+        c.settle()
+        field = c.nodes.get("mp/join/address", {}).get("props", {}).get("value")
+        selected = c.nodes.get("mp/servers", {}).get("props", {}).get("selected")
+        check(field == address and selected == [address], f"selecting a server fills the address and selects the row ({field!r}, {selected!r})")
+        for chip in ("empty", "full", "laggy"):
+            c.send({"t": "ev", "ev": "value", "node": "mp/bar/filters/" + chip, "value": False})
+            c.settle()
+        c.send({"t": "ev", "ev": "action", "node": "mp/bar/filters/refresh", "action": "refresh"})
+        c.settle()
+        check(all(c.nodes.get("mp/bar/filters/" + chip, {}).get("props", {}).get("value") is False
+                  for chip in ("empty", "full", "laggy")) and
+              c.nodes.get("mp/servers", {}).get("props", {}).get("selected") == [address],
+              "refresh keeps the filter chips and selected server")
+        c.send({"t": "ev", "ev": "value", "node": "mp/join/address", "value": "example.org:26001"})
+        c.settle()
+        check(c.nodes.get("mp/join/address", {}).get("props", {}).get("value") == "example.org:26001", "the selected address can be edited")
+        c.send({"t": "ev", "ev": "back"})
+        c.settle()
         card = c.nodes.get("home/tiles/sp", {}).get("props", {}).get("subtitle", "")
         check(card.endswith("· 1 bot"), f"Home's Singleplayer card says what a Duel starts with: one bot, not 15 ({card!r})")
         c.send({"t": "ev", "ev": "action", "node": "home/tiles/sp", "action": "sp"})
