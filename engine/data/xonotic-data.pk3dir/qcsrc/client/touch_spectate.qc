@@ -38,7 +38,7 @@ int Touch_Spec_State(void)
 
 bool Touch_Spec_BarShown(int st)
 {
-	return st != TOUCH_SPEC_NONE && cvar_or("touch_specbar_visible", TOUCH_SPEC_BAR_DEFAULT) != 0;
+	return st != TOUCH_SPEC_NONE;
 }
 
 // Free-flying: the stick, UP and DOWN fly the camera.
@@ -68,9 +68,7 @@ string Touch_Spec_BarLabel(int st, int part)
 		return "<";
 	if (part == TOUCH_SPEC_BAR_NEXT)
 		return ">";
-	if (act == TOUCH_SPEC_ACT_FREE)
-		return "FREE";
-	return "FOLLOW";
+	return "FREE";
 }
 
 // The bar, as touch_hud.c spec_bar_part: a 46 dp row (touch_specbar_*).
@@ -217,7 +215,7 @@ bool Touch_Spec_DrawOverlay(float alpha)
 			continue;
 		int act = Touch_Spec_BarAction(st, part);
 		bool held = Touch_RoleOwned(Touch_Spec_ActionRole(act)) && act != TOUCH_SPEC_ACT_NONE;
-		Touch_Widget_Capsule(Touch_Spec_BarCenter(part), Touch_Spec_BarHalf(part), label, held, false,
+		Touch_Widget_Capsule(Touch_Spec_BarCenter(part), Touch_Spec_BarHalf(part), label, held || (part == TOUCH_SPEC_BAR_MAIN && Touch_Spec_Flying(st)), false,
 			(act == TOUCH_SPEC_ACT_NONE ? alpha * 0.6 : alpha), TOUCH_C_ACCENT);
 	}
 	// who is being watched, over the bar
@@ -262,7 +260,7 @@ string Touch_Spec_CommandLabel(string command)
 	if (Touch_Spec_BarShown(st))
 	{
 		if (command == "+fire" || command == "+attack")
-			return Touch_Spec_Flying(st) ? "FOLLOW" : ">";
+			return Touch_Spec_Flying(st) ? "FREE" : ">";
 		// flying, next / previous weapon change the speed: no button for that
 		if (command == "weapnext")
 			return Touch_Spec_Flying(st) ? "" : ">";
