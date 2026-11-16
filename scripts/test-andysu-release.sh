@@ -39,6 +39,13 @@ class ReleaseAssetTest {
                 check(!ReleaseAsset.matches(live, "1.2.3", b[0], 30, true));
         }
         check(!ReleaseAsset.matches("Godnotic-live-1.2.3-x64.apk", "1.2.3", "x86", 30, true));
+        String[] tablet = {"arm64-v8a", "x86_64", "armeabi-v7a"};
+        check(ReleaseAsset.compatible("Godnotic-live-1.2.3-arm64.apk", "1.2.3", tablet, 30));
+        check(ReleaseAsset.compatible("Godnotic-1.2.3-arm64-v8a.apk", "1.2.3", tablet, 29));
+        check(!ReleaseAsset.compatible("Godnotic-live-1.2.3-x64.apk", "1.2.3", tablet, 30));
+        check(!ReleaseAsset.compatible("Godnotic-1.2.3-armeabi-v7a.apk", "1.2.3", tablet, 30));
+        check(!ReleaseAsset.compatible("Godnotic-1.2.3-arm64-v8a-extra.apk", "1.2.3", tablet, 30));
+        check(!ReleaseAsset.compatible("Godnotic-live-1.2.3-arm64.apk", "1.2.3", new String[0], 30));
     }
 }
 JAVA
