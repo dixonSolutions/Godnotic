@@ -68,7 +68,7 @@ static cvar_t pub_act[TOUCHACT_COUNT] = {
 	{CF_CLIENT | CF_READONLY, "_touch_act_leave", "0", "in-match menu action state: 0 hidden, 1 enabled, 2 disabled, 3 confirm; read-only"},
 };
 static cvar_t touch_join_dialog_auto = {CF_CLIENT | CF_ARCHIVE, "touch_join_dialog_auto", "1", "Godnotic: open Xonotic's join dialog (auto-select, the teams, spectate) by itself for an observer when a match starts: 0 never (MENU > Join game opens it), 1 on a device with a touchscreen, 2 always"};
-static cvar_t touch_local_autojoin = {CF_CLIENT | CF_ARCHIVE, "touch_local_autojoin", "1", "Godnotic: in a game hosted on this device (Singleplayer, a LAN game you host) with no team to pick, join as soon as the match is up instead of starting as an observer. Once per match; Spectate still works"};
+static cvar_t touch_local_autojoin = {CF_CLIENT | CF_ARCHIVE, "touch_local_autojoin", "1", "Godnotic: join a local campaign automatically when there is no team to pick"};
 static cvar_t hint_round = {CF_CLIENT, "_touch_hint_round", "0", "set by the port's CSQC: a round-based game with a round under way"};
 static cvar_t hint_carry = {CF_CLIENT, "_touch_hint_carry", "0", "set by the port's CSQC: carrying a flag, key or ball"};
 static cvar_t hint_queued = {CF_CLIENT, "_touch_hint_queued", "0", "set by the port's CSQC: the server queued our join"};
@@ -233,7 +233,7 @@ void TouchHudMode_Update(void)
 			join_refused_notice();
 	}
 	// The join dialog, owed once per match to a player who starts it as an
-	// observer; a game hosted here with no team to pick goes straight in.
+	// observer; a local campaign with no team to pick goes straight in.
 	// (Nothing calls this between maps, so a new map is seen by its name.)
 	if (in.in_match && strcmp(join_dlg_map, cl.worldbasename))
 	{
@@ -250,7 +250,8 @@ void TouchHudMode_Update(void)
 			join_dlg_welcome = false;
 	}
 	switch (TouchJoinDlg_Frame(&join_dlg, current.mode, current.flags,
-		sv.active && touch_local_autojoin.integer, Cvar_VariableValue(&cvars_all, "g_campaign", ~0) != 0,
+		sv.active && touch_local_autojoin.integer, Cvar_VariableValue(&cvars_all, "g_campaign", ~0) == 0 ? 0 :
+		(Cvar_VariableValue(&cvars_all, "g_campaign_forceteam", ~0) >= 1 && Cvar_VariableValue(&cvars_all, "g_campaign_forceteam", ~0) <= 4 ? 2 : 1),
 		screen_free(), join_dialog_here(), host.realtime))
 	{
 	case TOUCHJOINDLG_OPEN:

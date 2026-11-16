@@ -893,8 +893,8 @@ void UIB_StartGame(string map, string mode)
 		}
 	}
 	localcmd("\ndisconnect; wait; g_campaign 0\n");
-	// a local game drops its player straight in; a hosted one lets people watch
-	localcmd(lan ? "sv_spectate 1\n" : "sv_spectate 0\n");
+	// Let the player choose Join or Spectate through the shared join dialog.
+	localcmd("sv_spectate 1\n");
 	// ... and a game started here needs no "Welcome, Join or Spectate?" dialog
 	// (the client QuakeC asks for it only while the menu says it has one)
 	cvar_set("_menu_welcome_dialog_available", "0");

@@ -273,19 +273,19 @@ static void check_join_dialog(void)
 	memset(&d, 0, sizeof(d));
 	run_dialog(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 0, 0, 1, NULL);
 	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 0, 1, 20, NULL), "not enabled here: never by itself");
-	// a game hosted here, no teams: straight in, no dialog
+	// A local game offers the same choice as a remote game.
 	memset(&d, 0, sizeof(d));
 	joins = 0;
 	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 0, 1, 1, 0, 1, NULL);
-	CHECK_INT(0, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 0, 1, 1, 1, 3.4, &joins), "hosted here, no teams: no dialog");
-	CHECK_INT(2, joins, "hosted here: join asked, again after 1.5 s while still an observer");
+	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 0, 1, 1, 1, 3.4, &joins), "hosted here, no teams: dialog");
+	CHECK_INT(0, joins, "hosted here: no automatic join");
 	run_dialog(&d, TOUCHMODE_PLAYING, 0, 1, 0, 1, 1, 3.4, 5, &joins);
-	CHECK_INT(2, joins, "in the game: no more joins");
+	CHECK_INT(0, joins, "in the game: no automatic joins");
 	// ... that the server never takes: the dialog in the end
 	memset(&d, 0, sizeof(d));
 	joins = 0;
-	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 0, 1, 1, 0, 1, NULL);
-	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 0, 1, 1, 1, 30, &joins), "hosted here, joins never taken: the dialog after the tries");
+	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 1, 1, 1, 0, 1, NULL);
+	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, 0, 1, 1, 1, 1, 1, 30, &joins), "campaign joins never taken: the dialog after the tries");
 	CHECK_INT(TOUCHJOINDLG_TRIES, joins, "all the tries first");
 	// hosted here, a team game: the dialog (a team has to be picked)
 	memset(&d, 0, sizeof(d));
@@ -301,6 +301,14 @@ static void check_join_dialog(void)
 	CHECK_INT(1, joins, "campaign: request join");
 	run_dialog(&d, TOUCHMODE_PLAYING, 0, 1, 1, 1, 1, 3, 5, &joins);
 	CHECK_INT(1, joins, "campaign: stop retrying once playing");
+	memset(&d, 0, sizeof(d)); joins = 0;
+	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 1, 1, 1, 0, 1, NULL);
+	CHECK_INT(1, run_dialog(&d, TOUCHMODE_OBSERVING, TOUCHMODE_F_TEAMS, 1, 1, 1, 1, 1, 4, &joins), "campaign team choice: dialog");
+	CHECK_INT(0, joins, "campaign team choice: no blind join");
+	memset(&d, 0, sizeof(d));
+	run_dialog(&d, TOUCHMODE_OFF, 0, 1, 2, 1, 1, 0, 1, NULL);
+	run_dialog(&d, TOUCHMODE_OBSERVING, TOUCHMODE_F_TEAMS, 1, 2, 1, 1, 1, 3, &joins);
+	CHECK_INT(1, joins, "fixed campaign team: join directly");
 	// what the rows send: the stock dialog's commands
 	CHECK_STR("cmd join", TouchJoinDlg_Command("auto", 0), "Join, no teams");
 	CHECK_STR("cmd selectteam auto; cmd join", TouchJoinDlg_Command("auto", 1), "auto-select");
