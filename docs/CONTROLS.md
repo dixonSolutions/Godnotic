@@ -100,9 +100,9 @@ the native front ends read it rather than guessing again.
 |------|-----------|-----------|
 | **Playing** | Top bar (console button, MENU, SCORE, CHAT); move stick, look, FIRE, ALT, HOP + KEEP, DUCK, TURN, weapon strip, NADE, HOOK / ZOOM when the weapon has them, vitals; optional SPECTATE (`touch_tospec_visible 1`, placed in the layout editor); READY in warmup | — |
 | **Dead** (waiting to respawn) | Top bar; **RESPAWN** where HOP is (`+jump`), look; SPECTATE if placed; READY in warmup | stick, FIRE, ALT, DUCK, strip, vitals |
-| **Spectating, free-fly** | Top bar; move stick + **UP / DOWN** rocker beside it (`+moveup` / `+movedown`), look; the spectator bar **< FOLLOW >** bottom right | weapons, FIRE, ALT, HOP, DUCK, TURN, HOOK, NADE, CONSOLE pill, any join control (joining is the join dialog) |
+| **Spectating, free-fly** | Top bar; move stick + **UP / DOWN** rocker beside it (`+moveup` / `+movedown`), look; with the spectator bar on (`touch_specbar_visible 1`, off by default), **< FOLLOW >** bottom right | weapons, FIRE, ALT, HOP, DUCK, TURN, HOOK, NADE, CONSOLE pill, any join control (joining is the join dialog) |
 | **Following a player** | Top bar; the bar **< FREE >** with the player's name above it; their vitals (read only) | stick and rocker (the view is theirs), everything above |
-| **Out of the round** (Clan Arena and the like) | As following / free-fly (the player is in the game; the join waits for the next round); the bar's middle reads WATCHING | as above |
+| **Out of the round** (Clan Arena and the like) | As following / free-fly (the player is in the game; the join waits for the next round); with the bar on, its middle reads WATCHING | as above |
 | **Intermission** (end-of-match scoreboard) | **MENU** alone, top-left corner (top-right left-handed); the console button | every other control, the vote chip |
 | **Next-map / gametype vote** | **MENU** alone, top-left; the console button. The vote cards are the game's own screen and take taps directly | every other control; the touch vote card over the vote (`touch_vote_mapcard 1` brings it back) |
 
@@ -128,7 +128,10 @@ checked by `scripts/test-touch-spectate.sh`; the port's CSQC mirrors it in
 `touch_spectate.qc`. Nothing a spectator touches sends `+jump`: that is the
 join. A look-zone tap does not fire while spectating, and auto-shoot never
 fires. `touch_specbar_x`, `_y` and `_size` move and size the bar (46 dp tall at
-least).
+least), and `touch_specbar_visible` turns it on: the bar is off by default on a
+touch screen, so FOLLOW is not in the way while the player watches. MENU still
+offers join and spectate; turn the bar on in **Touch controls** to follow or
+change player from the HUD.
 
 #### Joining: Xonotic's join dialog
 
@@ -558,18 +561,18 @@ lifts is paid at once, so no swipe loses travel.
 | `touch_sens_base` | float | 0.1–50 | `3.6` | Look (swipe) sensitivity. 2.8, the old default, is the old speed on a 283 dpi 1920 px tablet. Separate from the mouse's `sensitivity`; presets never set the mouse cvars |
 | `touch_sens_y_mult` | float | 0.4–1.5 | `0.85` | Vertical look compared with horizontal |
 | `touch_look_accel` | float | 0–2 | `0.8` | Extra gain for a fast swipe; 0 = none (a swipe turns the same whatever its speed). Settings offers 0, 0.8 and 1.4 |
-| `touch_look_accel_lo` | float | dp/s | `150` | Finger speed below which the gain is 1 (about 2.4 cm/s) |
-| `touch_look_accel_hi` | float | dp/s | `900` | Finger speed from which the gain is full (about 14 cm/s) |
+| `touch_look_accel_lo` | float | dp/s | `200` | Finger speed below which the gain is 1 (about 3.2 cm/s) |
+| `touch_look_accel_hi` | float | dp/s | `800` | Finger speed from which the gain is full (about 12.7 cm/s) |
 | `touch_invert_y` | int | 0/1 | `0` | Flip pitch |
 | `touch_look_filter` | int | 0–2 | `1` | 0 no smoothing, 1 cutoff rising with finger speed, 2 fixed cutoff (`touch_look_fcmin`) |
 | `touch_look_fcmin` | float | 0.5–20 | `4.0` | Cutoff at rest, Hz — lower = smoother, laggier |
 | `touch_look_beta` | float | 0–0.5 | `0.05` | Cutoff added per dp/s of finger speed (300 dp/s: 19 Hz) |
-| `touch_look_deadzone_px` | int | 0–20 | `4` | Travel that tells a drag from a tap (it is counted once the drag starts) |
+| `touch_look_deadzone_px` | int | 0–20 | `8` | Travel that tells a drag from a tap (it is counted once the drag starts) |
 | `touch_look_max_deg_per_s` | float | | `900` | Clamp against contact-jump spikes at `touch_sens_base` 2.8 with no acceleration; rises with both, so it never limits a setting. What it holds back stays owed |
 | `touch_stick_float` | int | 0/1 | `1` | The stick's centre lands under the thumb anywhere in the move zone; 0 = it stays where it is drawn |
 | `touch_stick_follow` | int | 0/1 | `1` | The centre follows a thumb that drags past the rim, so pulling back reverses at once |
 | `touch_stick_analog` | int | 0/1 | `1` | Move at the thumb's angle, speed by deflection; 0 = the four movement keys, eight ways |
-| `touch_stick_deadzone` | float | 0–0.35 | `0.12` | Deflection (of the radius) that does nothing |
+| `touch_stick_deadzone` | float | 0–0.35 | `0.14` | Deflection (of the radius) that does nothing |
 | `touch_stick_run` | float | 0.2–1 | `0.6` | Deflection from which the speed is full; between the dead zone and this it rises linearly |
 | `touch_stick_range` | float | 0.5–1.5 | `1.0` | Scales the radius the deflection is measured against |
 | `touch_gyro_enabled` | int | 0/1 | `0` | Reserved: no sensor is read yet |

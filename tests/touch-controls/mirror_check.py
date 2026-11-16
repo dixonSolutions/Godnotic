@@ -18,7 +18,7 @@ if not qc:
     bad.append("no constants found in touch_feel.qh")
 table = dict(re.findall(r'Touch_RegisterCvar\("(\w+)",\s*"([^"]*)"\)', init_qc))
 for name in ("touch_sens_base", "touch_sens_y_mult", "touch_look_accel", "touch_look_accel_lo", "touch_look_accel_hi",
-             "touch_look_fcmin", "touch_look_beta", "touch_look_filter", "touch_stick_deadzone", "touch_stick_run",
+             "touch_look_fcmin", "touch_look_beta", "touch_look_filter", "touch_look_deadzone_px", "touch_stick_deadzone", "touch_stick_run",
              "touch_stick_analog", "touch_fire_size",
              "touch_crouch_size", "touch_fire_drag_look", "touch_button_drag_look"):
     engine = set(re.findall(r'cv\(\s*(?:aim_button \? "touch_fire_drag_look" : )?"%s",\s*([\d.]+)f?\)' % name, hud_c))

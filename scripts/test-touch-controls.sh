@@ -19,6 +19,10 @@ trap 'rm -rf "$out"' EXIT
     -I"$ROOT/engine/darkplaces" -o "$out/controls_test" "$dir/controls_test.c" -lm
 "$out/controls_test"
 
+"$CC" -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
+    -I"$ROOT/engine/darkplaces" -o "$out/look_trace" "$dir/look_trace.c" -lm
+"$out/look_trace"
+
 python3 "$dir/mirror_check.py" "$ROOT/engine/darkplaces/touch_feel.h" "$ROOT/engine/darkplaces/touch_hud.c" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/client/touch_feel.qh" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/client/touch_init.qc"

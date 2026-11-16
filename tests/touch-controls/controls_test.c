@@ -98,7 +98,7 @@ static void check_topbar(void)
 static touchlook_cfg_t cfg(float accel, int filter)
 {
 	touchlook_cfg_t c;
-	c.sens = 3.6f; c.y_mult = 0.85f; c.accel = accel; c.accel_lo = 150; c.accel_hi = 900;
+	c.sens = 3.6f; c.y_mult = 0.85f; c.accel = accel; c.accel_lo = 200; c.accel_hi = 800;
 	c.filter = filter; c.fcmin = 4.0f; c.beta = 0.05f; c.max_rate = 900 * (3.6f / 2.8f) * (1 + accel);
 	return c;
 }
@@ -144,7 +144,12 @@ static void check_look(void)
 	slow = swipe(&on, 3, 2.0f, 283, 1);
 	flick = swipe(&on, 3, 0.08f, 283, 1);
 	CHECK(flick > slow * 1.5f && flick <= slow * 1.8f + 0.05f, "a 3 cm flick turns %.1f, a slow 3 cm drag %.1f: expected 1.5 to 1.8 times", flick, slow);
-	CHECK(flick >= 180 * 0.9f, "a 3 cm flick turns %.1f degrees: about a turn-around", flick);
+	CHECK(flick >= 180 * 0.9f && flick <= 180 * 1.1f, "a 3 cm flick turns %.1f degrees: about a turn-around", flick);
+	// the curve's ends are at the defaults: exact below lo, full above hi
+	CHECK(fabsf_(TouchFeel_Gain(&on, 199) - 1.0f) < 1e-5f, "slow aim: gain at 199 dp/s is not 1");
+	CHECK(fabsf_(TouchFeel_Gain(&on, 800) - 1.8f) < 1e-5f, "flick: gain at 800 dp/s is not 1.8");
+	CHECK(fabsf_(TouchFeel_Gain(&on, 500) - 1.4f) < 1e-4f, "half-way gain is not 1.4: %.3f", TouchFeel_Gain(&on, 500));
+	CHECK(TouchFeel_Gain(&on, 100) == 1.0f && TouchFeel_Gain(&on, 2000) == 1.8f, "gain outside the band is not clamped");
 	// monotonic: never less turn for a faster swipe of the same length
 	{
 		float prev = 0, t;
@@ -186,25 +191,25 @@ static void check_stick(void)
 	TouchStick_Land(&s, 10, 1195, r, 1920, 1200);
 	CHECK(s.cx >= r * 0.5f && s.cy <= 1200 - r * 0.5f, "a thumb in the corner leaves no room to push (%.0f, %.0f)", s.cx, s.cy);
 	TouchStick_Land(&s, 300, 800, r, 1920, 1200);
-	TouchStick_Read(&s, 300 + 8, 800, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 8, 800, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(mx == 0 && my == 0, "inside the dead zone the stick moves (%.2f, %.2f)", mx, my);
-	TouchStick_Read(&s, 300 + 36, 800, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 36, 800, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(mx > 0.45f && mx < 0.55f && my == 0, "halfway between the dead zone and the run point gives %.2f, expected 0.5", mx);
-	TouchStick_Read(&s, 300 + 60, 800, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 60, 800, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(fabsf_(mx - 1) < 0.001f, "at the run deflection the stick gives %.2f, not full speed", mx);
-	TouchStick_Read(&s, 300 + 60, 800 - 60, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 60, 800 - 60, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(fabsf_(mx + my) < 0.001f && fabsf_(mx * mx + my * my - 1) < 0.001f, "a diagonal push gives (%.2f, %.2f): not a unit vector at 45 degrees", mx, my);
-	TouchStick_Read(&s, 300 + 20, 800 - 80, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 20, 800 - 80, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(fabsf_(mx / my - 20.0f / -80.0f) < 0.001f, "the move's angle is not the thumb's");
 	// past the rim: the centre follows, the knob stays on the rim
 	TouchStick_Land(&s, 300, 800, r, 1920, 1200);
-	TouchStick_Read(&s, 300 + 250, 800, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 250, 800, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(fabsf_(s.cx - 450) < 0.01f && fabsf_(kx - 1) < 0.001f, "the centre did not follow the thumb past the rim (centre %.0f)", s.cx);
-	TouchStick_Read(&s, 300 + 250 - 220, 800, r, 1, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 250 - 220, 800, r, 1, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(mx < -0.99f, "after following, pulling back reverses at once (got %.2f)", mx);
 	// touch_stick_follow 0: the centre stays
 	TouchStick_Land(&s, 300, 800, r, 1920, 1200);
-	TouchStick_Read(&s, 300 + 250, 800, r, 0, 0.12f, 0.6f, &mx, &my, &kx, &ky);
+	TouchStick_Read(&s, 300 + 250, 800, r, 0, 0.14f, 0.6f, &mx, &my, &kx, &ky);
 	CHECK(s.cx == 300 && fabsf_(mx - 1) < 0.001f, "with following off the centre moved");
 }
 

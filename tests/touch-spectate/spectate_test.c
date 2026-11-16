@@ -74,6 +74,15 @@ int main(void)
 	CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_NEXT), "out next");
 	CHECK_STR("", TouchSpec_BarLabel(TOUCHSPEC_NONE, TOUCHSPEC_BAR_MAIN), "playing: no bar");
 
+	// off by default, on when the setting is: absent while playing either way
+	CHECK_INT(0, TOUCHSPEC_BAR_DEFAULT, "the spectator bar defaults off");
+	for (state = TOUCHSPEC_NONE; state <= TOUCHSPEC_OUT_FREE; state++)
+	{
+		CHECK_INT(0, TouchSpec_BarShown(state, TOUCHSPEC_BAR_DEFAULT), "the bar is off at its default");
+		CHECK_INT(0, TouchSpec_BarShown(state, 0), "the bar is absent when switched off");
+		CHECK_INT(state != TOUCHSPEC_NONE, TouchSpec_BarShown(state, 1), "the bar is present when switched on");
+	}
+
 	// no part can mean jump (the join): bar actions are follow, next, prev, free only
 	for (state = TOUCHSPEC_NONE; state <= TOUCHSPEC_OUT_FREE; state++)
 		for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)

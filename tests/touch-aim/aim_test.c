@@ -3,7 +3,8 @@ Checks the decisions touch auto-shoot makes from the weapon in hand
 (engine/darkplaces/touch_weapons.h): lead and lob maths against hand-computed
 cases and a simulated flight, the fire window, primary or secondary per
 weapon, the weapon chosen per distance band, Devastator detonation geometry,
-and that every row of the weapon table is sane.
+and that every row of the weapon table is sane. Also the safety gates: the
+aim pull never opposes the finger, and auto-shoot does not fire at nothing.
 
 Run through scripts/test-touch-aim.sh.
 */
@@ -886,6 +887,41 @@ static void test_practice(void)
 	}
 }
 
+// The safety gates: the pull never opposes the finger, and auto-shoot has no
+// release tail when there is no enemy in view.
+static void test_safety(void)
+{
+	float py, pp;
+
+	// a rightward finger drag (view yaw down) is not pulled back left
+	py = -4;
+	pp = 0;
+	TouchWep_PullWithFinger(-2, 0, &py, &pp);
+	CHECK_NEAR(-4, py, 1e-6, "pull: with the finger, not against it");
+	py = 4;
+	pp = 0;
+	TouchWep_PullWithFinger(-2, 0, &py, &pp);
+	CHECK_NEAR(0, py, 1e-6, "pull: opposite the finger is dropped (yaw)");
+	// the same per axis: a downward finger drag is not pulled up
+	pp = 3;
+	py = 0;
+	TouchWep_PullWithFinger(0, -1, &py, &pp);
+	CHECK_NEAR(0, pp, 1e-6, "pull: opposite the finger is dropped (pitch)");
+	// a thumb at rest leaves the pull free, so tracking still works
+	py = -4;
+	pp = 2;
+	TouchWep_PullWithFinger(0, 0, &py, &pp);
+	CHECK_NEAR(-4, py, 1e-6, "pull: a resting thumb still tracks (yaw)");
+	CHECK_NEAR(2, pp, 1e-6, "pull: a resting thumb still tracks (pitch)");
+
+	// auto-shoot holds a jittering track, but not empty air
+	CHECK(TouchWep_AutoShootTail(true, true, 0.1, 0.15f), "auto-shoot: the short tail holds while the enemy is still in view");
+	CHECK(!TouchWep_AutoShootTail(true, false, 0.0, 0.15f), "auto-shoot: no enemy in view, no fire at once");
+	CHECK(!TouchWep_AutoShootTail(true, false, 0.1, 0.15f), "auto-shoot: no enemy in view, no tail");
+	CHECK(!TouchWep_AutoShootTail(true, true, 0.2, 0.15f), "auto-shoot: the tail expires");
+	CHECK(!TouchWep_AutoShootTail(false, true, 0.0, 0.15f), "auto-shoot: off means off");
+}
+
 int main(void)
 {
 	test_intercept();
@@ -909,6 +945,7 @@ int main(void)
 	test_priority();
 	test_mates();
 	test_ammo();
+	test_safety();
 	test_practice();
 	{
 		// the ghost is built only from frames in sight
