@@ -289,8 +289,8 @@ final class AppUpdater {
                         if (!ReleaseAsset.matches(name, version, abi, Build.VERSION.SDK_INT, pass == 0)) {
                             continue;
                         }
-                        if (!isTrustedApkUrl(url)) {
-                            Log.w(TAG, "Ignoring release asset with an untrusted URL: " + url);
+                        if (!isTrustedApkUrl(url) || !name.equals(assetName(url))) {
+                            Log.w(TAG, "Ignoring release asset with an invalid URL: " + url);
                             continue;
                         }
                         // GitHub lists "sha256:<hex>" for assets uploaded since
