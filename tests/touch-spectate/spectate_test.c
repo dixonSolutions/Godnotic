@@ -56,7 +56,7 @@ int main(void)
 
 	// the bar, state by state
 	CHECK_STR("<", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_PREV), "free-fly prev");
-	CHECK_STR("FOLLOW", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_MAIN), "free-fly main");
+	CHECK_STR("FREE", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_MAIN), "free-fly main");
 	CHECK_STR(">", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_NEXT), "free-fly next");
 	for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
 	{
@@ -75,33 +75,29 @@ int main(void)
 	CHECK_STR("", TouchSpec_BarLabel(TOUCHSPEC_NONE, TOUCHSPEC_BAR_MAIN), "playing: no bar");
 
 	// off by default, on when the setting is: absent while playing either way
-	CHECK_INT(0, TOUCHSPEC_BAR_DEFAULT, "the spectator bar defaults off");
+	CHECK_INT(1, TOUCHSPEC_BAR_DEFAULT, "the spectator bar defaults on");
 	for (state = TOUCHSPEC_NONE; state <= TOUCHSPEC_OUT_FREE; state++)
 	{
-		CHECK_INT(0, TouchSpec_BarShown(state, TOUCHSPEC_BAR_DEFAULT), "the bar is off at its default");
-		CHECK_INT(0, TouchSpec_BarShown(state, 0), "the bar is absent when switched off");
+		CHECK_INT(state != TOUCHSPEC_NONE, TouchSpec_BarShown(state, TOUCHSPEC_BAR_DEFAULT), "the bar is present by default");
+		CHECK_INT(state != TOUCHSPEC_NONE, TouchSpec_BarShown(state, 0), "old saved settings do not hide the bar");
 		CHECK_INT(state != TOUCHSPEC_NONE, TouchSpec_BarShown(state, 1), "the bar is present when switched on");
 	}
 
-	// A bar turned off under a held finger stops acting at once: no fire,
-	// attack2 or weapon command from a bar role while it is hidden. The same
-	// fold is what spec_frame runs, so a hidden bar sends nothing.
+	// An old saved off setting must not disable spectator controls.
 	{
 		touchspec_keys_t k;
 		memset(&k, 0, sizeof(k));
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_ATTACK, 1);
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_FREE, 1);
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_PREV, 1);
-		printf("hidden bar: fire=%d fire2=%d prev=%d (want 0 0 0)\n", k.fire, k.fire2, k.prev);
-		CHECK_INT(0, k.fire, "hidden bar: a held FOLLOW/NEXT sends no attack");
-		CHECK_INT(0, k.fire2, "hidden bar: a held FREE sends no attack2");
-		CHECK_INT(0, k.prev, "hidden bar: a held PREV sends no weapprev");
-		// the fly rocker is not the bar's: it keeps working when the bar is off
+		CHECK_INT(1, k.fire, "old setting: FOLLOW/NEXT sends attack");
+		CHECK_INT(1, k.fire2, "old setting: FREE sends attack2");
+		CHECK_INT(1, k.prev, "old setting: PREV sends weapprev");
 		memset(&k, 0, sizeof(k));
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_UP, 1);
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_DOWN, 1);
-		CHECK_INT(1, k.up, "hidden bar: UP still flies");
-		CHECK_INT(1, k.down, "hidden bar: DOWN still flies");
+		CHECK_INT(1, k.up, "UP flies");
+		CHECK_INT(1, k.down, "DOWN flies");
 		// switched on, the same roles act
 		memset(&k, 0, sizeof(k));
 		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 1, TOUCHSPEC_ROLE_ATTACK, 1);
