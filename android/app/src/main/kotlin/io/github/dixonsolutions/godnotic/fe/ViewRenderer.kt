@@ -1172,6 +1172,22 @@ class ViewRenderer(
                 events.value(id, text)
             }
         }
+        // Publish the editable contents while the IME is composing as well as
+        // when it commits a suggestion. Keep the EditText as the IME's owner.
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!input.hasFocus()) return
+                val text = s?.toString() ?: ""
+                if (secret) {
+                    if (text.isNotEmpty()) events.value(id, text)
+                } else if (text != e.props.str("value")) {
+                    e.props = e.props + ("value" to text)
+                    events.value(id, text)
+                }
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
         input.setOnEditorActionListener { v, action, _ ->
             if (action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE || action == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
                 val text = v.text.toString()
