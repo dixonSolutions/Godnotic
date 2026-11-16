@@ -30,6 +30,8 @@
 
 static cvar_t touch_preload = {CF_CLIENT, "touch_preload", "1", "load what earlier games on this map loaded late (models, sounds, GLSL shaders) under the loading screen before the first game frame, and record what this game loads late (Godnotic); 0 = neither"};
 static cvar_t touch_preload_budget = {CF_CLIENT, "touch_preload_budget", "4000", "milliseconds the preload may add to a map load at most"};
+static cvar_t touch_preload_seed_budget = {CF_CLIENT, "touch_preload_seed_budget", "250", "milliseconds of seed work during loading (one asset may exceed the budget)"};
+static cvar_t touch_preload_frame_budget = {CF_CLIENT, "touch_preload_frame_budget", "8", "milliseconds per frame for deferred seed work while a menu is open (one asset may exceed the budget)"};
 static cvar_t touch_preload_keep = {CF_CLIENT, "touch_preload_keep", "4", "an entry of a map's preload list is dropped once that many games on the map did not need it"};
 static cvar_t touch_preload_seed = {CF_CLIENT, "touch_preload_seed", "1", "with no preload list for a map yet, preload the built-in list of player models, weapons and shaders a game always needs"};
 
@@ -43,6 +45,7 @@ typedef struct tp_entry_s
 	int age;        // games of this map since it was last needed
 	float cost;     // ms it took when loaded late
 	qbool used;     // loaded late in this game
+	qbool pending;  // seed work deferred until a menu frame
 }
 tp_entry_t;
 
@@ -59,6 +62,7 @@ static struct
 	uint64_t glsl_perm;
 	qbool glsl_pending;
 	double glsl_begin;
+	int pending;
 	int late_count;
 	double late_ms;
 }
@@ -164,6 +168,7 @@ static qbool TP_Open(const char *map)
 	qbool found = false;
 	TP_Save();
 	tp.count = 0;
+	tp.pending = 0;
 	tp.dirty = false;
 	dp_strlcpy(tp.map, map, sizeof(tp.map));
 	TP_Path(path, sizeof(path), map);
@@ -283,17 +288,47 @@ static int TP_KindOrder(char kind)
 	return kind == 'm' ? 0 : kind == 'p' ? 1 : kind == 'g' ? 2 : 3;
 }
 
-// under the loading screen, once per load: load the list
+// Load one entry. A single model or shader cannot be split across frames.
+static qbool TP_Load(tp_entry_t *e)
+{
+	if (e->kind == 'm')
+		return TouchModel_PreloadName(e->name);
+	if (e->kind == 's')
+		return TouchSnd_PreloadName(e->name);
+	if (e->kind == 'p')
+	{
+		unsigned int flags;
+		int len;
+		if (sscanf(e->name, "%u %n", &flags, &len) == 1 && e->name[len])
+		{
+			int before = tp_pic_loads;
+			Draw_CachePic_Flags(e->name + len, flags);
+			return tp_pic_loads != before;
+		}
+	}
+	else if (e->kind == 'g')
+	{
+		unsigned int mode;
+		unsigned long long perm;
+		if (sscanf(e->name, "%u %llx", &mode, &perm) == 2)
+			return TouchGLSL_Precompile(mode, perm);
+	}
+	return false;
+}
+
+// Replay the map list as before. For a first visit, cap the seed's loading
+// work and queue the remainder in the same model/picture/shader/sound order.
 static void TP_Replay(void)
 {
-	double start = Sys_DirtyTime(), budget = touch_preload_budget.value * 0.001, t0;
+	double start = Sys_DirtyTime(), budget, t0;
 	double spent[4] = {0, 0, 0, 0};
 	int n[4] = {0, 0, 0, 0}, pass, i, skipped = 0;
-	qbool have;
+	qbool have, seed;
 	if (!touch_preload.integer || !cl.worldbasename[0])
 		return;
 	have = TP_Open(cl.worldbasename);
-	if (!have && touch_preload_seed.integer)
+	seed = !have && touch_preload_seed.integer;
+	if (seed)
 	{
 		for (i = 0; tp_seed[i]; i++)
 		{
@@ -302,55 +337,58 @@ static void TP_Replay(void)
 				e->age = 1;
 		}
 	}
+	budget = (seed ? min(touch_preload_budget.value, touch_preload_seed_budget.value) : touch_preload_budget.value) * 0.001;
 	tp.replaying = true;
 	for (pass = 0; pass < 4; pass++)
-	{
 		for (i = 0; i < tp.count; i++)
 		{
 			tp_entry_t *e = &tp.list[i];
-			qbool loaded = false;
 			if (TP_KindOrder(e->kind) != pass)
 				continue;
 			if (Sys_DirtyTime() - start >= budget)
 			{
+				if (seed) { e->pending = true; tp.pending++; }
 				skipped++;
 				continue;
 			}
 			t0 = Sys_DirtyTime();
-			if (e->kind == 'm')
-				loaded = TouchModel_PreloadName(e->name);
-			else if (e->kind == 's')
-				loaded = TouchSnd_PreloadName(e->name);
-			else if (e->kind == 'p')
-			{
-				unsigned int flags;
-				int len;
-				if (sscanf(e->name, "%u %n", &flags, &len) == 1 && e->name[len])
-				{
-					int before = tp_pic_loads;
-					Draw_CachePic_Flags(e->name + len, flags);
-					loaded = tp_pic_loads != before;
-				}
-			}
-			else
-			{
-				unsigned int mode;
-				unsigned long long perm;
-				if (sscanf(e->name, "%u %llx", &mode, &perm) == 2)
-					loaded = TouchGLSL_Precompile(mode, perm);
-			}
-			if (loaded)
+			if (TP_Load(e))
 			{
 				n[pass]++;
 				spent[pass] += Sys_DirtyTime() - t0;
 			}
 		}
-	}
 	tp.replaying = false;
 	tp.glsl_pending = false;
 	if (touch_loadtime.integer || developer_loading.integer)
 		Con_Printf("LOADTIME preload %s list=%d models=%d (%.1f ms) pics=%d (%.1f ms) shaders=%d (%.1f ms) sounds=%d (%.1f ms) over_budget=%d\n",
-			have ? "map" : (touch_preload_seed.integer ? "seed" : "none"), tp.count, n[0], spent[0] * 1000.0, n[1], spent[1] * 1000.0, n[2], spent[2] * 1000.0, n[3], spent[3] * 1000.0, skipped);
+			have ? "map" : (seed ? "seed" : "none"), tp.count, n[0], spent[0] * 1000.0, n[1], spent[1] * 1000.0, n[2], spent[2] * 1000.0, n[3], spent[3] * 1000.0, skipped);
+}
+
+// Only run deferred work behind a menu: an individual asset can be slower
+// than the frame budget. Stop immediately on disconnect or a map change.
+static void TP_Deferred(void)
+{
+	double start = Sys_DirtyTime(), budget = touch_preload_frame_budget.value * 0.001;
+	int pass, i;
+	if (!tp.pending || budget <= 0 || cls.state != ca_connected || cls.signon != SIGNONS || scr_loading || key_dest == key_game || strcmp(tp.map, cl.worldbasename))
+		return;
+	tp.replaying = true;
+	for (pass = 0; pass < 4; pass++)
+		for (i = 0; i < tp.count; i++)
+		{
+			tp_entry_t *e = &tp.list[i];
+			if (!e->pending || TP_KindOrder(e->kind) != pass)
+				continue;
+			e->pending = false;
+			tp.pending--;
+			TP_Load(e);
+			if (Sys_DirtyTime() - start >= budget)
+				goto done;
+		}
+ done:
+	tp.replaying = false;
+	tp.glsl_pending = false;
 }
 
 // touch_warm.c: the entries the next game on map would preload (its list,
@@ -407,6 +445,8 @@ static void TP_Frame(double now)
 	}
 	if (!tlt.loading)
 		tp.done = false;
+	if (!tlt.loading)
+		TP_Deferred();
 	// written soon after anything new, so a killed app keeps it
 	if (tp.dirty && now - tp.last_save > 2 && cls.state == ca_connected && cls.signon == SIGNONS)
 		TP_Save();
@@ -418,6 +458,8 @@ static void TP_Init(void)
 {
 	Cvar_RegisterVariable(&touch_preload);
 	Cvar_RegisterVariable(&touch_preload_budget);
+	Cvar_RegisterVariable(&touch_preload_seed_budget);
+	Cvar_RegisterVariable(&touch_preload_frame_budget);
 	Cvar_RegisterVariable(&touch_preload_keep);
 	Cvar_RegisterVariable(&touch_preload_seed);
 }
