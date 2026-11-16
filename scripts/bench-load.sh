@@ -9,6 +9,9 @@
 #
 # SCENARIO:
 #   menu              process start -> first frame of the main menu
+#   cold-menu         process start -> first menu frame with an empty userdir
+#   reconnect:NAME    disconnect and reconnect to the same loopback server
+#   vote:NAME         end a running match -> first observed map-vote screen
 #   map:NAME          main menu -> first game frame of `map NAME` (local game)
 #   join:NAME[:MS]    a dedicated server runs NAME; a second process connects
 #                     to 127.0.0.1 from its main menu; MS adds that much
@@ -91,6 +94,56 @@ engine_args() { # userdir
 		+vid_width "$W" +vid_height "$H" +set _touch_assets_ready 1 +set touch_loadtime 1 $EXTRA
 }
 
+# Stop as soon as the milestone is logged; do not rely on the quit command.
+run_until() { # log marker occurrences command...
+	local log=$1 marker=$2 count=$3 pid i found=0
+	shift 3
+	"$@" > "$log" 2>&1 & pid=$!
+	for i in $(seq 1 1800); do
+		if [ "$(grep -c "$marker" "$log" 2>/dev/null || true)" -ge "$count" ]; then found=1; break; fi
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	kill "$pid" 2>/dev/null || true
+	wait "$pid" 2>/dev/null || true
+	[ "$found" = 1 ] || { echo "missing $marker in $log" >&2; return 1; }
+}
+export -f run_until
+
+# Timestamp the start marker and the first HUD observation of mapvote using a
+# monotonic clock. The HUD is polled every 50 ms, subject to frame scheduling.
+run_vote_client() {
+	local log=$1; shift
+	python3 - "$log" "$@" <<'PYVOTE'
+import os, selectors, subprocess, sys, time
+log, cmd = sys.argv[1], sys.argv[2:]
+p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0)
+sel = selectors.DefaultSelector(); sel.register(p.stdout, selectors.EVENT_READ)
+start = None; pending = b''; deadline = time.monotonic() + 180; result = None
+with open(log, 'wb', buffering=0) as out:
+    while time.monotonic() < deadline:
+        if not sel.select(0.1):
+            if p.poll() is not None: break
+            continue
+        chunk = os.read(p.stdout.fileno(), 65536)
+        if not chunk: break
+        now = time.monotonic(); out.write(chunk); pending += chunk
+        lines = pending.split(b'\n'); pending = lines.pop()
+        for line in lines:
+            if b'BENCH_VOTE_START' in line: start = now
+            if start is not None and b'TOUCHHUD mode=mapvote ' in line:
+                result = (now - start) * 1000
+                out.write(('LOADTIME vote_ready load=%.1f\n' % result).encode()); break
+        if result is not None: break
+    p.terminate()
+    try: p.wait(timeout=5)
+    except subprocess.TimeoutExpired: p.kill(); p.wait()
+if result is None:
+    print('vote screen not observed in ' + log, file=sys.stderr); sys.exit(1)
+PYVOTE
+}
+export -f run_vote_client
+
 TEMPLATE="$OUT/userdir-template"
 make_template() {
 	[ -d "$TEMPLATE" ] && return
@@ -99,12 +152,12 @@ make_template() {
 	echo "echo startup.cfg" > "$TEMPLATE/data/touch/startup.cfg"
 	cat > "$TEMPLATE/data/bench-quit.cfg" <<'EOF'
 alias _bq_0 "defer 0.05 _bq_poll"
-alias _bq_1 "defer 0.5 quit"
+alias _bq_1 "echo BENCH_DONE"
 alias _bq_poll "_bq_$_touch_loadtime_menu"
 _bq_poll
 EOF
 	# shellcheck disable=SC2046
-	timeout 120 "$ENGINE" $(engine_args "$TEMPLATE") +exec bench-quit.cfg > "$OUT/template.log" 2>&1 || true
+	run_until "$OUT/template.log" BENCH_DONE 1 "$ENGINE" $(engine_args "$TEMPLATE") +exec bench-quit.cfg
 	[ -f "$TEMPLATE/data/config.cfg" ] || { echo "template run made no config.cfg (see $OUT/template.log)" >&2; exit 1; }
 	# a returning player: no first-run dialog over the main menu
 	printf 'seta touch_profile_done 1\nseta _cl_name "Bench"\nseta cl_allow_uid2name 0\n' >> "$TEMPLATE/data/config.cfg"
@@ -117,8 +170,8 @@ fresh_userdir() { # name
 }
 
 # job cfg: wait for the menu, idle MENU_IDLE s, run $1, wait for the game,
-# leave the welcome dialog after 1 s and join, quit 5 s later (after the
-# engine's after_ready line, 5 s after the load)
+# leave the welcome dialog after 1 s and join; the harness stops after the
+# engine's after_ready line, 5 s after the load
 write_job() { # userdir command
 	cat > "$1/data/bench-job.cfg" <<EOF
 alias _bj_w0 "defer 0.05 _bj_wait"
@@ -127,7 +180,7 @@ alias _bj_wait "_bj_w\$_touch_loadtime_menu"
 alias _bj_go "touch_loadtime_start; $2; _bj_gwait"
 alias _bj_g0 "defer 0.05 _bj_gwait"
 alias _bj_g1 "defer 1 _bj_play"
-alias _bj_play "togglemenu 0; cmd join; defer 5 quit"
+alias _bj_play "togglemenu 0; cmd join"
 alias _bj_gwait "_bj_g\$_touch_loadtime_game"
 _bj_wait
 EOF
@@ -137,7 +190,7 @@ run_menu() { # run
 	local u log; u=$(fresh_userdir "menu-$1"); log="$OUT/menu-$1.log"
 	prepare_cache
 	# shellcheck disable=SC2046
-	timeout 120 "$ENGINE" $(engine_args "$u") +exec bench-quit.cfg > "$log" 2>&1 || true
+	run_until "$log" BENCH_DONE 1 "$ENGINE" $(engine_args "$u") +exec bench-quit.cfg || return 1
 	echo "$log"
 }
 
@@ -146,36 +199,67 @@ run_map() { # map run
 	write_job "$u" "map $1"
 	prepare_cache
 	# shellcheck disable=SC2046
-	timeout 180 "$ENGINE" $(engine_args "$u") +exec bench-job.cfg > "$log" 2>&1 || true
+	run_until "$log" "LOADTIME after_ready" 1 "$ENGINE" $(engine_args "$u") +exec bench-job.cfg || return 1
 	echo "$log"
 }
 
 run_join() { # map delay_ms run
-	local map=$1 ms=$2 r=$3 u su log slog port=26123
-	u=$(fresh_userdir "join-$map-$ms-$r"); su="$OUT/u-joinsv-$map-$ms-$r"
+	local map=$1 ms=$2 r=$3 mode=${4:-join} u su log slog port=26123
+	u=$(fresh_userdir "$mode-$map-$ms-$r"); su="$OUT/u-${mode}sv-$map-$ms-$r"
 	rm -rf "$su"; mkdir -p "$su"
-	log="$OUT/join-$map-$ms-$r.log"; slog="$OUT/joinsv-$map-$ms-$r.log"
+	log="$OUT/$mode-$map-$ms-$r.log"; slog="$OUT/${mode}sv-$map-$ms-$r.log"
 	write_job "$u" "connect 127.0.0.1:$port"
+	if [ "$mode" = reconnect ]; then
+		cat >> "$u/data/bench-job.cfg" <<EOF
+alias _bj_play "togglemenu 0; cmd join; defer 1 _bj_disconnect"
+alias _bj_disconnect "disconnect; defer 1 _bj_reconnect"
+alias _bj_reconnect "touch_loadtime_start; connect 127.0.0.1:$port"
+EOF
+	elif [ "$mode" = vote ]; then
+		cat >> "$u/data/bench-job.cfg" <<EOF
+set rcon_password benchvote
+set rcon_address 127.0.0.1:$port
+alias _bj_play "togglemenu 0; cmd join; defer 2 _bv_go"
+alias _bv_go "echo BENCH_VOTE_START; rcon endmatch; _bv_poll"
+alias _bv_poll "touch_hud_state; defer 0.05 _bv_poll"
+EOF
+	fi
 	prepare_cache
 	# shellcheck disable=SC2016
-	unshare -rn bash -c '
+	SVU="$su" unshare -rn bash -c '
 		ip link set lo up
 		if [ "$1" != 0 ] || [ -n "${LOSS:-}" ] || [ -n "${NETEM:-}" ]; then
 			# shellcheck disable=SC2086
 			tc qdisc add dev lo root netem delay "${1}ms" ${LOSS:+loss ${LOSS}%} ${NETEM:-}
 		fi
 		shift
-		sv=$1; slog=$2; cl=$3; log=$4; map=$5; port=$6; shift 6
+		sv=$1; slog=$2; cl=$3; log=$4; map=$5; port=$6; mode=$7; shift 7
 		# shellcheck disable=SC2086
-		"$sv" -dedicated -xonotic -basedir "$BASEDIR" -userdir "$SVU" +set port "$port" +set sv_public 0 ${SV_EXTRA:-} +map "$map" > "$slog" 2>&1 &
+		vote_args=()
+		if [ "$mode" = vote ]; then
+			vote_args=(+set rcon_password benchvote +set g_maplist "stormkeep boil glowplant finalrage silentsiege" +set g_maplist_votable 4)
+		fi
+		"$sv" -dedicated -xonotic -basedir "$BASEDIR" -userdir "$SVU" +set port "$port" +set sv_public 0 "${vote_args[@]}" ${SV_EXTRA:-} +map "$map" > "$slog" 2>&1 &
 		svpid=$!
 		# the server takes a few seconds to load its map; the client only
 		# connects once at its menu, and retries until the server answers
 		for i in $(seq 1 200); do grep -q "Server spawned\|SpawnServer" "$slog" 2>/dev/null && break; sleep 0.05; done
 		sleep 1
-		timeout 180 "$cl" "$@" > "$log" 2>&1 || true
+		status=0
+		if [ "$mode" = vote ]; then
+			run_vote_client "$log" "$cl" "$@" || status=$?
+		else
+			run_until "$log" "LOADTIME after_ready" 1 "$cl" "$@" || status=$?
+		fi
 		kill $svpid 2>/dev/null; wait $svpid 2>/dev/null || true
-	' bash "$ms" "${SV_ENGINE:-$ENGINE}" "$slog" "$ENGINE" "$log" "$map" "$port" $(engine_args "$u") +exec bench-job.cfg
+		exit "$status"
+	' bash "$ms" "${SV_ENGINE:-$ENGINE}" "$slog" "$ENGINE" "$log" "$map" "$port" "$mode" $(engine_args "$u") +exec bench-job.cfg || return 1
+	if [ "$mode" = reconnect ]; then
+		# Retain the second load and its counters only.
+		[ "$(grep -c 'LOADTIME game_ready' "$log" || true)" -ge 2 ] || { echo "reconnect did not complete: $log" >&2; return 1; }
+		awk '/LOADTIME game_ready/ { n++ } n >= 2' "$log" > "$log.reconnect"
+		log="$log.reconnect"
+	fi
 	echo "$log"
 }
 
@@ -195,7 +279,7 @@ for path in logs:
         if "LOADTIME" not in line:
             continue
         line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-        m = re.match(r"LOADTIME (menu_ready|game_ready|after_ready)\s+(.*)", line)
+        m = re.match(r"LOADTIME (menu_ready|game_ready|after_ready|vote_ready)\s+(.*)", line)
         if m:
             stage = m.group(1)
             for k, v in re.findall(r"(\w+)=([-0-9.]+)", m.group(2)):
@@ -223,15 +307,32 @@ for sc in "$@"; do
 	logs=()
 	case $sc in
 		menu)
-			for r in $(seq 1 "$RUNS"); do logs+=("$(run_menu "$r")"); done ;;
+			for r in $(seq 1 "$RUNS"); do log=$(run_menu "$r") || exit 1; logs+=("$log"); done ;;
+		cold-menu)
+			for r in $(seq 1 "$RUNS"); do
+				u="$OUT/u-cold-menu-$r"; rm -rf "$u"; mkdir -p "$u/data"
+				cp "$TEMPLATE/data/bench-quit.cfg" "$u/data/"
+				log="$OUT/cold-menu-$r.log"; prepare_cache
+				# shellcheck disable=SC2046
+				run_until "$log" BENCH_DONE 1 "$ENGINE" $(engine_args "$u") +exec bench-quit.cfg
+				logs+=("$log")
+			done ;;
 		map:*)
 			m=${sc#map:}
-			for r in $(seq 1 "$RUNS"); do logs+=("$(run_map "$m" "$r")"); done ;;
+			for r in $(seq 1 "$RUNS"); do log=$(run_map "$m" "$r") || exit 1; logs+=("$log"); done ;;
+		vote:*)
+			m=${sc#vote:}
+			export SVU="$OUT/u-joinsv"; mkdir -p "$SVU"
+			for r in $(seq 1 "$RUNS"); do log=$(run_join "$m" 0 "$r" vote) || exit 1; logs+=("$log"); done ;;
+		reconnect:*)
+			m=${sc#reconnect:}
+			export SVU="$OUT/u-joinsv"; mkdir -p "$SVU"
+			for r in $(seq 1 "$RUNS"); do log=$(run_join "$m" 0 "$r" reconnect) || exit 1; logs+=("$log"); done ;;
 		join:*)
 			rest=${sc#join:}; m=${rest%%:*}; ms=0
 			[ "$rest" != "$m" ] && ms=${rest#*:}
 			export SVU="$OUT/u-joinsv"; mkdir -p "$SVU"
-			for r in $(seq 1 "$RUNS"); do logs+=("$(run_join "$m" "$ms" "$r")"); done ;;
+			for r in $(seq 1 "$RUNS"); do log=$(run_join "$m" "$ms" "$r") || exit 1; logs+=("$log"); done ;;
 		*) echo "unknown scenario $sc" >&2; exit 1 ;;
 	esac
 	summarise "$sc ($CACHE cache)" "${logs[@]}" | tee -a "$OUT/summary.txt"
