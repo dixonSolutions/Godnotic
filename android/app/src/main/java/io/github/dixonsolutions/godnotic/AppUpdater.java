@@ -225,7 +225,8 @@ final class AppUpdater {
         SharedPreferences prefs = prefs(context);
         String version = prefs.getString(PREF_FOUND_VERSION, "");
         String url = prefs.getString(PREF_FOUND_URL, "");
-        if (version.isEmpty() || !isTrustedApkUrl(url)) {
+        if (version.isEmpty() || !isTrustedApkUrl(url)
+                || !ReleaseAsset.compatible(assetName(url), version, Build.SUPPORTED_ABIS, Build.VERSION.SDK_INT)) {
             return null;
         }
         if (version.equals(prefs.getString(PREF_SKIPPED_TAG, null))
@@ -277,8 +278,9 @@ final class AppUpdater {
             if (assets == null) {
                 return null;
             }
-            // Prefer a live host for the best supported ABI, then its plain APK.
-            for (String abi : Build.SUPPORTED_ABIS) {
+            // Only the primary ABI identifies the device build we offer.
+            if (Build.SUPPORTED_ABIS.length > 0) {
+                String abi = Build.SUPPORTED_ABIS[0];
                 for (int pass = 0; pass < 2; pass++) {
                     for (int i = 0; i < assets.length(); i++) {
                         JSONObject asset = assets.getJSONObject(i);
@@ -287,8 +289,8 @@ final class AppUpdater {
                         if (!ReleaseAsset.matches(name, version, abi, Build.VERSION.SDK_INT, pass == 0)) {
                             continue;
                         }
-                        if (!isTrustedApkUrl(url)) {
-                            Log.w(TAG, "Ignoring release asset with an untrusted URL: " + url);
+                        if (!isTrustedApkUrl(url) || !name.equals(assetName(url))) {
+                            Log.w(TAG, "Ignoring release asset with an invalid URL: " + url);
                             continue;
                         }
                         // GitHub lists "sha256:<hex>" for assets uploaded since
@@ -301,7 +303,7 @@ final class AppUpdater {
                     }
                 }
             }
-            Log.i(TAG, "Release " + version + " has no build for " + Build.SUPPORTED_ABIS[0]);
+            Log.i(TAG, "Release " + version + " has no build for the primary ABI");
         } catch (Exception e) {
             // Including one thrown after the fetch: a release we could not
             // finish reading is not a release we can say anything about.
@@ -403,7 +405,8 @@ final class AppUpdater {
      * and keeps the bytes so far.
      */
     void download(Update update, GameData.Progress progress) throws IOException {
-        if (!isTrustedApkUrl(update.url)) {
+        if (!isTrustedApkUrl(update.url)
+                || !ReleaseAsset.compatible(assetName(update.url), update.version, Build.SUPPORTED_ABIS, Build.VERSION.SDK_INT)) {
             throw new IOException("refusing to download an untrusted APK URL");
         }
         if (isReady(update)) {
@@ -525,7 +528,8 @@ final class AppUpdater {
          * difference between updating this app and installing an arbitrary APK,
          * and it is cheap enough to not depend on a caller having done it.
          */
-        if (!isTrustedApkUrl(update.url)) {
+        if (!isTrustedApkUrl(update.url)
+                || !ReleaseAsset.compatible(assetName(update.url), update.version, Build.SUPPORTED_ABIS, Build.VERSION.SDK_INT)) {
             throw new IOException("refusing to install an untrusted APK URL");
         }
         if (!isReady(update)) {
