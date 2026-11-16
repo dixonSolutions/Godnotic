@@ -18,9 +18,11 @@
 // (once the client has its precache list and CSQC is up, before the first
 // game frame), the entries are loaded in the order models, pictures, shaders,
 // sounds, within touch_preload_budget ms. A first game on a map with no list
-// uses the built-in seed below: every player model and LOD the bots pick
-// from, the weapons a deathmatch gives or shows first, and what every match
-// on the tablet showed in its first seconds.
+// uses the built-in seed below, capped by touch_preload_seed_budget. Remaining
+// seed entries are processed in budgeted menu frames after loading, in the
+// same order; an individual asset may exceed either budget. Active play never
+// runs this background queue. The seed covers bot models, common weapons and
+// other assets observed in the first seconds of a match.
 //
 // GLSL permutations are listed for completeness but cost about a
 // millisecond each to compile and link on the Mali-G68 (Android keeps its own
@@ -30,7 +32,7 @@
 
 static cvar_t touch_preload = {CF_CLIENT, "touch_preload", "1", "load what earlier games on this map loaded late (models, sounds, GLSL shaders) under the loading screen before the first game frame, and record what this game loads late (Godnotic); 0 = neither"};
 static cvar_t touch_preload_budget = {CF_CLIENT, "touch_preload_budget", "4000", "milliseconds the preload may add to a map load at most"};
-static cvar_t touch_preload_seed_budget = {CF_CLIENT, "touch_preload_seed_budget", "250", "milliseconds of seed work during loading (one asset may exceed the budget)"};
+static cvar_t touch_preload_seed_budget = {CF_CLIENT, "touch_preload_seed_budget", "400", "milliseconds of seed work during loading (one asset may exceed the budget)"};
 static cvar_t touch_preload_frame_budget = {CF_CLIENT, "touch_preload_frame_budget", "8", "milliseconds per frame for deferred seed work while a menu is open (one asset may exceed the budget)"};
 static cvar_t touch_preload_keep = {CF_CLIENT, "touch_preload_keep", "4", "an entry of a map's preload list is dropped once that many games on the map did not need it"};
 static cvar_t touch_preload_seed = {CF_CLIENT, "touch_preload_seed", "1", "with no preload list for a map yet, preload the built-in list of player models, weapons and shaders a game always needs"};
