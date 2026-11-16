@@ -101,7 +101,9 @@ jobs:
           # "flatpak-builder-<arch>", and never re-saves an exact hit. A key
           # per commit under that prefix means every run restores the newest
           # ccache and saves its own.
-          cache-key: flatpak-builder-${{ matrix.arch }}-xonotic-v2-${{ github.sha }}
+          # Keyed on the sources that change the build, not on the commit: a docs or
+          # metadata commit reuses the cache instead of rebuilding the engine cold.
+          cache-key: flatpak-builder-${{ matrix.arch }}-xonotic-v2-${{ hashFiles('engine/**', 'flatpak/**', 'scripts/**') }}
           restore-cache: true
 
       - name: Upload Flatpak bundle
@@ -131,7 +133,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/ccache-click-${{ matrix.arch }}
-          key: xonotic-click-ccache-${{ matrix.arch }}-${{ github.sha }}
+          key: xonotic-click-ccache-${{ matrix.arch }}-${{ hashFiles('engine/**', 'scripts/**') }}
           restore-keys: |
             xonotic-click-ccache-${{ matrix.arch }}-
 

@@ -79,7 +79,7 @@ jobs:
           # A literal path: `env:` values are not shell-expanded, so a ~ in
           # CCACHE_DIR would have ccache write to a directory named "~".
           path: ${{ github.workspace }}/.ccache
-          key: xonotic-android-ccache-${{ matrix.abi }}-${{ env.NDK_VERSION }}-${{ github.sha }}
+          key: xonotic-android-ccache-${{ matrix.abi }}-${{ env.NDK_VERSION }}-${{ hashFiles('engine/**', 'android/**') }}
           restore-keys: |
             xonotic-android-ccache-${{ matrix.abi }}-${{ env.NDK_VERSION }}-
 
