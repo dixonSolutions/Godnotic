@@ -145,7 +145,7 @@ pub fn content(on_ready: Option<Rc<dyn Fn()>>) -> gtk::Box {
             let choice = datasets::choose(None, std::env::var(datasets::ENV).ok().as_deref(), None, None);
             let free = free_space(&dir);
             detail.set_text(&if free == u64::MAX { choice.reason } else { format!("{} · {} MB free", choice.reason, free >> 20) });
-            go.set_label(if ready { "Check again" } else { "Download" });
+            go.set_label(if n > 0 { "Retry missing packs" } else { "Download" });
         }
     };
     refresh();

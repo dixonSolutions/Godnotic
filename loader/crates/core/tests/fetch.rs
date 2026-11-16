@@ -524,9 +524,11 @@ fn completion_names_missing_and_short_packs_including_music() {
     std::fs::write(dir.join("godnotic-textures.pk3"), b"abc").unwrap();
     std::fs::write(dir.join("godnotic-music.pk3"), b"abc").unwrap();
     assert_eq!(incomplete(&dir, &plan), vec!["godnotic-textures.pk3"]);
+    assert_eq!(todo(&dir, &plan, true).iter().map(|e| e.file_name.as_str()).collect::<Vec<_>>(), vec!["godnotic-textures.pk3"]);
     std::fs::write(dir.join("godnotic-textures.pk3"), b"abcd").unwrap();
     assert!(incomplete(&dir, &plan).is_empty());
     std::fs::remove_file(dir.join("godnotic-music.pk3")).unwrap();
     assert_eq!(incomplete(&dir, &plan), vec!["godnotic-music.pk3"]);
+    assert_eq!(todo(&dir, &plan, true).iter().map(|e| e.file_name.as_str()).collect::<Vec<_>>(), vec!["godnotic-music.pk3"]);
     std::fs::remove_dir_all(dir).unwrap();
 }

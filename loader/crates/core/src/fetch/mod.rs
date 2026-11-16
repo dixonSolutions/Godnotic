@@ -506,9 +506,9 @@ impl ChunkState {
     }
 }
 
-/// The wanted entries that no installed file plays yet.
+/// Fetch only entries whose exact planned file is absent or the wrong size.
 pub fn todo<'a>(dir: &Path, plan: &'a Plan, music: bool) -> Vec<&'a Entry> {
-    plan.entries.iter().filter(|e| (music || !e.is_music()) && !installed(dir, &e.role())).collect()
+    plan.entries.iter().filter(|e| (music || !e.is_music()) && !fs::metadata(dir.join(&e.file_name)).is_ok_and(|m| m.is_file() && m.len() == e.usize)).collect()
 }
 
 /// What fetching `todo` costs in download and storage, counting resumable parts.
