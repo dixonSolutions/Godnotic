@@ -533,6 +533,12 @@ impl<'a> Session<'a> {
         let m = self.manifest;
         let here = |n: &String| s.jobs.iter().find(|j| j.p.name == *n).is_none_or(|j| j.step == Step::Installed);
         let first = m.first_play.iter().all(here);
+        let missing: Vec<_> = s.order.iter().map(|&i| s.jobs[i].p).filter(|p| !fs::metadata(self.dir.join(&p.install_as)).is_ok_and(|md| md.is_file() && md.len() == p.size)).map(|p| p.install_as.as_str()).collect();
+        if !missing.is_empty() {
+            let e = Error::Fatal(format!("Missing or incomplete packs: {}", missing.join(", ")));
+            (self.listener)(&self.status(&s, "error", &e.to_string()));
+            return Err(e);
+        }
         let all = s.jobs.iter().all(|j| j.step == Step::Installed);
         if first {
             // packs of an earlier set that this one no longer lists

@@ -213,6 +213,13 @@ pub struct Plan {
     pub entries: Vec<Entry>,
 }
 
+/// Names of planned files that are absent or differ from the archive size.
+pub fn incomplete(dir: &Path, plan: &Plan) -> Vec<String> {
+    plan.entries.iter().filter(|e| {
+        !fs::metadata(dir.join(&e.file_name)).is_ok_and(|m| m.is_file() && m.len() == e.usize)
+    }).map(|e| e.file_name.clone()).collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Need {
     pub fetch: u64,
@@ -613,6 +620,11 @@ impl<'a> PackFetch<'a> {
             return Err(Error::Cancelled);
         }
         result?;
+        let missing = incomplete(&self.dir, self.plan);
+        let missing: Vec<_> = missing.into_iter().filter(|name| music || !self.plan.entries.iter().any(|e| e.file_name == *name && e.is_music())).collect();
+        if !missing.is_empty() {
+            return Err(Error::Fatal(format!("Missing or incomplete packs: {}", missing.join(", "))));
+        }
         let _ = fs::remove_file(self.dir.join(META));
         self.report(None, false);
         Ok(())

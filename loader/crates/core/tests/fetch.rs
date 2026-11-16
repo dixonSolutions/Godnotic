@@ -510,3 +510,23 @@ fn data_set_choice() {
     assert_eq!(datasets::choose(None, None, None, None).kind, Kind::Full);
     assert_eq!(datasets::choose(None, Some("https://x/y.zip"), None, None).url, "https://x/y.zip");
 }
+
+#[test]
+fn completion_names_missing_and_short_packs_including_music() {
+    let dir = std::env::temp_dir().join(format!("godnotic-completion-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let plan = Plan { url: String::new(), identity: String::new(), etag: None, size: 0, entries: vec![
+        Entry::new("godnotic-textures.pk3", 0, 0, 4, 4, 0),
+        Entry::new("godnotic-music.pk3", 0, 0, 3, 3, 0),
+    ] };
+    assert_eq!(incomplete(&dir, &plan), vec!["godnotic-textures.pk3", "godnotic-music.pk3"]);
+    std::fs::write(dir.join("godnotic-textures.pk3"), b"abc").unwrap();
+    std::fs::write(dir.join("godnotic-music.pk3"), b"abc").unwrap();
+    assert_eq!(incomplete(&dir, &plan), vec!["godnotic-textures.pk3"]);
+    std::fs::write(dir.join("godnotic-textures.pk3"), b"abcd").unwrap();
+    assert!(incomplete(&dir, &plan).is_empty());
+    std::fs::remove_file(dir.join("godnotic-music.pk3")).unwrap();
+    assert_eq!(incomplete(&dir, &plan), vec!["godnotic-music.pk3"]);
+    std::fs::remove_dir_all(dir).unwrap();
+}

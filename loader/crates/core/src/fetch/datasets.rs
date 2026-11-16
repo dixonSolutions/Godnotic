@@ -2,7 +2,7 @@
 //! Which archive the pk3s come from (the Kotlin launcher's DataSets.kt).
 
 use super::manifest::{self, manifest_url, Manifest, Phase, Session, Status};
-use super::{installed, plan, CancelToken, Config, Error, FreeSpace, Http, Meta, PackFetch, Plan, Progress, Result};
+use super::{plan, CancelToken, Config, Error, FreeSpace, Http, Meta, PackFetch, Plan, Progress, Result};
 use std::sync::Mutex;
 use std::time::SystemTime;
 use std::path::Path;
@@ -83,7 +83,7 @@ pub fn plan_choice(http: &dyn Http, choice: &Choice, token: &CancelToken, full_u
 
 /// After a run: the marker the shell scripts look for, and the menu's music flag.
 pub fn mark_installed(dir: &Path, plan: &Plan) {
-    if plan.entries.iter().any(|e| !installed(dir, &e.role())) {
+    if !super::incomplete(dir, plan).is_empty() {
         return;
     }
     super::write_atomic(&dir.join(READY_MARKER), b"");
@@ -119,6 +119,10 @@ pub fn fetch_all(http: &dyn Http, choice: &Choice, astc: Option<bool>, dir: &Pat
     let Some(m) = split_manifest(http, choice, astc, dir, token)? else {
         let (_, plan) = plan_choice(http, choice, token, full_url)?;
         PackFetch::new(http, dir, &plan, cfg, free_space, progress).run(token, true)?;
+        let missing = super::incomplete(dir, &plan);
+        if !missing.is_empty() {
+            return Err(Error::Fatal(format!("Missing or incomplete packs: {}", missing.join(", "))));
+        }
         mark_installed(dir, &plan);
         first_play_ready();
         return Ok(());
