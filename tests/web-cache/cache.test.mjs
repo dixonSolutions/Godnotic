@@ -368,6 +368,41 @@ const baseFiles = () => [
 
 // ------------------------------------------------------------------- tests
 
+await test('text input focuses the keyboard field and forwards physical and IME text', async () => {
+  const p = loadPage(profile(), makeHost([]), { engine: false });
+  const kbd = p.element('xt-kbd');
+  const canvas = p.element('canvas');
+  kbd.focus = () => { p.context.document.activeElement = kbd; };
+  kbd.blur = () => { p.context.document.activeElement = null; };
+  canvas.focus = () => { p.context.document.activeElement = canvas; };
+  const text = [];
+  const keys = [];
+  p.context.Module.ccall = (name, ret, types, args) => {
+    assert.equal(name, 'xt_web_text');
+    text.push(args[0]);
+  };
+  p.context.Module._xt_web_key = (key) => keys.push(key);
+  p.context.Module.xt.screenKeyboard(true);
+  assert.equal(p.context.document.activeElement, kbd);
+  const physical = new Event('keydown', { cancelable: true });
+  Object.assign(physical, { key: 'h', keyCode: 72, isComposing: false });
+  kbd.dispatchEvent(physical);
+  assert.equal(physical.defaultPrevented, true);
+  assert.deepEqual(text, ['h']);
+  const composing = new Event('keydown', { cancelable: true });
+  Object.assign(composing, { key: 'a', keyCode: 229, isComposing: true });
+  kbd.dispatchEvent(composing);
+  assert.equal(composing.defaultPrevented, false);
+  kbd.value += 'é';
+  kbd.dispatchEvent(new Event('input'));
+  assert.deepEqual(text, ['h', 'é']);
+  kbd.value = '';
+  kbd.dispatchEvent(new Event('input'));
+  assert.deepEqual(keys, [8, 8]);
+  p.context.Module.xt.screenKeyboard(false);
+  assert.equal(p.context.document.activeElement, canvas);
+});
+
 await test('first visit asks, downloads each chunk once, mounts; a reload makes no data requests', async () => {
   const prof = profile();
   const host = makeHost(baseFiles());

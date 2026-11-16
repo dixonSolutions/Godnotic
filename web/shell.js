@@ -351,6 +351,15 @@
         e.preventDefault();
         Module._xt_web_key(map[e.key]);
         kbdReset();
+      } else if (Array.from(e.key).length === 1 && !e.metaKey &&
+                 ((!e.ctrlKey && !e.altKey) || (e.getModifierState && e.getModifierState('AltGraph')))) {
+        // A physical keyboard on Android can send printable keys to the IME
+        // suggestion strip without changing the input until the word commits.
+        // Send those keys immediately; prevent the corresponding input event
+        // so it cannot insert the same character twice. Composition and soft
+        // keyboards still go through the input listener above.
+        e.preventDefault();
+        Module.ccall('xt_web_text', null, ['string'], [e.key]);
       }
     });
   }
