@@ -891,28 +891,41 @@ static void test_practice(void)
 // release tail when there is no enemy in view.
 static void test_safety(void)
 {
-	float py, pp;
+	float py, pp, dt = 1.0f / 60.0f;
 
 	// a rightward finger drag (view yaw down) is not pulled back left
 	py = -4;
 	pp = 0;
-	TouchWep_PullWithFinger(-2, 0, &py, &pp);
+	TouchWep_PullWithFinger(-2, 0, dt, &py, &pp);
 	CHECK_NEAR(-4, py, 1e-6, "pull: with the finger, not against it");
 	py = 4;
 	pp = 0;
-	TouchWep_PullWithFinger(-2, 0, &py, &pp);
+	TouchWep_PullWithFinger(-2, 0, dt, &py, &pp);
 	CHECK_NEAR(0, py, 1e-6, "pull: opposite the finger is dropped (yaw)");
 	// the same per axis: a downward finger drag is not pulled up
 	pp = 3;
 	py = 0;
-	TouchWep_PullWithFinger(0, -1, &py, &pp);
+	TouchWep_PullWithFinger(0, -1, dt, &py, &pp);
 	CHECK_NEAR(0, pp, 1e-6, "pull: opposite the finger is dropped (pitch)");
 	// a thumb at rest leaves the pull free, so tracking still works
 	py = -4;
 	pp = 2;
-	TouchWep_PullWithFinger(0, 0, &py, &pp);
+	TouchWep_PullWithFinger(0, 0, dt, &py, &pp);
 	CHECK_NEAR(-4, py, 1e-6, "pull: a resting thumb still tracks (yaw)");
 	CHECK_NEAR(2, pp, 1e-6, "pull: a resting thumb still tracks (pitch)");
+	// the filter tail's tiny opposing drift is not a turn: under the dead
+	// band the pull keeps tracking (exact-sign comparison would drop it)
+	py = -4;
+	pp = 2;
+	TouchWep_PullWithFinger(0.01f, -0.01f, dt, &py, &pp);
+	CHECK_NEAR(-4, py, 1e-6, "pull: a hundredth of a degree of tail is not a turn (yaw)");
+	CHECK_NEAR(2, pp, 1e-6, "pull: a hundredth of a degree of tail is not a turn (pitch)");
+	// but a real opposing turn still wins
+	py = -4;
+	pp = 2;
+	TouchWep_PullWithFinger(0.5f, -0.5f, dt, &py, &pp);
+	CHECK_NEAR(0, py, 1e-6, "pull: a real opposing yaw turn is dropped");
+	CHECK_NEAR(0, pp, 1e-6, "pull: a real opposing pitch turn is dropped");
 
 	// auto-shoot holds a jittering track, but not empty air
 	CHECK(TouchWep_AutoShootTail(true, true, 0.1, 0.15f), "auto-shoot: the short tail holds while the enemy is still in view");

@@ -148,12 +148,13 @@ static void check_actions(void)
 		{ TOUCHMODE_PLAYING, TOUCHMODE_F_TEAMS | TOUCHMODE_F_CARRY, TOUCHJOIN_NONE, "resume spectate:confirm team settings leave" },
 		{ TOUCHMODE_PLAYING, TOUCHMODE_F_ROUND, TOUCHJOIN_NONE, "resume spectate:confirm settings leave" },
 		{ TOUCHMODE_DEAD, 0, TOUCHJOIN_NONE, "resume spectate settings leave" },
-		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_OPEN, "resume join settings leave" },
-		{ TOUCHMODE_FOLLOWING, TOUCHMODE_F_TEAMS, TOUCHJOIN_OPEN, "resume join team settings leave" },
-		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_PENDING, "resume join:disabled settings leave" },
-		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_QUEUED, "resume join:disabled settings leave" },
-		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_LOCKED, "resume join settings leave" },
-		{ TOUCHMODE_OUT, TOUCHMODE_F_TEAMS, TOUCHJOIN_NONE, "resume spectate team settings leave" },
+		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_OPEN, "resume join follow settings leave" },
+		{ TOUCHMODE_FOLLOWING, TOUCHMODE_F_TEAMS, TOUCHJOIN_OPEN, "resume join next prev free team settings leave" },
+		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_PENDING, "resume join:disabled follow settings leave" },
+		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_QUEUED, "resume join:disabled follow settings leave" },
+		{ TOUCHMODE_OBSERVING, 0, TOUCHJOIN_LOCKED, "resume join follow settings leave" },
+		{ TOUCHMODE_OUT, TOUCHMODE_F_TEAMS, TOUCHJOIN_NONE, "resume spectate next prev team settings leave" },
+		{ TOUCHMODE_OUT_FREE, 0, TOUCHJOIN_NONE, "resume spectate follow settings leave" },
 		{ TOUCHMODE_INTERMISSION, TOUCHMODE_F_TEAMS, TOUCHJOIN_NONE, "resume settings leave" },
 		{ TOUCHMODE_MAPVOTE, 0, TOUCHJOIN_NONE, "resume settings leave" },
 	};
@@ -178,7 +179,39 @@ static void check_actions(void)
 		CHECK_STR("touch_join_dialog", TouchAct_Command(&m, TOUCHACT_TEAM), "change team: the join dialog");
 		CHECK_STR("Spectate", TouchAct_Label(TOUCHACT_SPECTATE), "label");
 		CHECK_STR("Join game", TouchAct_Label(TOUCHACT_JOIN), "label");
+		CHECK_STR(TOUCHACT_ATTACK_CMD, TouchAct_Command(&m, TOUCHACT_FOLLOW), "follow presses attack");
+		CHECK_STR(TOUCHACT_ATTACK_CMD, TouchAct_Command(&m, TOUCHACT_NEXT), "next presses attack");
+		CHECK_STR(TOUCHACT_PREV_CMD, TouchAct_Command(&m, TOUCHACT_PREV), "prev runs weapprev");
+		CHECK_STR(TOUCHACT_FREE_CMD, TouchAct_Command(&m, TOUCHACT_FREE), "free presses attack2");
+		CHECK_STR("Follow player", TouchAct_Label(TOUCHACT_FOLLOW), "label");
+		CHECK_STR("Next player", TouchAct_Label(TOUCHACT_NEXT), "label");
+		CHECK_STR("Previous player", TouchAct_Label(TOUCHACT_PREV), "label");
+		CHECK_STR("Free-fly", TouchAct_Label(TOUCHACT_FREE), "label");
 	}
+}
+
+// ---------------------------------------------------------------------------
+// The MENU path while the spectator bar is off (touch_specbar_visible 0):
+// the actions are the bar's own presses, and they do not depend on the bar.
+// A decision trace is printed so a failing run names the state and command.
+// ---------------------------------------------------------------------------
+static void check_spectator_menu_path(void)
+{
+	touchmode_t freefly = { TOUCHMODE_OBSERVING, 0, TOUCHJOIN_OPEN };
+	touchmode_t following = { TOUCHMODE_FOLLOWING, 0, TOUCHJOIN_OPEN };
+
+	printf("menu path (bar off): free-fly follow=%d \"%s\"\n",
+		TouchAct_State(&freefly, TOUCHACT_FOLLOW), TouchAct_Command(&freefly, TOUCHACT_FOLLOW));
+	printf("menu path (bar off): following next=%d \"%s\", prev=%d \"%s\", free=%d \"%s\"\n",
+		TouchAct_State(&following, TOUCHACT_NEXT), TouchAct_Command(&following, TOUCHACT_NEXT),
+		TouchAct_State(&following, TOUCHACT_PREV), TouchAct_Command(&following, TOUCHACT_PREV),
+		TouchAct_State(&following, TOUCHACT_FREE), TouchAct_Command(&following, TOUCHACT_FREE));
+	CHECK_INT(TOUCHACT_ENABLED, TouchAct_State(&freefly, TOUCHACT_FOLLOW), "free-fly: MENU offers follow with the bar off");
+	CHECK_INT(TOUCHACT_ENABLED, TouchAct_State(&following, TOUCHACT_NEXT), "following: MENU offers the next player with the bar off");
+	CHECK_INT(TOUCHACT_ENABLED, TouchAct_State(&following, TOUCHACT_PREV), "following: MENU offers the previous player with the bar off");
+	CHECK_INT(TOUCHACT_ENABLED, TouchAct_State(&following, TOUCHACT_FREE), "following: MENU offers free-fly with the bar off");
+	CHECK_INT(TOUCHACT_HIDDEN, TouchAct_State(&freefly, TOUCHACT_FREE), "free-fly: free-fly is not offered (already free)");
+	CHECK_INT(TOUCHACT_HIDDEN, TouchAct_State(&following, TOUCHACT_FOLLOW), "following: follow is not offered (already following)");
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +312,7 @@ int main(void)
 	check_modes();
 	check_controls();
 	check_actions();
+	check_spectator_menu_path();
 	check_join_dialog();
 	if (failures)
 	{

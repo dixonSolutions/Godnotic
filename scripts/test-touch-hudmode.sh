@@ -23,3 +23,9 @@ python3 "$dir/mirror_check.py" "$ROOT/engine/darkplaces/touch_hudmode.h" \
 # The touch game menu's order: the actions that matter on a phone's first screen.
 python3 "$dir/gamemenu_order.py" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/dialog_touch_gamemenu.qc"
+
+# Following, switching target and free-fly stay reachable from MENU with the
+# spectator bar off, on both the game menu and the UIB pause sheet.
+python3 "$dir/menu_spectate.py" \
+    "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/dialog_touch_gamemenu.qc" \
+    "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/touch_uib_screens.qc"

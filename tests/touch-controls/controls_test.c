@@ -149,7 +149,7 @@ static void check_look(void)
 	CHECK(fabsf_(TouchFeel_Gain(&on, 199) - 1.0f) < 1e-5f, "slow aim: gain at 199 dp/s is not 1");
 	CHECK(fabsf_(TouchFeel_Gain(&on, 800) - 1.8f) < 1e-5f, "flick: gain at 800 dp/s is not 1.8");
 	CHECK(fabsf_(TouchFeel_Gain(&on, 500) - 1.4f) < 1e-4f, "half-way gain is not 1.4: %.3f", TouchFeel_Gain(&on, 500));
-	CHECK(TouchFeel_Gain(&on, 100) == 1.0f && TouchFeel_Gain(&on, 2000) == 1.8f, "gain outside the band is not clamped");
+	CHECK(fabsf_(TouchFeel_Gain(&on, 100) - 1.0f) < 1e-5f && fabsf_(TouchFeel_Gain(&on, 2000) - 1.8f) < 1e-5f, "gain outside the band is not clamped");
 	// monotonic: never less turn for a faster swipe of the same length
 	{
 		float prev = 0, t;

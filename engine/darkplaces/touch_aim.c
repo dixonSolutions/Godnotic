@@ -3635,7 +3635,7 @@ static void aim_frame(void)
 			}
 			// never against the finger's own turn: closing the gap is help,
 			// pulling the view back is not
-			TouchWep_PullWithFinger(turn_yaw, turn_pitch, &py, &pp);
+			TouchWep_PullWithFinger(turn_yaw, turn_pitch, dt, &py, &pp);
 			cl.viewangles[YAW] += py;
 			cl.viewangles[PITCH] = bound(-89.0f, cl.viewangles[PITCH] + pp, 89.0f);
 		}

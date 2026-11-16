@@ -74,7 +74,7 @@ feed and the chat feed each get a band that touches neither.
 | Weapon strip (right edge) | Tap a weapon to switch to it; drag the grip under the strip to resize it — see [Weapon strip](#weapon-strip) | `impulse N` of the row |
 | WEP | Off by default (the strip switches); `touch_weapon_visible 1` brings the button back | cycle, wheel or 3-slot (`touch_weapon_mode`) |
 | Reload | Tap; hidden by default | `weapon_reload` |
-| **MENU** (top bar) | Tap → the game menu sheet (Resume, Join game / Spectate, Change team, Settings, Leave — see [Menu actions](#menu-actions)) | Native Xonotic pause menu — see [TOUCH_PAUSE_SPEC.md](TOUCH_PAUSE_SPEC.md) |
+| **MENU** (top bar) | Tap → the game menu sheet (Resume, Join game / Spectate, Follow / Previous / Next player / Free-fly while spectating, Change team, Settings, Leave — see [Menu actions](#menu-actions)) | Native Xonotic pause menu — see [TOUCH_PAUSE_SPEC.md](TOUCH_PAUSE_SPEC.md) |
 | Console button (top bar, left of MENU) | Tap → `toggleconsole` | `touch_shellbtn.c`. The CONSOLE pill that used to sit bottom-left is off (`touch_con_visible 0`; 1 brings it back, drag to reposition) — see [TOUCH_CONSOLE_SPEC.md](TOUCH_CONSOLE_SPEC.md) |
 | **SCORE** (top bar, between MENU and CHAT) | Tap → full scoreboard, tap again to clear; Escape also clears | `+showscores` / `-showscores`; also the `touch_scores` command |
 | **CHAT** (top bar, right) | Tap → modal chat sheet: backlog, field, on-screen QWERTY | `say` / `say_team`; also the `touch_chat [team]` command for a hardware key |
@@ -100,9 +100,9 @@ the native front ends read it rather than guessing again.
 |------|-----------|-----------|
 | **Playing** | Top bar (console button, MENU, SCORE, CHAT); move stick, look, FIRE, ALT, HOP + KEEP, DUCK, TURN, weapon strip, NADE, HOOK / ZOOM when the weapon has them, vitals; optional SPECTATE (`touch_tospec_visible 1`, placed in the layout editor); READY in warmup | — |
 | **Dead** (waiting to respawn) | Top bar; **RESPAWN** where HOP is (`+jump`), look; SPECTATE if placed; READY in warmup | stick, FIRE, ALT, DUCK, strip, vitals |
-| **Spectating, free-fly** | Top bar; move stick + **UP / DOWN** rocker beside it (`+moveup` / `+movedown`), look; with the spectator bar on (`touch_specbar_visible 1`, off by default), **< FOLLOW >** bottom right | weapons, FIRE, ALT, HOP, DUCK, TURN, HOOK, NADE, CONSOLE pill, any join control (joining is the join dialog) |
-| **Following a player** | Top bar; the bar **< FREE >** with the player's name above it; their vitals (read only) | stick and rocker (the view is theirs), everything above |
-| **Out of the round** (Clan Arena and the like) | As following / free-fly (the player is in the game; the join waits for the next round); with the bar on, its middle reads WATCHING | as above |
+| **Spectating, free-fly** | Top bar; move stick + **UP / DOWN** rocker beside it (`+moveup` / `+movedown`), look; MENU > **Follow player**; with the spectator bar on (`touch_specbar_visible 1`, off by default), **< FOLLOW >** bottom right too | weapons, FIRE, ALT, HOP, DUCK, TURN, HOOK, NADE, CONSOLE pill, any join control (joining is the join dialog) |
+| **Following a player** | Top bar; MENU > **Previous player / Next player / Free-fly**; with the bar on, **< FREE >** with the player's name above it; their vitals (read only) | stick and rocker (the view is theirs), everything above |
+| **Out of the round** (Clan Arena and the like) | As following / free-fly (the player is in the game; the join waits for the next round); MENU > Previous / Next player; with the bar on, its middle reads WATCHING | as above |
 | **Intermission** (end-of-match scoreboard) | **MENU** alone, top-left corner (top-right left-handed); the console button | every other control, the vote chip |
 | **Next-map / gametype vote** | **MENU** alone, top-left; the console button. The vote cards are the game's own screen and take taps directly | every other control; the touch vote card over the vote (`touch_vote_mapcard 1` brings it back) |
 
@@ -129,9 +129,11 @@ checked by `scripts/test-touch-spectate.sh`; the port's CSQC mirrors it in
 join. A look-zone tap does not fire while spectating, and auto-shoot never
 fires. `touch_specbar_x`, `_y` and `_size` move and size the bar (46 dp tall at
 least), and `touch_specbar_visible` turns it on: the bar is off by default on a
-touch screen, so FOLLOW is not in the way while the player watches. MENU still
-offers join and spectate; turn the bar on in **Touch controls** to follow or
-change player from the HUD.
+touch screen, so FOLLOW is not in the way while the player watches. MENU is
+the way in without it: **Follow player** while free-flying, and **Previous
+player / Next player / Free-fly** while following (with **Join game**,
+**Change team** and the rest). The bar, when on, is a shortcut for the same
+commands. Turn it on in **Touch controls** to have them on the HUD.
 
 #### Joining: Xonotic's join dialog
 
@@ -221,12 +223,22 @@ the same list.
 | `resume` | Resume | in a match | `togglemenu 0` |
 | `join` | Join game | spectating (free-fly or following); disabled while a join is pending or queued | `touch_action join` → `touch_join_dialog` (the join dialog) |
 | `spectate` | Spectate | playing, dead, out of the round; **confirm** when it would forfeit the round or an objective | `touch_action spectate confirm` → `spec` |
+| `follow` | Follow player | free-flying (observing or out of the round) | `+attack` pulse: start following a player |
+| `next` | Next player | following a player (observing or out of the round) | `+attack` pulse |
+| `prev` | Previous player | following a player (observing or out of the round) | `weapprev` |
+| `free` | Free-fly | following a player in the round | `+attack2` pulse: back to free-fly |
 | `team` | Change team | team games, not at match end | `touch_join_dialog` |
 | `settings` | Settings | in a match | `menu_cmd settings` |
 | `leave` | Leave | in a match | `disconnect; g_campaign 0; menu_cmd sync; menu_cmd directmenu Welcome RESET` |
 
-Read: `_touch_hud_actions` (`"resume spectate:confirm team settings leave"`:
-hidden ones left out, `:disabled`, `:confirm`), or one cvar per action,
+The spectator actions are the bar's own presses, held for a couple of frames
+so a server frame cannot fall between them; they do not depend on
+`touch_specbar_visible`. With the bar off, MENU is the way to follow, switch
+target and go free.
+
+Read: `_touch_hud_actions` (`"resume join follow settings leave"`
+while free-flying, `"resume join next prev free team settings leave"` while
+following in a team game: hidden ones left out, `:disabled`, `:confirm`), or one cvar per action,
 `_touch_act_<id>`: 0 hidden, 1 enabled, 2 disabled, 3 enabled with a confirm.
 Run: `touch_action <id> [confirm]`; an action that asks for a confirm only
 prints without `confirm`, so a front end shows its own "are you sure" and then

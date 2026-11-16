@@ -83,6 +83,40 @@ int main(void)
 		CHECK_INT(state != TOUCHSPEC_NONE, TouchSpec_BarShown(state, 1), "the bar is present when switched on");
 	}
 
+	// A bar turned off under a held finger stops acting at once: no fire,
+	// attack2 or weapon command from a bar role while it is hidden. The same
+	// fold is what spec_frame runs, so a hidden bar sends nothing.
+	{
+		touchspec_keys_t k;
+		memset(&k, 0, sizeof(k));
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_ATTACK, 1);
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_FREE, 1);
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_PREV, 1);
+		printf("hidden bar: fire=%d fire2=%d prev=%d (want 0 0 0)\n", k.fire, k.fire2, k.prev);
+		CHECK_INT(0, k.fire, "hidden bar: a held FOLLOW/NEXT sends no attack");
+		CHECK_INT(0, k.fire2, "hidden bar: a held FREE sends no attack2");
+		CHECK_INT(0, k.prev, "hidden bar: a held PREV sends no weapprev");
+		// the fly rocker is not the bar's: it keeps working when the bar is off
+		memset(&k, 0, sizeof(k));
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_UP, 1);
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 0, TOUCHSPEC_ROLE_DOWN, 1);
+		CHECK_INT(1, k.up, "hidden bar: UP still flies");
+		CHECK_INT(1, k.down, "hidden bar: DOWN still flies");
+		// switched on, the same roles act
+		memset(&k, 0, sizeof(k));
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 1, TOUCHSPEC_ROLE_ATTACK, 1);
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 1, TOUCHSPEC_ROLE_FREE, 1);
+		TouchSpec_AddFinger(&k, TOUCHSPEC_OBSERVING, 1, TOUCHSPEC_ROLE_PREV, 1);
+		printf("shown bar: fire=%d fire2=%d prev=%d (want 1 1 1)\n", k.fire, k.fire2, k.prev);
+		CHECK_INT(1, k.fire, "shown bar: FOLLOW/NEXT sends attack");
+		CHECK_INT(1, k.fire2, "shown bar: FREE sends attack2");
+		CHECK_INT(1, k.prev, "shown bar: PREV sends weapprev");
+		// not a spectator: no bar role acts, shown or not
+		memset(&k, 0, sizeof(k));
+		TouchSpec_AddFinger(&k, TOUCHSPEC_NONE, 1, TOUCHSPEC_ROLE_ATTACK, 1);
+		CHECK_INT(0, k.fire, "playing: a bar role sends nothing");
+	}
+
 	// no part can mean jump (the join): bar actions are follow, next, prev, free only
 	for (state = TOUCHSPEC_NONE; state <= TOUCHSPEC_OUT_FREE; state++)
 		for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
