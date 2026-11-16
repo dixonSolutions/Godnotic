@@ -205,6 +205,10 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         if: steps.changes.outputs.run == 'true'
+        with:
+          # The default list still asks for 'tools', which the SDK no longer has:
+          # sdkmanager exits 1 on it and fails the whole job.
+          packages: 'platform-tools'
 
       - name: Enable KVM
         if: steps.changes.outputs.run == 'true'

@@ -12,6 +12,7 @@ extern int andysu_in_trial; /* running as the new engine of a swap that is not h
 
 /* Once per frame, from Sys_Frame: poll the loader, count frames, report health. */
 void Andysu_FrameHook(void);
+void Andysu_DrawnFrame(double now, int menu, int world);
 /* End of Host_Init: restore what the previous engine saved (map / connect), test hooks. */
 void Andysu_RestoreState(void);
 /* Sys_Error, after the window is gone: during a trial give up and return to the loader. */
