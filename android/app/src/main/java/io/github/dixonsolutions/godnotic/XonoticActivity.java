@@ -490,44 +490,54 @@ public final class XonoticActivity extends SDLActivity {
                     // too; this is the path that does not wait for the screen to finish.
                     return;
                 }
-                if (tick++ % 30 == 0) {
-                    bridge.refresh();
-                }
+                final boolean refresh = tick++ % 30 == 0;
+                // An uncaught exception on this thread reaches Android's default handler, which
+                // kills the whole process: one bad status or one broken resource would be the
+                // "app has a bug" crash during an update. The loop carries on instead.
+                PollLoop.once(() -> pollUpdates(bridge, updater, crashRequest, refresh),
+                        error -> Log.w("Godnotic", "Update poll failed; the loop continues", error));
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                String request = bridge.takeRequest();
-                if (request != null) {
-                    serveUpdateRequest(bridge, updater, request);
-                }
-                AndySUBridge payloadBridge = andysuBridge;
-                if (payloadBridge != null) {
-                    String payloadRequest = payloadBridge.takeRequest();
-                    if (payloadRequest != null) payloadBridge.serve(payloadRequest);
-                    payloadBridge.publish();
-                    payloadBridge.autoApply(updateGameBusy(), inFront);
-                }
-                final String crash = CrashStore.takeRequest(crashRequest);
-                if (crash != null) {
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
-                        }
-                        if ("share".equals(crash)) {
-                            CrashStore.shareNewest(this);
-                        } else {
-                            CrashStore.showList(this);
-                        }
-                    });
-                }
             }
         }, "xonotic-update-service");
         updateService.setDaemon(true);
         updateService.start();
         autoDownloadIfDue();
+    }
+
+    /** One poll of the menu's requests, the payload bridge and the crash-report request. */
+    private void pollUpdates(UpdateBridge bridge, AppUpdater updater, File crashRequest, boolean refresh) {
+        if (refresh) {
+            bridge.refresh();
+        }
+        String request = bridge.takeRequest();
+        if (request != null) {
+            serveUpdateRequest(bridge, updater, request);
+        }
+        AndySUBridge payloadBridge = andysuBridge;
+        if (payloadBridge != null) {
+            String payloadRequest = payloadBridge.takeRequest();
+            if (payloadRequest != null) payloadBridge.serve(payloadRequest);
+            payloadBridge.publish();
+            payloadBridge.autoApply(updateGameBusy(), inFront);
+        }
+        final String crash = CrashStore.takeRequest(crashRequest);
+        if (crash != null) {
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                if ("share".equals(crash)) {
+                    CrashStore.shareNewest(this);
+                } else {
+                    CrashStore.showList(this);
+                }
+            });
+        }
     }
 
     /** Missing or partially written engine state is unsafe until the engine publishes it. */
