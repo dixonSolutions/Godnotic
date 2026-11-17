@@ -2,6 +2,7 @@ package io.github.dixonsolutions.godnotic.fe
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -204,5 +205,66 @@ class ServerListStateTest {
         state.settle()
         assertEquals(0, state.size)
         assertNull(state.row(0))
+    }
+
+    /**
+     * The exact message sequence a REFRESH produces, as the engine sends it
+     * (touch_uib_src.c, touch_srvlist.c, loader/crates/android/src/driver.rs):
+     *
+     *   source total 0   the engine reset its cache (this is its "clear")
+     *   rows [...]       the saved rows are back, in the window asked for
+     *   source ...       one per answer: the revision moved (4 a second)
+     *   rows [...]       the window the renderer asked for again
+     *   state ready      `_slist_refreshing` went to 0: the query is over
+     *
+     * ViewRenderer turns the source notices into begin() and the windows into
+     * accept(); it settles when the list's state leaves `loading`. The list
+     * must survive the clear and every notice without a row moving off screen.
+     */
+    @Test
+    fun aRefreshNeverDropsTheListToZeroOrLosesARow() {
+        state.accept(0, 3, listOf(row("a:1"), row("b:2"), row("c:3")))
+        val sizes = ArrayList<Int>()
+        fun painted(tag: String) {
+            sizes.add(state.size)
+            val keys = keys().filterNotNull()
+            assertEquals("$tag: a row went missing", setOf("a:1", "b:2", "c:3"), keys.toSet())
+            assertEquals("$tag: every row is still drawn", 3, keys.size)
+            for (i in 0 until state.size) assertNotNull("$tag: a hole appeared at $i", state.row(i))
+        }
+        painted("listed")
+
+        // REFRESH: the engine wipes its cache and broadcasts the empty source
+        state.begin(0)
+        painted("the refresh's clear")
+        state.begin(0)
+        painted("a second clear notice")
+        // the saved rows come back: the window for them (b has not answered)
+        state.accept(0, 2, listOf(row("a:1", ping = 31), row("c:3", ping = 44)))
+        painted("the first window")
+        // every answer moves the revision: another notice, then the window again
+        state.begin(2)
+        painted("a source notice while refreshing")
+        state.begin(2)
+        painted("another source notice while refreshing")
+        state.accept(0, 2, listOf(row("a:1", ping = 18), row("c:3", ping = 42)))
+        painted("a later window")
+        // the query ended: the list's state left `loading`
+        state.settle()
+        painted("the query finished")
+
+        assertTrue("the list never dropped to zero", sizes.all { it == 3 })
+        assertTrue("b did not answer: dimmed, not removed", state.row(keys().indexOf("b:2"))!!.bool("stale"))
+        assertFalse("a answered", state.row(keys().indexOf("a:1"))!!.bool("stale"))
+        assertFalse("c answered", state.row(keys().indexOf("c:3"))!!.bool("stale"))
+
+        // a second refresh, b still silent: through its grace period, then gone
+        state.begin(0)
+        painted("the second refresh's clear")
+        state.begin(2)
+        state.accept(0, 2, listOf(row("a:1"), row("c:3")))
+        state.settle()
+        assertEquals("b went after two silent queries", listOf("a:1", "c:3"), keys())
+        assertTrue("never zero", sizes.all { it > 0 })
     }
 }

@@ -128,12 +128,20 @@ class VirtualList(
         window.missing(max(0, first - margin), last + margin)?.let { request(it) }
     }
 
-    /** New rows from the bridge: rebinds only the changed positions. */
+    /**
+     * New rows from the bridge: rebinds only the changed positions. A refresh
+     * changes the count as each server answers; notifying that as a whole-list
+     * change re-laid out and re-bound every row (the list blinked and jumped),
+     * so the count is diffed into inserts/removes and only the window's rows
+     * are rebound.
+     */
     fun rows(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         val before = window.total
         window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
-        if (before != total) adapter.notifyDataSetChanged() // the count changed: positions stay keyed by id
-        else adapter.notifyItemRangeChanged(offset, rows.size, PAYLOAD_ROW)
+        if (before < 0) { adapter.notifyDataSetChanged(); return } // the first listing
+        if (total > before) adapter.notifyItemRangeInserted(before, total - before)
+        else if (total < before) adapter.notifyItemRangeRemoved(maxOf(0, total), before - total)
+        if (rows.isNotEmpty()) adapter.notifyItemRangeChanged(offset, rows.size, PAYLOAD_ROW)
     }
 
     /** All rows at once (a small inline list), diffed against what is shown by key. */

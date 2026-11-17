@@ -3,19 +3,23 @@ package io.github.dixonsolutions.godnotic.fe
 /**
  * The server browser's rows across a refresh, so the list never blinks.
  *
- * The engine re-reads its server cache four times a second and re-sends the
- * window on screen when anything changed (a ping, a player joining): that is
- * the same list, not a new one. This model keeps every row it has seen keyed
- * by address, holds the display positions, and:
+ * The engine re-reads its server cache four times a second and, whenever it
+ * changed, broadcasts a `source` notice (a total, no rows) and then answers
+ * the window the renderer asks for. A REFRESH resets that cache, so the
+ * engine even broadcasts `total: 0` while it refills, once per answer after
+ * that. None of these notices is a new list: this model keeps every row it
+ * has seen keyed by address, holds the display positions, and:
  *
- * - a refresh (`begin`) never clears: rows stay where they are until their
- *   replacement arrives;
- * - a window's rows update in place by address, so ping and players change
- *   without a row moving or being rebound from scratch;
- * - a server that stops answering stays for [graceRefreshes] refreshes (and
- *   at most [graceMillis]) marked `stale` (drawn dimmed), then goes;
- * - the rows of one window are ordered by the chosen column with ties broken
- *   by address, so equal pings never swap between refreshes, and not at all
+ * - a notice (`begin`) never clears and never dims: rows stay where they are,
+ *   at the brightness they had, until the query running has finished;
+ * - a window (`accept`) updates the rows it covers in place by address, so
+ *   ping and players change without a row moving or being rebound;
+ * - the query's end (`settle`: the engine stops refreshing) marks the rows
+ *   the window did not send again `stale` (drawn dimmed) and keeps them for
+ *   [graceRefreshes] completed queries (and at most [graceMillis] from the
+ *   first one they missed), then removes them;
+ * - a window's rows are ordered by the chosen column with ties broken by
+ *   address, so equal pings never swap between refreshes, and not at all
  *   while [hold] (a finger on the list) is set;
  * - a row first seen after the first listing is marked `fresh` (fades in).
  *
@@ -27,13 +31,15 @@ internal class ServerListState(
     private val clock: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private class Item(var row: Map<String, Any?>) {
-        /** The refresh that last confirmed it. */
-        var seen = 0
-        /** True from the refresh it stopped answering in, until a window confirms it. */
+        /** The query running sent this row's address again. */
+        var answered = false
+        /** Dimmed: it did not answer the last completed query. */
         var lost = false
-        /** When it first stopped answering (ms, [clock]). */
+        /** Completed queries in a row it did not answer. */
+        var missed = 0
+        /** When it was first missed (ms, [clock]). */
         var lostAt = 0L
-        /** The refresh it first arrived in (a row that is new fades in). */
+        /** The query it first arrived in (a row that is new fades in). */
         var born = 0
     }
 
@@ -41,7 +47,15 @@ internal class ServerListState(
 
     /** Display position -> address; null is a row asked for but not here yet. */
     private val slots = ArrayList<String?>()
-    private var generation = 0
+
+    /** The query running (or the one that ran last): 0 before anything was listed. */
+    private var query = 0
+    private var running = false
+    /** What the running query's windows covered: only those positions can be missed. */
+    private var from = Int.MAX_VALUE
+    private var to = -1
+    /** One window held the whole listing (offset 0, every row): all other rows went. */
+    private var whole = false
     private var received = false
 
     /** The column chosen in the header (the engine orders the windows it sends). */
@@ -68,17 +82,20 @@ internal class ServerListState(
         if (sort.isEmpty()) props else props + mapOf("sort" to sort, "desc" to desc)
 
     /**
-     * The source has a new revision: `total` rows now, no window yet. Every row
-     * on screen stays, marked `stale` until a window confirms it.
+     * The source has a new revision: `total` rows, no window yet. A refresh, a
+     * ping landing, a server removed: all the same here. Rows on screen stay,
+     * at the brightness they had, until a window replaces them or the query
+     * ends. Two notices in a row (the engine sends one per change) change
+     * nothing that is drawn.
      */
     fun begin(total: Int) {
         received = true
-        generation++
-        val now = clock()
-        for (item in items.values) if (!item.lost) {
-            item.lost = true
-            item.lostAt = now
-        }
+        query++
+        running = true
+        from = Int.MAX_VALUE
+        to = -1
+        whole = false
+        for (item in items.values) item.answered = false
         resize(total)
     }
 
@@ -88,47 +105,82 @@ internal class ServerListState(
      */
     fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         received = true
-        if (generation == 0) generation = 1 // the first listing: nothing to fade in
-        val now = clock()
+        if (!running) begin(total)
         resize(maxOf(total, offset + rows.size))
         for ((i, row) in rows.withIndex()) {
             val key = keyOf(row)
             if (key.isEmpty()) continue
             val item = items[key]
             if (item == null) {
-                items[key] = Item(row).also { it.born = generation }
-            } else if (item.row != row) {
-                item.row = row // same address, new ping/players: rebound in place
+                items[key] = Item(row).also { it.born = query }
+                put(offset + i, key) // a new row takes its window position when that is free
+            } else {
+                if (item.row != row) item.row = row // same address, new ping/players: rebound in place
+                if (slots.indexOf(key) < 0) put(offset + i, key) // known but never drawn: put it in
             }
-            items.getValue(key).also { it.seen = generation; it.lost = false; it.lostAt = 0L }
-            place(offset + i, key)
+            items.getValue(key).also { it.answered = true; it.lost = false; it.missed = 0; it.lostAt = 0L }
         }
-        if (total < slots.size) {
-            // past the new end: keep them for the grace period, dimmed
-            for (i in total until slots.size) slots[i]?.let { k ->
-                items[k]?.let { if (it.seen < generation && !it.lost) { it.lost = true; it.lostAt = now } }
-            }
+        // a listing from offset 0 that holds every row covers the whole source;
+        // a partial window covers only its own positions
+        if (offset == 0 && rows.size == total) whole = true
+        else if (rows.isNotEmpty()) {
+            from = minOf(from, offset)
+            to = maxOf(to, offset + rows.size - 1)
         }
         if (!hold) sortWindow(offset, rows.size)
     }
 
-    /** Ends the grace period of rows no window confirmed: the list shrinks here. */
+    /**
+     * The query finished (the engine says the list is no longer refreshing).
+     * Rows the window did not send again are dimmed here and stay for the
+     * grace period; the rest keep their brightness. Nothing is removed until
+     * a row has missed [graceRefreshes] completed queries (or has been dimmed
+     * for [graceMillis]), so a refresh that reports nothing at first never
+     * clears the list.
+     */
     fun settle() {
         if (items.isEmpty()) return
         val now = clock()
+        if (!running) { prune(now); return }
+        running = false
+        // positions the query examined: everything when it delivered a complete
+        // listing (or nothing at all), else the range its windows covered
+        val all = whole || from > to
+        val lo = if (all) 0 else from
+        val hi = if (all) slots.size - 1 else to
+        for ((position, key) in slots.withIndex()) {
+            if (key == null || position < lo || position > hi) continue
+            val item = items[key] ?: continue
+            if (item.answered) {
+                item.missed = 0
+                item.lost = false
+                item.lostAt = 0L
+            } else if (!item.lost) {
+                item.lost = true
+                item.lostAt = now
+                item.missed = 1
+            } else {
+                item.missed++
+            }
+        }
+        prune(now)
+    }
+
+    /** Ends the grace period of rows no completed query confirmed: the list shrinks here. */
+    private fun prune(now: Long) {
         var gone = false
         val it = items.entries.iterator()
         while (it.hasNext()) {
             val item = it.next().value
             if (!item.lost) continue
-            if (generation - item.seen >= graceRefreshes || now - item.lostAt >= graceMillis) {
+            if (item.missed >= graceRefreshes || now - item.lostAt >= graceMillis) {
                 it.remove()
                 gone = true
             }
         }
         if (!gone) return
-        for (i in slots.indices) if (slots[i]?.let { !items.containsKey(it) } == true) slots[i] = null
-        while (slots.isNotEmpty() && slots.last() == null) slots.removeAt(slots.size - 1)
+        // close the gaps the removed rows left: the rest keep their order
+        slots.removeAll { it == null || !items.containsKey(it) }
     }
 
     /** A position's row, with `stale` and `fresh` for the renderer. */
@@ -136,8 +188,8 @@ internal class ServerListState(
         val key = slots.getOrNull(position) ?: return null
         val item = items[key] ?: return null
         var row = item.row
-        if (item.seen < generation) row = row + ("stale" to true)
-        if (item.born == generation && generation > 1) row = row + ("fresh" to true)
+        if (item.lost) row = row + ("stale" to true)
+        if (item.born == query && query > 1) row = row + ("fresh" to true)
         return row
     }
 
@@ -175,14 +227,17 @@ internal class ServerListState(
         while (slots.size < total) slots.add(null)
     }
 
-    /** A window is contiguous: its keys go at their own positions, never elsewhere. */
-    private fun place(position: Int, key: String) {
-        if (position < 0) return
-        while (slots.size <= position) slots.add(null)
-        if (slots[position] == key) return
-        val old = slots.indexOf(key)
-        if (old >= 0) slots[old] = null
-        slots[position] = key
+    /**
+     * Where a row goes on screen. A row already drawn keeps its position: a
+     * window updates rows by address and never moves one, so a server that has
+     * not answered yet stays where it was instead of being evicted by a
+     * shorter window. A new row takes its window position when that is free,
+     * else the first free position, else the end.
+     */
+    private fun put(position: Int, key: String) {
+        if (key.isEmpty() || slots.indexOf(key) >= 0) return
+        val free = if (position >= 0 && position < slots.size && slots[position] == null) position else slots.indexOfFirst { it == null }
+        if (free >= 0) slots[free] = key else slots.add(key)
     }
 
     /** Orders one window by the chosen column; ties by address, so it repeats exactly. */

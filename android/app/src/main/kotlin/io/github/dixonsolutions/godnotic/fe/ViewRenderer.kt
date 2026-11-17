@@ -162,10 +162,14 @@ class ViewRenderer(
         }
     }
 
-    /** Copy cached rows into every list reading this source, including newly opened lists. */
+    /**
+     * Copy cached rows into every list reading this source, including newly
+     * opened lists. Never settles: a source notice (the engine sends one per
+     * change, four a second) is not the end of the query, and settling here
+     * dimmed then removed rows that had simply not been re-sent yet.
+     */
     private fun flushServers(source: String) {
         val state = serverState(source)
-        state.settle()
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -1550,6 +1554,10 @@ class ViewRenderer(
             } else if (vl.window.total < 0 && p.containsKey("count")) vl.reset(p.int("count"))
             lastQuery = query
             if (colsChanged) vl.refresh()
+            // The engine's query is over (its list is no longer "loading"): rows it
+            // did not send again are dimmed once, here, and kept through the grace
+            // period. While it refreshes they stay as bright as they were.
+            if (isServerSource(src) && p.str("state", "ready") != "loading") serverState(src).settle()
             bindEmpty(x)
         }
         return e
