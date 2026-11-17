@@ -25,6 +25,13 @@ import java.util.Map;
 final class AndySUState {
     private AndySUState() {}
 
+    /** Unknown policy is held; null means the host has no policy API. */
+    static boolean shouldAutoApply(String state, boolean inMatch, String policy) {
+        return "staged".equals(state) && !inMatch
+                && (policy == null || "live".equals(policy) || "restart".equals(policy));
+    }
+
+
     /** Bump only with the menu's TOUCH_ANDYSU_FORMAT. Lines 9 on are key=value extras. */
     static final int FORMAT = 1;
 

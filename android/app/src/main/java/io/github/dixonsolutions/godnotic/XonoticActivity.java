@@ -89,6 +89,8 @@ public final class XonoticActivity extends SDLActivity {
             baseDir = new GameData(this).baseDir().getAbsolutePath();
         }
         nativeUi = nativeUiWanted(new File(baseDir));
+        // Discard a previous process's gate before starting the native thread.
+        new File(GameData.userDir(new File(baseDir)), "data/touch_update_game_state").delete();
         andysuBridge = new AndySUBridge(this, new File(baseDir));
         andysuBridge.publish();
         // The host may stage a live update as soon as its activity resumes.
@@ -488,12 +490,23 @@ public final class XonoticActivity extends SDLActivity {
                     String payloadRequest = payloadBridge.takeRequest();
                     if (payloadRequest != null) payloadBridge.serve(payloadRequest);
                     payloadBridge.publish();
+                    payloadBridge.autoApply(updateGameBusy(), inFront);
                 }
             }
         }, "xonotic-update-service");
         updateService.setDaemon(true);
         updateService.start();
         autoDownloadIfDue();
+    }
+
+    /** Missing or partially written engine state is unsafe until the engine publishes it. */
+    private boolean updateGameBusy() {
+        File state = new File(GameData.userDir(new File(baseDir)), "data/touch_update_game_state");
+        try (BufferedReader reader = new BufferedReader(new FileReader(state))) {
+            return !"safe".equals(reader.readLine());
+        } catch (IOException e) {
+            return true;
+        }
     }
 
     /**

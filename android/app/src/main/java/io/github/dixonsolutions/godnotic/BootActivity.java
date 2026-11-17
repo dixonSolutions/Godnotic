@@ -120,6 +120,15 @@ public class BootActivity extends Activity {
     private static volatile Boolean chosenMusic;
     /** The setup step is for the music pack only (the shortcut), the game is playable. */
     private static volatile boolean musicOnly;
+    private AndySUBridge bootUpdates;
+    private final Runnable pollBootUpdates = new Runnable() {
+        @Override public void run() {
+            if (showing != BootActivity.this || XonoticActivity.running || bootUpdates == null) return;
+            bootUpdates.publish();
+            bootUpdates.autoApply(false, true);
+            ui.postDelayed(this, 1000);
+        }
+    };
     private Thread worker;
     /** The process's one preparation thread while it runs, whichever screen started it. */
     private static volatile Thread preparationThread;
@@ -152,6 +161,7 @@ public class BootActivity extends Activity {
             finish();
             return;
         }
+        bootUpdates = new AndySUBridge(this, new GameData(this).baseDir());
         buildScreen();
         retry.setOnClickListener(v -> start());
         cancel.setOnClickListener(v -> cancelPreparation());
@@ -401,6 +411,8 @@ public class BootActivity extends Activity {
     protected void onResume() {
         super.onResume();
         showing = this;
+        ui.removeCallbacks(pollBootUpdates);
+        ui.post(pollBootUpdates);
         GameData ready = readyData;
         if (ready != null) {
             readyData = null;
@@ -413,6 +425,7 @@ public class BootActivity extends Activity {
 
     @Override
     protected void onPause() {
+        ui.removeCallbacks(pollBootUpdates);
         super.onPause();
         if (showing == this) {
             showing = null;
@@ -421,6 +434,7 @@ public class BootActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        ui.removeCallbacks(pollBootUpdates);
         super.onDestroy();
         if (showing == this) {
             showing = null;

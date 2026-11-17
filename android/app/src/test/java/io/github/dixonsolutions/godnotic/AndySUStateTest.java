@@ -12,6 +12,18 @@ import java.util.Map;
 
 /** The Updates screen's decisions on an AndySU install (AndySUState): plain JVM, no Android. */
 public class AndySUStateTest {
+    @Test public void stagedRestartRespectsMatchAndPolicy() {
+        String[] states = { "idle", "checking", "downloading", "staged", "uptodate" };
+        String[] policies = { null, "live", "restart", "next_start", "unknown" };
+        for (String state : states) for (boolean match : new boolean[] { false, true })
+            for (String policy : policies) {
+                boolean expected = "staged".equals(state) && !match
+                        && (policy == null || "live".equals(policy) || "restart".equals(policy));
+                assertEquals(state + "/" + match + "/" + policy, expected,
+                        AndySUState.shouldAutoApply(state, match, policy));
+            }
+    }
+
 
     @Test
     public void hostStatesAreSpelledTheMenusWay() {

@@ -77,6 +77,13 @@ final class AndySUCompat {
         updateApi().getMethod("applyNow").invoke(client);
     }
 
+    /** Without a swap handler, ask for a process restart directly. */
+    static void restartNow() throws ReflectiveOperationException {
+        Object client = updateClient();
+        if (client == null) throw new IllegalStateException("AndySU host is unavailable");
+        updateApi().getMethod("restartNow").invoke(client);
+    }
+
     /** The host's API level (1, 2, 3...), 0 without a host. */
     static int apiLevel() {
         Object h = host();
