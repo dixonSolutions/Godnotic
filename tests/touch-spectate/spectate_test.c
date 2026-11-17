@@ -60,6 +60,8 @@ int main(void)
 	CHECK_STR(">", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_NEXT), "free-fly next");
 	for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
 	{
+		if (part == TOUCHSPEC_BAR_JOIN)
+			continue;   // the JOIN part, checked below
 		CHECK_INT(TOUCHSPEC_ACT_FOLLOW, TouchSpec_BarAction(TOUCHSPEC_OBSERVING, part), "free-fly: every part follows");
 		CHECK_INT(TOUCHSPEC_ACT_FOLLOW, TouchSpec_BarAction(TOUCHSPEC_OUT_FREE, part), "out free: every part follows");
 		CHECK_INT(TOUCHSPEC_ACT_NONE, TouchSpec_BarAction(TOUCHSPEC_NONE, part), "playing: no spectator meaning");
@@ -73,6 +75,8 @@ int main(void)
 	CHECK_STR("WATCHING", TouchSpec_BarLabel(TOUCHSPEC_OUT, TOUCHSPEC_BAR_MAIN), "out main label");
 	CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_NEXT), "out next");
 	CHECK_STR("", TouchSpec_BarLabel(TOUCHSPEC_NONE, TOUCHSPEC_BAR_MAIN), "playing: no bar");
+	CHECK_STR("JOIN", TouchSpec_BarLabel(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_JOIN), "the join part says JOIN");
+	CHECK_INT(1, TouchSpec_BarRole(TOUCHSPEC_ROLE_JOIN), "JOIN is a bar role");
 
 	// off by default, on when the setting is: absent while playing either way
 	CHECK_INT(1, TOUCHSPEC_BAR_DEFAULT, "the spectator bar defaults on");
@@ -118,6 +122,11 @@ int main(void)
 		for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
 		{
 			int act = TouchSpec_BarAction(state, part);
+			if (part == TOUCHSPEC_BAR_JOIN)
+			{
+				CHECK_INT(state != TOUCHSPEC_NONE ? TOUCHSPEC_ACT_JOIN : TOUCHSPEC_ACT_NONE, act, "JOIN is the join part's action, only while spectating");
+				continue;
+			}
 			CHECK_INT(1, act >= TOUCHSPEC_ACT_NONE && act <= TOUCHSPEC_ACT_FREE, "bar actions are follow / next / prev / free only");
 		}
 

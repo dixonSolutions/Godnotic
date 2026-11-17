@@ -79,6 +79,12 @@ typedef struct touchmode_s
 	int join;
 } touchmode_t;
 
+// Only call a match paused when its local server is actually stopped.
+static inline int TouchMode_MenuPaused(int local_server, int host_paused, int server_paused)
+{
+	return local_server && (host_paused || server_paused);
+}
+
 static inline int TouchMode_IsSpectating(int mode)
 {
 	return mode == TOUCHMODE_OBSERVING || mode == TOUCHMODE_FOLLOWING;
@@ -375,18 +381,40 @@ typedef struct touchjoindlg_s
 	double next;    // nothing before this time
 } touchjoindlg_t;
 
+// joining: the world is drawable and the signon has not finished (the join preview): the
+// dialog comes up over it, before the player is an observer.
 // campaign: 0 outside a campaign, 1 with team choice, 2 with a fixed team.
 // local_game: the server is this process. screen_free: the game has the screen (no menu, console,
 // chat sheet or CSQC pointer UI). enabled: touch_join_dialog allows it here.
-static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int local_game, int campaign, int screen_free, int enabled, double now)
+static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int local_game, int campaign, int screen_free, int enabled, int autojoin, int joining, double now)
 {
 	if (mode == TOUCHMODE_OFF || TouchMode_IsMatchEnd(mode))
 	{
-		d->owed = 1;
-		d->tries = TOUCHJOINDLG_TRIES;
-		d->since = 0;
-		d->next = 0;
-		return TOUCHJOINDLG_NOTHING;
+		if (!joining || TouchMode_IsMatchEnd(mode))
+		{
+			d->owed = 1;
+			d->tries = TOUCHJOINDLG_TRIES;
+			d->since = 0;
+			d->next = 0;
+			return TOUCHJOINDLG_NOTHING;
+		}
+		// A join preview: the world is up and the player has not been made an
+		// observer yet. The question belongs here, over the live map, never
+		// after "Observing / Press MENU to join".
+		if (!d->owed)
+			return TOUCHJOINDLG_NOTHING;
+		if (!d->since)
+			d->since = now;
+		if (now - d->since < TOUCHJOINDLG_SETTLE || now < d->next || !screen_free)
+			return TOUCHJOINDLG_NOTHING;
+		if (autojoin && d->tries > 0)
+		{
+			d->tries--;
+			d->next = now + TOUCHJOINDLG_RETRY;
+			return TOUCHJOINDLG_JOIN;
+		}
+		d->owed = 0;
+		return enabled ? TOUCHJOINDLG_OPEN : TOUCHJOINDLG_NOTHING;
 	}
 	if (mode == TOUCHMODE_PLAYING || TouchMode_IsOutOfRound(mode))
 	{
@@ -406,7 +434,7 @@ static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int
 		d->since = now;
 	if (now - d->since < TOUCHJOINDLG_SETTLE || now < d->next || !screen_free)
 		return TOUCHJOINDLG_NOTHING;
-	if (local_game && campaign && (!(flags & TOUCHMODE_F_TEAMS) || campaign == 2) && d->tries > 0)
+	if ((autojoin || (local_game && campaign && (!(flags & TOUCHMODE_F_TEAMS) || campaign == 2))) && d->tries > 0)
 	{
 		d->tries--;
 		d->next = now + TOUCHJOINDLG_RETRY;

@@ -269,6 +269,14 @@ class ViewRenderer(
     private fun actionButton(node: String, a: Map<String, Any?>, primaryDefault: Boolean = false): TextView {
         val style = a.str("style")
         val b = Kit.button(ctx, a.str("label"), style == "primary" || (style.isEmpty() && primaryDefault), a.str("icon")) { invoke(node, a) }
+        val teamColor = when (style) {
+            "team-red" -> 0xFF8B2635.toInt()
+            "team-blue" -> 0xFF245398.toInt()
+            "team-yellow" -> 0xFF8B7020.toInt()
+            "team-pink" -> 0xFF8B357C.toInt()
+            else -> null
+        }
+        if (teamColor != null) b.background = Theme.rounded(teamColor, dp(24f).toFloat())
         if (style == "destructive") b.setTextColor(Theme.BAD)
         b.isEnabled = !a.containsKey("enabled") || a.bool("enabled")
         b.contentDescription = a.str("label")

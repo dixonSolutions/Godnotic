@@ -1525,6 +1525,7 @@ static void extra_release(finger_t *f);
 #define ROLE_READY   307
 #define ROLE_RESPAWN 308
 #define ROLE_SPEC_ATTACK TOUCHSPEC_ROLE_ATTACK
+#define ROLE_SPEC_JOIN TOUCHSPEC_ROLE_JOIN
 #define ROLE_SPEC_PREV   TOUCHSPEC_ROLE_PREV
 #define ROLE_SPEC_FREE   TOUCHSPEC_ROLE_FREE
 #define ROLE_SPEC_UP     TOUCHSPEC_ROLE_UP
@@ -1599,6 +1600,15 @@ static int assign_role(float px, float py)
 		return ROLE_IGNORED;
 	return ROLE_LOOK;
 }
+
+// The JOIN part: while a spectator may join -- signon finished, in the
+// match, not the end screen.
+static qbool spec_join_shown(void)
+{
+	return vid_touchscreen.integer && spec_hud() && !TouchMode_IsMatchEnd(hud_mode())
+		&& cls.state == ca_connected && cls.signon >= SIGNONS && !cl.intermission;
+}
+
 
 // The look (touch_feel.h): degrees per dp of finger travel, a gain that rises
 // with finger speed, and a smoothing that never loses travel.
@@ -2788,6 +2798,18 @@ static void spec_bar_part(int part, float *cx, float *cy, float *hx, float *hy)
 		*hx = *hy * 2.2f;
 		*cx = bx;
 	}
+	else if (part == TOUCHSPEC_BAR_JOIN)
+	{
+		if (!spec_join_shown())
+		{
+			// not offered: off screen, so it is not drawn or hit
+			*cx = *cy = -1000;
+			*hx = *hy = 0;
+			return;
+		}
+		*hx = *hy * 1.15f;
+		*cx = bx + (*hy * 2.2f + *hy * 0.25f + *hy) + (*hy * 0.25f + *hx);
+	}
 	else
 	{
 		*hx = w * 0.5f;
@@ -2817,6 +2839,7 @@ static int spec_action_role(int action)
 	case TOUCHSPEC_ACT_FREE: return ROLE_SPEC_FREE;
 	case TOUCHSPEC_ACT_UP: return ROLE_SPEC_UP;
 	case TOUCHSPEC_ACT_DOWN: return ROLE_SPEC_DOWN;
+	case TOUCHSPEC_ACT_JOIN: return ROLE_SPEC_JOIN;
 	default: return ROLE_NONE;
 	}
 }
@@ -2888,6 +2911,12 @@ static void spec_frame(qbool *fire, qbool *fire2, qbool *jump)
 			exec_now("weapprev");
 			f->fired = true;
 		}
+		if (k.join)
+		{
+			// the same entry point as MENU > Join game
+			exec_now(cv("touch_join_dialog_auto", 1) != 0 ? "touch_join auto" : "touch_join_dialog");
+			f->fired = true;
+		}
 	}
 	set_key("moveup", &key_moveup, up && TouchSpec_StickShown(state));
 	set_key("movedown", &key_movedown, down && TouchSpec_StickShown(state));
@@ -2910,6 +2939,8 @@ static void draw_spec_bar(int state, float a)
 			held = role_owned(ROLE_SPEC_PREV);
 		else if (action == TOUCHSPEC_ACT_FREE)
 			held = role_owned(ROLE_SPEC_FREE);
+		else if (action == TOUCHSPEC_ACT_JOIN)
+			held = role_owned(ROLE_SPEC_JOIN);
 		else if (action != TOUCHSPEC_ACT_NONE)
 			held = role_owned(ROLE_SPEC_ATTACK) && key_attack;
 		widget_capsule(cx, cy, hx, hy, label, held || (part == TOUCHSPEC_BAR_MAIN && TouchSpec_Flying(state)), false, action == TOUCHSPEC_ACT_NONE ? a * 0.6f : a, C_ACCENT);

@@ -224,7 +224,7 @@ static int run_dialog(touchjoindlg_t *d, int mode, int flags, int local, int cam
 	double t;
 	for (t = from; t < to; t += 0.05)
 	{
-		int r = TouchJoinDlg_Frame(d, mode, flags, local, campaign, free_screen, enabled, t);
+		int r = TouchJoinDlg_Frame(d, mode, flags, local, campaign, free_screen, enabled, 0, 0, t);
 		if (r == TOUCHJOINDLG_OPEN)
 			opens++;
 		if (r == TOUCHJOINDLG_JOIN && joins)
@@ -233,10 +233,51 @@ static int run_dialog(touchjoindlg_t *d, int mode, int flags, int local, int cam
 	return opens;
 }
 
+static void check_menu_pause(void)
+{
+	CHECK_INT(0, TouchMode_MenuPaused(0, 1, 1), "remote server is not a local pause");
+	CHECK_INT(0, TouchMode_MenuPaused(1, 0, 0), "running listen server is not paused");
+	CHECK_INT(1, TouchMode_MenuPaused(1, 1, 0), "local host pause");
+	CHECK_INT(1, TouchMode_MenuPaused(1, 0, 1), "listen server pause");
+}
+
 static void check_join_dialog(void)
 {
 	touchjoindlg_t d;
 	int joins;
+	int team, campaign, autojoin;
+	for (team = 0; team <= 1; team++) for (campaign = 0; campaign <= 2; campaign++) for (autojoin = 0; autojoin <= 1; autojoin++)
+	{
+		int r;
+		memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES; d.since = 1;
+		r = TouchJoinDlg_Frame(&d, TOUCHMODE_OBSERVING, team ? TOUCHMODE_F_TEAMS : 0, 1, campaign, 1, 1, autojoin, 0, 3);
+		CHECK_INT((autojoin || (campaign && (!team || campaign == 2))) ? TOUCHJOINDLG_JOIN : TOUCHJOINDLG_OPEN, r, "autojoin, mode and campaign decision");
+	}
+
+	// The question comes over the join preview, before the player is an observer.
+	// (host.realtime is past 1 s by the first joining frame; a 0 would be the
+	// "not yet" sentinel of the settle timer, not a time)
+#define T0 1.0
+	memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES;
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0), "nothing during the settle time");
+	CHECK_INT(TOUCHJOINDLG_OPEN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0 + TOUCHJOINDLG_SETTLE + 0.1), "the dialog opens over the preview, before observing");
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0 + TOUCHJOINDLG_SETTLE + 1.0), "and only once");
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 0, 0, T0 + TOUCHJOINDLG_SETTLE + 2.0), "an observer after the preview gets no second question");
+	memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES;
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0), "auto-join waits the settle time too");
+	CHECK_INT(TOUCHJOINDLG_JOIN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0 + TOUCHJOINDLG_SETTLE + 0.1), "auto-join goes ahead over the preview instead of asking");
+
+	// The spectator bar carries a JOIN button beside < FREE > (touch_spectate.h).
+	CHECK_INT(4, TOUCHSPEC_BAR_PARTS, "the spectator bar has a JOIN part beside it");
+	CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_JOIN), "JOIN is offered while observing");
+	CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_JOIN), "JOIN is offered while following");
+	CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_JOIN), "JOIN is offered out of the round");
+	CHECK_INT(TOUCHSPEC_ACT_NONE, TouchSpec_BarAction(TOUCHSPEC_NONE, TOUCHSPEC_BAR_JOIN), "no JOIN while playing");
+	CHECK_INT(1, TouchSpec_BarRole(TOUCHSPEC_ROLE_JOIN), "JOIN is a bar role");
+	CHECK_INT((int)'J', (int)TouchSpec_BarLabel(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_JOIN)[0], "the join part says JOIN");
+	memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES;
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 0, T0 + TOUCHJOINDLG_SETTLE + 0.1), "no question outside a preview or a match");
+#undef T0
 	{
 		touchlocaljoin_t retry = {0};
 		TouchLocalJoin_Start(&retry, 10);
@@ -335,6 +376,7 @@ int main(void)
 	check_controls();
 	check_actions();
 	check_spectator_menu_path();
+	check_menu_pause();
 	check_join_dialog();
 	if (failures)
 	{
