@@ -1476,7 +1476,12 @@ class ViewRenderer(
                     }
                     // long press copies the server as one line (name, address, map,
                     // players, ping): the cells' own long presses would copy a column
-                    for (i in 0 until r.childCount) r.getChildAt(i).setOnLongClickListener(null)
+                    for (i in 0 until r.childCount) r.getChildAt(i).let { cell ->
+                        // setOnLongClickListener(null) still marks a view long-clickable,
+                        // and a long-clickable cell swallows the tap meant for the row.
+                        cell.setOnLongClickListener(null)
+                        cell.isLongClickable = false
+                    }
                     r.isLongClickable = data != null
                     r.setOnLongClickListener { v ->
                         val row = data ?: return@setOnLongClickListener false

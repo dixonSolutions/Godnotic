@@ -76,6 +76,16 @@ object Kit {
      */
     fun copyable(t: TextView, text: () -> CharSequence = { t.text }) {
         t.isLongClickable = true
+        // A long-clickable label consumes the whole touch, so a plain tap on a
+        // label inside a row, card or button would never reach it: hand taps
+        // on to the nearest ancestor that handles clicks.
+        if (!t.hasOnClickListeners()) t.setOnClickListener { v ->
+            var p = v.parent
+            while (p is View) {
+                if (p.isClickable && p.hasOnClickListeners()) { p.performClick(); break }
+                p = p.parent
+            }
+        }
         t.setOnLongClickListener { v ->
             val shown = text()
             if (CopyText.clip(shown).isEmpty()) false
