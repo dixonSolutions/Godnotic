@@ -27,3 +27,9 @@ trap 'rm -rf "$out"' EXIT
 python3 "$dir/mirror_check.py" "$ROOT/engine/darkplaces/touch_feel.h" "$ROOT/engine/darkplaces/touch_hud.c" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/client/touch_feel.qh" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/client/touch_init.qc"
+
+# Pointer policy for touch and for the system mouse cursor in pointer UIs.
+"$CC" -std=c99 -Wall -Wextra -Werror -I"$ROOT/engine/darkplaces" \
+    -o "$out/cursor_test" "$dir/cursor_test.c"
+"$out/cursor_test"
+echo "touch cursor policy: passed"
