@@ -419,61 +419,28 @@ final class AppUpdater {
         File part = partFile(update);
         String status = HostRes.string(context, "update_downloading");
 
-        for (int attempt = 0; attempt < 2; attempt++) {
-            long have = part.isFile() ? part.length() : 0;
-            if (update.size > 0 && have > update.size) {
-                // More than the asset holds: not this asset. Start over.
-                deleteQuietly(part);
-                have = 0;
-            }
-            HttpURLConnection connection = (HttpURLConnection) new URL(update.url).openConnection();
-            connection.setConnectTimeout(30_000);
-            connection.setReadTimeout(60_000);
-            connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "Godnotic");
-            if (have > 0) {
-                connection.setRequestProperty("Range", "bytes=" + have + "-");
-            }
+        for (int attempt = 0; attempt < UpdateRetry.ATTEMPTS; attempt++) {
             try {
-                int code = connection.getResponseCode();
-                boolean append;
-                if (code == HttpURLConnection.HTTP_PARTIAL && have > 0) {
-                    append = true;
-                } else if (code == HttpURLConnection.HTTP_OK) {
-                    // The server ignored the range: what we have is no use.
-                    append = false;
-                    have = 0;
-                } else if (code == 416 && have > 0) {
-                    // Nothing past what we have. Either it is all there, or the
-                    // file changed under us; the checks below decide which.
-                    break;
-                } else {
-                    throw new IOException("HTTP " + code + " downloading " + update.url);
-                }
-                long total = update.size > 0 ? update.size
-                        : (connection.getContentLength() > 0 ? have + connection.getContentLength() : -1);
-                try (InputStream in = connection.getInputStream();
-                     OutputStream out = new FileOutputStream(part, append)) {
-                    byte[] buffer = new byte[64 * 1024];
-                    long done = have;
-                    long lastReport = -1;
-                    int read;
-                    while ((read = in.read(buffer)) > 0) {
-                        if (Thread.currentThread().isInterrupted()) {
-                            throw new InterruptedIOException("update download stopped");
-                        }
-                        out.write(buffer, 0, read);
-                        done += read;
-                        if (lastReport < 0 || done - lastReport >= 512 * 1024) {
-                            lastReport = done;
-                            progress.update(status, (done >> 20) + " / " + (total > 0 ? (total >> 20) : "?") + " MB",
-                                    total > 0 ? (int) (done * 100 / total) : -1);
-                        }
-                    }
-                }
+                downloadAttempt(update, part, progress, status);
                 break;
-            } finally {
-                connection.disconnect();
+            } catch (InterruptedIOException e) {
+                throw e;
+            } catch (IOException e) {
+                // The release is on GitHub before all of its assets are (a 404 for a moment), or
+                // the connection gave out: three tries over about a minute, each carrying on from
+                // what is on disk, cover the first. A 404 the tries do not outlast is said the way
+                // the player can act on it, not as "HTTP 404 downloading ...".
+                if (!UpdateRetry.retryable(e.getMessage()) || attempt == UpdateRetry.ATTEMPTS - 1) {
+                    throw new IOException(UpdateRetry.friendly(e.getMessage()), e);
+                }
+                progress.update(status, UpdateRetry.friendly(e.getMessage()), -1);
+                Log.i(TAG, "Update download attempt " + (attempt + 1) + " failed, retrying: " + e.getMessage());
+                try {
+                    Thread.sleep(UpdateRetry.delayMs(attempt + 1));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new InterruptedIOException("update download stopped");
+                }
             }
         }
 
@@ -498,6 +465,69 @@ final class AppUpdater {
             throw new IOException("cannot finish " + apk);
         }
         progress.update(status, (apk.length() >> 20) + " MB", 100);
+    }
+
+    /**
+     * One try at the download, resuming from the bytes in the cache. Returns once the bytes are all
+     * there (the size and checksum are checked by the caller); throws on a failed response, the
+     * connection going away, or the thread being interrupted.
+     */
+    private void downloadAttempt(Update update, File part, GameData.Progress progress, String status)
+            throws IOException {
+        long have = part.isFile() ? part.length() : 0;
+        if (update.size > 0 && have > update.size) {
+            // More than the asset holds: not this asset. Start over.
+            deleteQuietly(part);
+            have = 0;
+        }
+        HttpURLConnection connection = (HttpURLConnection) new URL(update.url).openConnection();
+        connection.setConnectTimeout(30_000);
+        connection.setReadTimeout(60_000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("User-Agent", "Godnotic");
+        if (have > 0) {
+            connection.setRequestProperty("Range", "bytes=" + have + "-");
+        }
+        try {
+            int code = connection.getResponseCode();
+            boolean append;
+            if (code == HttpURLConnection.HTTP_PARTIAL && have > 0) {
+                append = true;
+            } else if (code == HttpURLConnection.HTTP_OK) {
+                // The server ignored the range: what we have is no use.
+                append = false;
+                have = 0;
+            } else if (code == 416 && have > 0) {
+                // Nothing past what we have. Either it is all there, or the
+                // file changed under us; the checks below decide which.
+                return;
+            } else {
+                throw new IOException("HTTP " + code + " downloading " + update.url);
+            }
+            long total = update.size > 0 ? update.size
+                    : (connection.getContentLength() > 0 ? have + connection.getContentLength() : -1);
+            try (InputStream in = connection.getInputStream();
+                 OutputStream out = new FileOutputStream(part, append)) {
+                byte[] buffer = new byte[64 * 1024];
+                long done = have;
+                long lastReport = -1;
+                int read;
+                while ((read = in.read(buffer)) > 0) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedIOException("update download stopped");
+                    }
+                    out.write(buffer, 0, read);
+                    done += read;
+                    if (lastReport < 0 || done - lastReport >= 512 * 1024) {
+                        lastReport = done;
+                        progress.update(status, (done >> 20) + " / " + (total > 0 ? (total >> 20) : "?") + " MB",
+                                total > 0 ? (int) (done * 100 / total) : -1);
+                    }
+                }
+            }
+        } finally {
+            connection.disconnect();
+        }
     }
 
     // --------------------------------------------------------------- install

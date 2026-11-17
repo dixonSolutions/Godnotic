@@ -205,8 +205,9 @@ final class AndySUBridge {
                     policy = "unknown";
                 }
             }
+            boolean downloading = "downloading".equals(state);
             if (modeControl) mode = steerMode(mode, state, auto, wifiOnly, metered,
-                    !staged.isEmpty(), policy);
+                    !staged.isEmpty(), downloading, policy);
             stagedForApply = staged;
             stateForApply = !staged.isEmpty() ? "staged" : state;
             applyPolicy = policy;
@@ -227,7 +228,8 @@ final class AndySUBridge {
                     ? release : staged;
             r.percent = progress.percent();
             if (r.message.isEmpty()) {
-                r.message = status.optString("message", status.optString("reason", status.optString("code", "")));
+                r.message = AndySUState.friendlyMessage(
+                        status.optString("message", status.optString("reason", status.optString("code", ""))));
             }
             if ("shell-update".equals(state) && r.message.isEmpty()) {
                 r.message = "The host APK needs an update before this payload can run.";
@@ -265,6 +267,16 @@ final class AndySUBridge {
             notice(null);
         }
         write(r);
+    }
+
+    /** What the last publish decided a restart would apply, for the boot screen's guard. */
+    String stateForApply() {
+        return stateForApply;
+    }
+
+    /** The host's apply policy as last read ("live", "next_start", null when unknown). */
+    String applyPolicy() {
+        return applyPolicy;
     }
 
     /** Called after publish on each poll, only while the player can see the notice. */
@@ -305,7 +317,7 @@ final class AndySUBridge {
      * when the connection turns metered.
      */
     private String steerMode(String mode, String state, boolean auto, boolean wifiOnly, boolean metered,
-                             boolean staged, String policy) throws ReflectiveOperationException {
+                             boolean staged, boolean downloading, String policy) throws ReflectiveOperationException {
         long now = System.currentTimeMillis();
         if (manualMode != null && !AndySUState.busy(state)
                 && (manualDone || now - manualAt > MANUAL_SETTLE_MS)) {
@@ -313,7 +325,7 @@ final class AndySUBridge {
         }
         if (manualMode != null && now - manualAt > MANUAL_MAX_MS) manualMode = null;
         String want = manualMode != null ? manualMode
-                : AndySUState.targetMode(auto, wifiOnly, metered, staged, foreground());
+                : AndySUState.targetMode(auto, wifiOnly, metered, staged, foreground(), downloading);
         // In auto mode the host may restart immediately on staging, even during a match.
         // Download-only still stages automatically; restartNow explicitly promotes it.
         if ("auto".equals(want) && !"next_start".equals(policy)) want = "download_only";
@@ -442,8 +454,18 @@ final class AndySUBridge {
         String text = version == null ? "" : version + "\n" + line;
         if (text.equals(noticeText)) return;
         noticeText = text;
-        if (version == null) UpdateNotice.cancel(context);
-        else UpdateNotice.show(context, version, progress.percent(), progress.total > 0, line);
+        if (version == null) {
+            UpdateNotice.cancel(context);
+            // The download is over (or was never running): Android may freeze the process again.
+            KeepAliveService.stopDownload(context);
+        } else {
+            UpdateNotice.show(context, version, progress.percent(), progress.total > 0, line);
+            // The host fetches into this process. In the background Android freezes a cached
+            // process within seconds (Android 14's app freezer) and the download stops with it, so
+            // a foreground service holds it. Started here, while the game is in front: Android 12+
+            // refuses a foreground service started from the background.
+            KeepAliveService.show(context, KeepAliveService.KIND_DOWNLOAD, version + "\n" + line);
+        }
     }
 
     private void write(AndySUState.Record r) {

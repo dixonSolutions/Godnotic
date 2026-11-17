@@ -32,6 +32,17 @@ final class AndySUState {
     }
 
 
+    /**
+     * Whether the boot screen may ask the host to restart into a staged release. Not while the
+     * game data is being written: on the first start of a new payload that is the unpack of
+     * {@code xonotic-slim-data.zip}, and a restart there kills the process mid-write, which leaves
+     * a half-written bundle for the start after it. The engine's own update service applies the
+     * release once the game is up, which is where this belongs anyway.
+     */
+    static boolean shouldAutoApplyAtBoot(String state, boolean preparing, String policy) {
+        return !preparing && shouldAutoApply(state, false, policy);
+    }
+
     /** Bump only with the menu's TOUCH_ANDYSU_FORMAT. Lines 9 on are key=value extras. */
     static final int FORMAT = 1;
 
@@ -83,10 +94,37 @@ final class AndySUState {
      */
     static String targetMode(boolean auto, boolean wifiOnly, boolean metered, boolean staged,
                              boolean foreground) {
+        return targetMode(auto, wifiOnly, metered, staged, foreground, false);
+    }
+
+    /**
+     * The same, with a download already running counted like a staged release: leaving the app
+     * while one runs must not move the host to {@code check_only}, which stops it and leaves the
+     * {@code .part} files for the next start. On a metered connection it still stops, which is
+     * what Wi-Fi only asks for.
+     */
+    static String targetMode(boolean auto, boolean wifiOnly, boolean metered, boolean staged,
+                             boolean foreground, boolean downloading) {
         if (!auto) return MODE_CHECK_ONLY;
         if (!wifiOnly) return MODE_AUTO;
         if (foreground) return metered ? MODE_CHECK_ONLY : MODE_AUTO;
-        return staged ? MODE_AUTO : MODE_CHECK_ONLY;
+        // In the background a staged release still applies at the next start, which the host only
+        // does in auto mode; a download in flight keeps going, but only on an unmetered connection.
+        if (staged) return MODE_AUTO;
+        return (!metered && downloading) ? MODE_AUTO : MODE_CHECK_ONLY;
+    }
+
+    /**
+     * The host's own failure text as the player should read it. A blob that answers nothing is a
+     * release whose assets are still uploading (the URL is the file's sha256), not a broken
+     * phone, and the host retries it by itself; saying {@code could not download <sha256>} only
+     * reads as something the player must fix.
+     */
+    static String friendlyMessage(String message) {
+        if (message == null) return "";
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("could not download")) return UpdateRetry.publishingMessage();
+        return oneLine(message);
     }
 
     /**

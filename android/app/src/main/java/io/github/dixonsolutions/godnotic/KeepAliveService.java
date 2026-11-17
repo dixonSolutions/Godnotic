@@ -135,6 +135,17 @@ public final class KeepAliveService extends Service {
         context.stopService(new Intent(context, KeepAliveService.class));
     }
 
+    /**
+     * Stop the download keep-alive alone: an update download that ended must not take a running
+     * match's keep-alive down with it, and the other way round.
+     */
+    static void stopDownload(Context context) {
+        String now = running;
+        if (now != null && now.startsWith(KIND_DOWNLOAD + "\n")) {
+            stop(context);
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String kind = intent != null ? intent.getStringExtra(EXTRA_KIND) : null;

@@ -125,7 +125,15 @@ public class BootActivity extends Activity {
         @Override public void run() {
             if (showing != BootActivity.this || XonoticActivity.running || bootUpdates == null) return;
             bootUpdates.publish();
-            bootUpdates.autoApply(false, true);
+            // Not while the new payload's game data is being unpacked: applying means the host
+            // relaunches this process, and a kill between two files of the bundle leaves the next
+            // start with a half-written one. XonoticActivity's update service applies it once the
+            // game is up instead.
+            Thread running = preparationThread;
+            boolean preparing = running != null && running.isAlive();
+            if (AndySUState.shouldAutoApplyAtBoot(bootUpdates.stateForApply(), preparing, bootUpdates.applyPolicy())) {
+                bootUpdates.autoApply(false, true);
+            }
             ui.postDelayed(this, 1000);
         }
     };
