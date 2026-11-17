@@ -23,6 +23,34 @@ class ServerListStateTest {
     private fun keys(s: ServerListState = state): List<String?> = (0 until s.size).map { s.keyAt(it) }
 
     @Test
+    fun cachedRowsArePublishedWhenTheScreenOpens() {
+        state.accept(0, 3, listOf(row("a"), row("b"), row("c")))
+        val window = ListWindow("mp/servers")
+        state.publish { offset, total, rows -> window.accept(mapOf("offset" to offset, "total" to total, "rows" to rows)) }
+        assertEquals(3, window.total)
+        assertEquals(listOf("a", "b", "c"), (0 until window.total).map { window.row(it)!!.str("key") })
+    }
+
+    @Test
+    fun firstBatchImmediatelyPopulatesAnOpenScreen() {
+        val window = ListWindow("mp/servers")
+        state.publish { offset, total, rows -> window.accept(mapOf("offset" to offset, "total" to total, "rows" to rows)) }
+        assertEquals(-1, window.total)
+        state.accept(0, 2, listOf(row("a"), row("b")))
+        state.publish { offset, total, rows -> window.accept(mapOf("offset" to offset, "total" to total, "rows" to rows)) }
+        assertEquals(2, window.loaded)
+        assertEquals("a", window.row(0)!!.str("key"))
+    }
+
+    @Test
+    fun emptyMessageWaitsForACompletedEmptyQuery() {
+        assertFalse(ServerListState.showEmpty("ready", -1))
+        assertFalse(ServerListState.showEmpty("loading", 0))
+        assertFalse(ServerListState.showEmpty("ready", 2))
+        assertTrue(ServerListState.showEmpty("ready", 0))
+    }
+
+    @Test
     fun aRefreshNeverClearsTheList() {
         state.accept(0, 3, listOf(row("a:1"), row("b:2"), row("c:3")))
         assertEquals(listOf("a:1", "b:2", "c:3"), keys())

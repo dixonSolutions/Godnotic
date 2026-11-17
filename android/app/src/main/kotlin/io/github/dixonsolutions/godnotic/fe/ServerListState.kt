@@ -42,6 +42,7 @@ internal class ServerListState(
     /** Display position -> address; null is a row asked for but not here yet. */
     private val slots = ArrayList<String?>()
     private var generation = 0
+    private var received = false
 
     /** The column chosen in the header (the engine orders the windows it sends). */
     var sort = ""
@@ -71,6 +72,7 @@ internal class ServerListState(
      * on screen stays, marked `stale` until a window confirms it.
      */
     fun begin(total: Int) {
+        received = true
         generation++
         val now = clock()
         for (item in items.values) if (!item.lost) {
@@ -85,6 +87,7 @@ internal class ServerListState(
      * covers. Rows already on screen are never dropped here, whatever the total.
      */
     fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
+        received = true
         if (generation == 0) generation = 1 // the first listing: nothing to fade in
         val now = clock()
         resize(maxOf(total, offset + rows.size))
@@ -160,6 +163,14 @@ internal class ServerListState(
         return out
     }
 
+    /** Publish the current snapshot to a list, whether it opened before or after the reply. */
+    fun publish(write: (Int, Int, List<Map<String, Any?>>) -> Unit) {
+        if (!received) return
+        val batches = runs()
+        if (batches.isEmpty()) write(0, size, emptyList())
+        else for ((offset, rows) in batches) write(offset, size, rows)
+    }
+
     private fun resize(total: Int) {
         while (slots.size < total) slots.add(null)
     }
@@ -204,6 +215,8 @@ internal class ServerListState(
     private fun ping(cells: Map<String, Any?>): Double = cells.num("ping").let { if (it <= 0.0) Double.MAX_VALUE else it }
 
     companion object {
+        fun showEmpty(state: String, total: Int) = state == "error" || (state == "ready" && total == 0)
+
         fun keyOf(row: Map<String, Any?>) = row.str("key").ifEmpty { row["cells"].obj().str("address") }
     }
 }
