@@ -330,6 +330,10 @@ void TouchHudMode_Update(void)
 	// the join dialog also comes up over the join preview, before the player is
 	// made an observer: TouchJoinDlg_Frame's joining flag
 	qbool joining = TouchJoinPreview_Active() && cls.state == ca_connected;
+	// Owed already, before the settle or the menu: the observer HUD must not
+	// appear first, so hide it from the first frame the question is owed.
+	if (join_dlg.owed && (joining || TouchMode_IsSpectating(current.mode)))
+		join_waiting = true;
 	switch (TouchJoinDlg_Frame(&join_dlg, current.mode, current.flags,
 		sv.active && touch_local_autojoin.integer, Cvar_VariableValue(&cvars_all, "g_campaign", ~0) == 0 ? 0 :
 		(Cvar_VariableValue(&cvars_all, "g_campaign_forceteam", ~0) >= 1 && Cvar_VariableValue(&cvars_all, "g_campaign_forceteam", ~0) <= 4 ? 2 : 1),
@@ -353,7 +357,7 @@ void TouchHudMode_Update(void)
 	// The stock dialog can be closed with Back (the native one asks us to
 	// cancel): no choice, no scheduled open and no menu means the player
 	// dismissed it, so show the observer HUD again.
-	if (join_waiting && !join_dialog_scheduled && key_dest == key_game)
+	if (join_waiting && !join_dialog_scheduled && !join_dlg.owed && key_dest == key_game)
 		join_waiting = false;
 	if (current.mode != last_mode)
 		Con_DPrintf("Touch HUD mode: %s -> %s (join %s)\n", TouchMode_Name(last_mode), TouchMode_Name(current.mode), TouchMode_JoinName(current.join));

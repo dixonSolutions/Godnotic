@@ -36,10 +36,10 @@ void GodnoticJoinDialog_showNotify(entity me)
 	SUPER(GodnoticJoinDialog).showNotify(me);
 	float teams = cvar("_teams_available");
 	bool teamgame = (cvar("_touch_hud_flags") & 4) || teams;
-	me.team1.disabled = !(teams & 1);
-	me.team2.disabled = !(teams & 2);
-	me.team3.disabled = !(teams & 4);
-	me.team4.disabled = !(teams & 8);
+	if (me.team1) me.team1.disabled = !(teams & 1);
+	if (me.team2) me.team2.disabled = !(teams & 2);
+	if (me.team3) me.team3.disabled = !(teams & 4);
+	if (me.team4) me.team4.disabled = !(teams & 8);
 	if (me.autoButton)
 		me.autoButton.setText(me.autoButton, (teamgame ? _("Join (auto-select team)") : _("Join")));
 	me.wasWatching = TouchJoin_Watching();
