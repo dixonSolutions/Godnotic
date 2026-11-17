@@ -32,6 +32,7 @@ as they arrive. Neither applies in the menu or in the game.
 
 #include "quakedef.h"
 #include "touch_loadtime.h"
+#include "touch_joinpreview.h"
 #include "libcurl.h"
 #include "touch_loadfs.h"
 #include "touch_loadcvar.h"
@@ -108,6 +109,7 @@ typedef struct tlt_state_s
 	double menu_time;
 
 	qbool loading;               // a load is being timed
+	qbool world_previewed;       // first world frame drawn while the load still ran
 	qbool world_presented;       // first world frame with game input for this load
 	double load_start;
 	int load_frames;             // host frames since load_start
@@ -243,6 +245,7 @@ static void TLT_StartLoad(double when)
 {
 	int i;
 	tlt.loading = true;
+	tlt.world_previewed = false;
 	tlt.world_presented = false;
 	tlt.load_start = when;
 	tlt.load_frames = 0;
@@ -339,6 +342,14 @@ void TouchLoadTime_Frame(void)
 
 void TouchLoadTime_Presented(void)
 {
+	// a world frame drawn before the signon finished (touch_joinpreview.c):
+	// by then the loading page is a progress bar, not a picture
+	if (!tlt.world_previewed && tlt.load_start > 0 && TouchJoinPreview_Drew())
+	{
+		tlt.world_previewed = true;
+		if (touch_loadtime.integer)
+			Con_Printf("LOADTIME world_preview load=%.1f\n", (Sys_DirtyTime() - tlt.load_start) * 1000.0);
+	}
 	if (tlt_world_drawn && !tlt.world_presented && tlt.load_start > 0 &&
 	    key_dest == key_game && !key_consoleactive)
 	{
@@ -573,6 +584,7 @@ void TouchLoadTime_Init(void)
 	Cvar_RegisterVariable(&touch_load_lazydeflate);
 	Cvar_RegisterVariable(&touch_loadtime_menu);
 	Cvar_RegisterVariable(&touch_loadtime_game);
+	TouchJoinPreview_Init();
 	TP_Init();
 	Cmd_AddCommand(CF_CLIENT | CF_SERVER, "touch_loadtime_start", TouchLoadTime_Start_f, "start timing a load now (put it before map or connect); touch_loadtime 1 prints the result at the first game frame");
 	Cmd_AddCommand(CF_CLIENT | CF_SERVER, "touch_loadtime_report", TouchLoadTime_Report_f, "print the load phase totals gathered since the last report");
