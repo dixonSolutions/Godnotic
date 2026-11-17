@@ -42,6 +42,14 @@ final class AndySUState {
         return since < 0 || since >= AUTO_RESTART_WINDOW_MS;
     }
 
+    static String applyProblem(boolean stateKnown, boolean trial, String pending, String attempted) {
+        if (!stateKnown) return "Could not read the AndySU update state.";
+        if (pending == null || pending.isEmpty()) return "";
+        if (trial) return "Still confirming the current version; try again after the game starts.";
+        if (pending.equals(attempted)) return "AndySU did not apply the update; try Apply now again.";
+        return "";
+    }
+
     /** Unknown policy is held; null means the host has no policy API. */
     static boolean shouldAutoApply(String state, boolean inMatch, String policy) {
         return "staged".equals(state) && !inMatch

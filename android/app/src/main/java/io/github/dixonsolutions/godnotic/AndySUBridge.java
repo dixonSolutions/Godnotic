@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
@@ -59,6 +60,7 @@ final class AndySUBridge {
     private final File statusFile;
     private final File requestFile;
     private final File blobDir;
+    private final File hostRoot;
     private final SharedPreferences prefs;
     private final AndySUState.Progress progress = new AndySUState.Progress();
     private final boolean listening;
@@ -89,8 +91,8 @@ final class AndySUBridge {
         statusFile = new File(touch, "andysu-update-status.txt");
         requestFile = new File(touch, "andysu-update-request.txt");
         // AndySU's root in both of its modes: <data>/no_backup/andysu
-        blobDir = new File(new File(new File(this.context.getApplicationInfo().dataDir, "no_backup"), "andysu"),
-                "blobs/sha256");
+        hostRoot = new File(new File(this.context.getApplicationInfo().dataDir, "no_backup"), "andysu");
+        blobDir = new File(hostRoot, "blobs/sha256");
         prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         listening = AndySUCompat.present() && AndySUCompat.setStatusListener(this::onStatus);
     }
@@ -127,16 +129,21 @@ final class AndySUBridge {
                     break;
                 }
                 case REQUEST_APPLY:
+                    if ("shell-update".equals(stateForApply)) {
+                        AndySUCompat.applyNow();
+                        break;
+                    }
+                    if (!prepareRestart()) { publish(); return; }
                     // The host relaunches this process to apply the staged release: quiet it first,
                     // exactly as before a package install (ReplaceGuard).
                     ReplaceGuard.beforeReplace(context);
                     // applyNow can invoke a live swap; this build never registers a handler.
                     if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
                     else AndySUCompat.applyNow();
-                    // The host is replacing the payload (and relaunching this process): from here
-                    // nothing of it starts again, and the screens end while their classes exist.
-                    ReplaceGuard.beginReplace(context);
-                    break;
+                    // restartNow should terminate the process; if it returns, report it.
+                    requestError = "AndySU did not restart to apply the update.";
+                    publish();
+                    return;
                 case REQUEST_AUTO_ON:
                 case REQUEST_AUTO_OFF:
                     prefs.edit().putBoolean(PREF_AUTO, REQUEST_AUTO_ON.equals(request)).apply();
@@ -187,7 +194,13 @@ final class AndySUBridge {
             JSONObject status = new JSONObject(statusJson);
             String state = AndySUState.normalize(status.optString("state", "idle"));
             String release = status.optString("release", status.optString("id", ""));
-            String pending = pendingRelease(r.installed);
+            JSONObject core = coreState();
+            String pending = pendingRelease(core, r.installed);
+            if (core != null) syncNextStartRequest(pending, auto());
+            String problem = applyProblem(core, pending);
+            if (requestError.startsWith("Still confirming the current version")) requestError = "";
+            r.message = requestError;
+            if (!problem.isEmpty()) r.message = problem;
             // The host's status keeps saying "staged" after that release has committed.
             if ("staged".equals(state) && !release.isEmpty() && release.equals(r.installed)) state = "uptodate";
             // After a restart the status starts over at idle; the core still has the staged release.
@@ -235,7 +248,7 @@ final class AndySUBridge {
                 progress.reset();
             }
 
-            r.state = state;
+            r.state = !staged.isEmpty() && !r.message.isEmpty() ? "error" : state;
             r.latest = "available".equals(state) || "downloading".equals(state) || "shell-update".equals(state)
                     ? release : staged;
             r.percent = progress.percent();
@@ -303,6 +316,10 @@ final class AndySUBridge {
             announced = "";
             return;
         }
+        if (!applyProblem(coreState(), version).isEmpty()) {
+            announced = "";
+            return;
+        }
         final String noticeVersion = version;
         long now = SystemClock.elapsedRealtime();
         if (!version.equals(announced)) {
@@ -317,19 +334,21 @@ final class AndySUBridge {
             long wall = System.currentTimeMillis();
             if (!AndySUState.mayAutoRestart(noticeVersion, prefs.getString("version", ""),
                     prefs.getLong("at", 0L), wall)) {
-                // Already restarted for this release and it is still staged (or its version is
-                // unknown): restarting again would loop. It applies at the next start instead.
+                // Avoid a restart loop; publish the failure from the persisted attempt.
                 announced = "";
                 stagedForApply = "";
                 stateForApply = "idle";
-                Log.w(TAG, "Not restarting again for " + noticeVersion + "; it applies at the next start");
+                Log.w(TAG, "Not restarting again for " + noticeVersion);
                 return;
             }
-            prefs.edit().putString("version", noticeVersion).putLong("at", wall).commit();
             // Do not repeatedly ask if the host rejects or returns from the relaunch.
             announced = "";
             stagedForApply = "";
             stateForApply = "idle";
+            if (!prepareRestart()) {
+                publish();
+                return;
+            }
             ReplaceGuard.beforeReplace(context);
             try {
                 if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
@@ -338,9 +357,9 @@ final class AndySUBridge {
                 requestError = "Could not restart to apply the update: " + AndySUState.oneLine(e.getMessage());
                 Log.w(TAG, requestError, e);
             }
-            // The host is swapping the payload now: the old process stops everything and lets go
-            // before it does (services, screens, the notice's looper).
-            ReplaceGuard.beginReplace(context);
+            // A host that returns or throws did not relaunch; keep Settings available.
+            if (requestError.isEmpty()) requestError = "AndySU did not restart to apply the update.";
+            publish();
         }
     }
 
@@ -438,18 +457,69 @@ final class AndySUBridge {
         return info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND;
     }
 
-    /** The staged release the core holds, unless it is the one running. */
-    private static String pendingRelease(String installed) {
+    private static JSONObject coreState() {
         try {
             String json = AndySUCompat.coreState();
-            if (json == null) return "";
-            JSONObject state = new JSONObject(json).optJSONObject("ok");
-            JSONObject pending = state == null ? null : state.optJSONObject("pending");
-            String id = pending == null ? "" : pending.optString("id", "");
-            return id.equals(installed) ? "" : id;
+            return json == null ? null : new JSONObject(json).optJSONObject("ok");
         } catch (Exception e) {
-            return "";
+            return null;
         }
+    }
+
+    private static String pendingRelease(JSONObject state, String installed) {
+        JSONObject pending = state == null ? null : state.optJSONObject("pending");
+        String id = pending == null ? "" : pending.optString("id", "");
+        return id.equals(installed) ? "" : id;
+    }
+
+    /** AndySU consumes this id only in the main process, at the next cold launch. */
+    private void syncNextStartRequest(String pending, boolean auto) throws IOException {
+        File request = new File(hostRoot, "apply_pending");
+        if (!auto || pending.isEmpty()) {
+            // Do not remove another request: only remove the one Godnotic wrote.
+            String ours = prefs.getString("next_start_request", "");
+            if (!ours.isEmpty() && request.isFile()
+                    && new String(Files.readAllBytes(request.toPath()), StandardCharsets.UTF_8).trim().equals(ours)) {
+                if (!request.delete()) throw new IOException("Could not clear the update request");
+            }
+            prefs.edit().remove("next_start_request").apply();
+            return;
+        }
+        if (request.isFile() && new String(Files.readAllBytes(request.toPath()), StandardCharsets.UTF_8)
+                .trim().equals(pending)) return;
+        File temp = new File(hostRoot, "godnotic_apply_pending.tmp");
+        try (FileOutputStream out = new FileOutputStream(temp)) {
+            out.write(pending.getBytes(StandardCharsets.UTF_8));
+            out.getFD().sync();
+        }
+        if (!temp.renameTo(request)) throw new IOException("Could not request the update at next start");
+        prefs.edit().putString("next_start_request", pending).commit();
+    }
+
+    private String applyProblem(JSONObject core, String pending) {
+        if (pending.isEmpty()) return "";
+        SharedPreferences attempts = context.getSharedPreferences("andysu_apply", Context.MODE_PRIVATE);
+        return AndySUState.applyProblem(core != null, core != null && !core.isNull("trial"),
+                pending, attempts.getString("version", ""));
+    }
+
+    /** Refuse a restart that cannot promote the core's actual pending slot. */
+    private boolean prepareRestart() {
+        if (!AndySUCompat.has("restartNow")) {
+            requestError = "This AndySU host cannot restart to apply the update.";
+            return false;
+        }
+        JSONObject core = coreState();
+        String pending = pendingRelease(core, AndySUCompat.payloadVersion());
+        String problem = AndySUState.applyProblem(core != null, core != null && !core.isNull("trial"), pending, "");
+        if (problem.isEmpty() && pending.isEmpty()) problem = "AndySU has no staged update to apply.";
+        if (!problem.isEmpty()) {
+            requestError = problem;
+            return false;
+        }
+        context.getSharedPreferences("andysu_apply", Context.MODE_PRIVATE).edit()
+                .putString("version", pending).putLong("at", System.currentTimeMillis()).commit();
+        return true;
     }
 
     private Map<String, Long> parts() {

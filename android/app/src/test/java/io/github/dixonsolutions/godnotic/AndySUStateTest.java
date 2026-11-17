@@ -12,6 +12,14 @@ import java.util.Map;
 
 /** The Updates screen's decisions on an AndySU install (AndySUState): plain JVM, no Android. */
 public class AndySUStateTest {
+    @org.junit.Test public void applyProblemsExplainBlockedAndFailedRestarts() {
+        assertEquals("Could not read the AndySU update state.", AndySUState.applyProblem(false, false, "", ""));
+        assertEquals("Still confirming the current version; try again after the game starts.", AndySUState.applyProblem(true, true, "270", ""));
+        assertEquals("AndySU did not apply the update; try Apply now again.", AndySUState.applyProblem(true, false, "270", "270"));
+        assertEquals("", AndySUState.applyProblem(true, false, "270", "269"));
+        assertEquals("", AndySUState.applyProblem(true, true, "", "270"));
+    }
+
     @Test public void stagedRestartRespectsMatchAndPolicy() {
         String[] states = { "idle", "checking", "downloading", "staged", "uptodate" };
         String[] policies = { null, "live", "restart", "next_start", "unknown" };
