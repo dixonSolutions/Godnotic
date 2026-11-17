@@ -191,12 +191,7 @@
       "id": "disconnect",
       "label": "End the game",
       "icon": "disconnect",
-      "style": "destructive",
-      "confirm": {
-       "title": "End the game for everyone?",
-       "ok": "End",
-       "destructive": true
-      }
+      "style": "destructive"
      },
      "style": "destructive"
     },
