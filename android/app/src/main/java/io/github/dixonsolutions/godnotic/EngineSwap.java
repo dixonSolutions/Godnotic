@@ -147,6 +147,12 @@ final class EngineSwap {
             Log.w(TAG, "Live swap to " + version + " declined: no libmain in " + slotDir);
             return false;
         }
+        if (!guard.canAccept()) {
+            // A second swap while one is being applied would have two engines swapping under one
+            // process: decline it; the release applies on the next start instead.
+            Log.w(TAG, "Live swap to " + version + " declined: a swap is already in flight");
+            return false;
+        }
         // Before the loader may start the swap: the host has not switched its slot yet, so this is
         // still the running release, and a rollback goes back to it.
         fromVersion = AndySUCompat.payloadVersion();
@@ -171,7 +177,11 @@ final class EngineSwap {
             return false;
         }
         callback = cb;
-        guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS);
+        if (!guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS)) {
+            // canAccept() said yes a moment ago; the loader is already swapping, so let the host
+            // hear about it rather than pretending the request was refused.
+            Log.w(TAG, "Live swap to " + version + " accepted without the guard");
+        }
         armWatchdog(WATCHDOG_MS);
         Log.i(TAG, "Live swap to " + version + " accepted: " + lib);
         return true;

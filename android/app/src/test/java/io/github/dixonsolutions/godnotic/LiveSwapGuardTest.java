@@ -61,6 +61,28 @@ public class LiveSwapGuardTest {
         assertFalse(g.started(2, 1));
     }
 
+    @Test public void aSecondSwapIsRefusedWhileOneIsInFlight() {
+        LiveSwapGuard g = new LiveSwapGuard();
+        assertTrue(g.canAccept());
+        assertTrue(g.accept(0, 90_000));
+        assertFalse("one is already being applied", g.canAccept());
+        assertFalse("never two swaps at once", g.accept(1, 90_000));
+        assertTrue(g.started(2, 60_000));
+        assertFalse(g.canAccept());
+        assertTrue(g.healthy());
+        // A finished healthy swap leaves the process able to take the next release.
+        assertTrue(g.canAccept());
+        assertTrue(g.accept(3, 90_000));
+    }
+
+    @Test public void aFailedTrialNeverAcceptsAgainInThisProcess() {
+        LiveSwapGuard g = new LiveSwapGuard();
+        assertTrue(g.accept(0, 90_000));
+        assertTrue(g.failed());
+        assertFalse(g.canAccept());
+        assertFalse(g.accept(1, 90_000));
+    }
+
     @Test public void deviceGateDefaultsOnAndTurnsOffAfterACrash() {
         assertTrue(LiveSwapGuard.allowed(true, true, false, false));
         assertFalse("no host API level 2", LiveSwapGuard.allowed(false, true, false, false));
