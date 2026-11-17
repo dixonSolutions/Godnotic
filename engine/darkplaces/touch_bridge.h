@@ -12,4 +12,33 @@ int Touch_BridgeAcceptChannel(int channel, void *context, rtcOpenCallbackFunc op
                               rtcMessageCallbackFunc message);
 int Touch_BridgeSend(int channel, const void *bytes, int size);
 
+
+/* Wire format: version 1, address family (4 or 6), address bytes, big-endian
+ * port, and a nonempty UDP payload. The payload is never modified. */
+#define TOUCH_BRIDGE_VERSION 1
+#define TOUCH_BRIDGE_MAX_DATAGRAM 65507
+struct touch_bridge_address {
+    unsigned char family;
+    unsigned char address[16];
+    unsigned short port;
+};
+int Touch_BridgePack(void *out, int capacity, const struct touch_bridge_address *address,
+                     const void *payload, int size);
+int Touch_BridgeUnpack(const void *packet, int size, struct touch_bridge_address *address,
+                       const unsigned char **payload, int *payload_size);
+
+/* A forwarder belongs to one peer. Call Poll regularly from its owning thread;
+ * the callback receives a complete framed reply, valid only during the call. */
+struct touch_bridge_forwarder;
+typedef void (*touch_bridge_reply_fn)(void *context, const void *packet, int size);
+struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void);
+void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);
+int Touch_BridgeForward(struct touch_bridge_forwarder *forwarder, const void *packet, int size);
+int Touch_BridgePoll(struct touch_bridge_forwarder *forwarder, touch_bridge_reply_fn reply,
+                     void *context);
+/* Install as the channel's message callback with the forwarder as context.
+ * Keep the forwarder alive until callbacks have stopped. */
+void Touch_BridgeForwardMessage(int channel, const char *message, int size, void *context);
+int Touch_BridgePollChannel(struct touch_bridge_forwarder *forwarder, int channel);
+
 #endif
