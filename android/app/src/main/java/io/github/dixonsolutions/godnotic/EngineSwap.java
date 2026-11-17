@@ -53,20 +53,26 @@ final class EngineSwap {
     /** The loader answers for the engine library it loads; null means the swap was accepted. */
     static native String nativeRequestSwap(String enginePath);
 
+    /** Where a trial has to survive the kill it guards against: fsynced files under no_backup. */
+    private static File trialDir(Context context) {
+        return new File(context.getNoBackupFilesDir(), "engine-swap");
+    }
+
     /** The swap is attempted only on a device class whose last trial did not crash or time out. */
     private static boolean liveSwapAllowed(Context context) {
-        SharedPreferences p = prefs(context);
         deviceKey = deviceKey();
-        boolean trial = p.getBoolean("trial_" + deviceKey, false);
-        boolean bad = p.getBoolean("bad_" + deviceKey, false);
+        File dir = trialDir(context);
+        boolean trial = SwapTrial.trial(dir, deviceKey);
+        boolean bad = SwapTrial.bad(dir, deviceKey);
         if (trial && !bad) {
             // The process died between writing the trial marker and reporting healthy: this is
-            // exactly the "Apply live" crash the tablet saw. Never try that class again.
-            p.edit().putBoolean("bad_" + deviceKey, true).remove("trial_" + deviceKey).apply();
+            // exactly the "Apply live" crash the tablet saw. Never try that class again. A
+            // preference write can be lost in that same kill, which is why the marker is a file.
+            SwapTrial.failed(dir, deviceKey);
             bad = true;
             Log.w(TAG, "Live swap disabled for this device class after an unfinished trial: " + deviceKey);
         }
-        return LiveSwapGuard.allowed(true, p.getBoolean("live_swap", true), bad, trial);
+        return LiveSwapGuard.allowed(true, prefs(context).getBoolean("live_swap", true), bad, trial);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -147,31 +153,46 @@ final class EngineSwap {
             Log.w(TAG, "Live swap to " + version + " declined: no libmain in " + slotDir);
             return false;
         }
+        if (!guard.canAccept()) {
+            // A second swap while one is being applied would have two engines swapping under one
+            // process: decline it; the release applies on the next start instead.
+            Log.w(TAG, "Live swap to " + version + " declined: a swap is already in flight");
+            return false;
+        }
         // Before the loader may start the swap: the host has not switched its slot yet, so this is
         // still the running release, and a rollback goes back to it.
         fromVersion = AndySUCompat.payloadVersion();
         toVersion = version;
-        // Write the trial marker before touching the native side: if the process dies inside the
-        // request or the swap, the next start must not offer live apply to this device class again.
+        // The trial marker is on disk (fsynced) before the native side is touched: if the process
+        // dies inside the request or the swap, the next start must not offer live apply to this
+        // device class again.
         deviceKey = deviceKey();
-        SharedPreferences p = prefs(appContext);
-        p.edit().putBoolean("trial_" + deviceKey, true).remove("bad_" + deviceKey).apply();
+        File trials = trialDir(appContext);
+        if (!SwapTrial.begin(trials, deviceKey)) {
+            Log.w(TAG, "Live swap to " + version + " declined: could not record the trial");
+            fromVersion = toVersion = null;
+            return false;
+        }
         try {
             String refused = nativeRequestSwap(lib.getAbsolutePath());
             if (refused != null) {
                 Log.w(TAG, "Live swap to " + version + " declined by the loader: " + refused);
-                p.edit().remove("trial_" + deviceKey).apply();
+                SwapTrial.refused(trials, deviceKey);
                 fromVersion = toVersion = null;
                 return false;
             }
         } catch (UnsatisfiedLinkError e) {
             Log.w(TAG, "Live swap to " + version + " declined: no loader in this build", e);
-            p.edit().remove("trial_" + deviceKey).apply();
+            SwapTrial.refused(trials, deviceKey);
             fromVersion = toVersion = null;
             return false;
         }
         callback = cb;
-        guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS);
+        if (!guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS)) {
+            // canAccept() said yes a moment ago; the loader is already swapping, so let the host
+            // hear about it rather than pretending the request was refused.
+            Log.w(TAG, "Live swap to " + version + " accepted without the guard");
+        }
         armWatchdog(WATCHDOG_MS);
         Log.i(TAG, "Live swap to " + version + " accepted: " + lib);
         return true;
@@ -230,7 +251,9 @@ final class EngineSwap {
                 boolean trialHealthy = guard.healthy();
                 if (guard.state() == LiveSwapGuard.State.FAILED || guard.state() == LiveSwapGuard.State.EXPIRED) break;
                 main.removeCallbacks(watchdog);
-                if (trialHealthy && appContext != null && deviceKey != null) prefs(appContext).edit().remove("trial_" + deviceKey).putBoolean("ok_" + deviceKey, true).apply();
+                if (trialHealthy && appContext != null && deviceKey != null) {
+                    SwapTrial.healthy(trialDir(appContext), deviceKey);
+                }
                 try {
                     Object h = Class.forName("com.andysu.api.Host").getMethod("current").invoke(null);
                     if (h != null) {
@@ -321,7 +344,8 @@ final class EngineSwap {
 
     private static void markDeviceBad() {
         if (appContext != null && deviceKey != null) {
-            prefs(appContext).edit().putBoolean("bad_" + deviceKey, true).remove("trial_" + deviceKey).apply();
+            // fsynced: the kill that ends this trial must not also lose the fact that it failed.
+            SwapTrial.failed(trialDir(appContext), deviceKey);
         }
     }
 

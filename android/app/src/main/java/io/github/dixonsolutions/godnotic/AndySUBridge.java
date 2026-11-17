@@ -134,12 +134,19 @@ final class AndySUBridge {
                         break;
                     }
                     if (!prepareRestart()) { publish(); return; }
-                    // The host relaunches this process to apply the staged release: quiet it first,
-                    // exactly as before a package install (ReplaceGuard).
-                    ReplaceGuard.beforeReplace(context);
-                    // applyNow can invoke a live swap; this build never registers a handler.
-                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                    else AndySUCompat.applyNow();
+                    // Quiet this process and mark it replacing *before* the host is asked: the
+                    // relaunch does not return, so anything after the call may never run.
+                    ReplaceSequence.apply(
+                            () -> ReplaceGuard.beforeReplace(context),
+                            () -> ReplaceGuard.beginReplace(context),
+                            () -> {
+                                try {
+                                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                                    else AndySUCompat.applyNow();
+                                } catch (ReflectiveOperationException e) {
+                                    throw new IllegalStateException(e);
+                                }
+                            });
                     // restartNow should terminate the process; if it returns, report it.
                     requestError = "AndySU did not restart to apply the update.";
                     publish();
@@ -349,14 +356,21 @@ final class AndySUBridge {
                 publish();
                 return;
             }
-            ReplaceGuard.beforeReplace(context);
-            try {
-                if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                else AndySUCompat.applyNow();
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                requestError = "Could not restart to apply the update: " + AndySUState.oneLine(e.getMessage());
-                Log.w(TAG, requestError, e);
-            }
+            // Quiet this process and mark it replacing *before* the host is asked to relaunch:
+            // the relaunch does not return, so the work after the call may never run.
+            ReplaceSequence.apply(
+                    () -> ReplaceGuard.beforeReplace(context),
+                    () -> ReplaceGuard.beginReplace(context),
+                    () -> {
+                        try {
+                            if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                            else AndySUCompat.applyNow();
+                        } catch (ReflectiveOperationException | RuntimeException e) {
+                            requestError = "Could not restart to apply the update: "
+                                    + AndySUState.oneLine(e.getMessage());
+                            Log.w(TAG, requestError, e);
+                        }
+                    });
             // A host that returns or throws did not relaunch; keep Settings available.
             if (requestError.isEmpty()) requestError = "AndySU did not restart to apply the update.";
             publish();

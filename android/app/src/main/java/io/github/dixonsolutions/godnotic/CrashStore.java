@@ -144,19 +144,28 @@ final class CrashStore {
         // Java crash, so this is the only place the exception itself survives.
         List<File> uncaught = uncaught(context);
         List<String> keys = keys(prefs);
+        // A version the last read saw and this one does not: the exits below happened across that
+        // change, so a process that left by itself is the update handover, not a crash.
+        boolean versionChanged = !versionBefore.isEmpty() && !versionBefore.equals(versionNow);
         long newest = collected;
         for (ApplicationExitInfo exit : exits) {
             long when = exit.getTimestamp();
             if (when <= collected) {
                 continue;
             }
+            newest = Math.max(newest, when);
             int reason = exit.getReason();
-            if (!CrashReport.interesting(reason, aroundUpdate)) {
+            String state = state(exit);
+            if (!CrashReport.shouldReport(reason, aroundUpdate, state, versionChanged)) {
+                if (CrashReport.interesting(reason, aroundUpdate)) {
+                    // Quiet/replacing self-exit or a version change: the old process left on
+                    // purpose for the handover. Log it; never show it as a crash to the player.
+                    Log.i(TAG, "Update handover: " + CrashReport.reasonName(reason) + " in " + state);
+                }
                 continue;
             }
             int pid = exit.getPid();
             String key = CrashReport.key(pid, when, reason, exit.getDescription());
-            newest = Math.max(newest, when);
             if (keys.contains(key)) {
                 // Already reported: the system keeps this exit for days, and the reader runs on
                 // every start until it is pruned.
@@ -180,7 +189,7 @@ final class CrashStore {
                 }
                 String text = CrashReport.format(when, reason, exit.getDescription(),
                         exit.getImportance(), exit.getPss(), versionNow, payloadNow, host(),
-                        versionBefore, exit.getProcessName(), pid, state(exit), trace);
+                        versionBefore, exit.getProcessName(), pid, state, trace);
                 write(context, CrashReport.fileName(when, reason), text);
                 keys.add(key);
             } catch (RuntimeException e) {

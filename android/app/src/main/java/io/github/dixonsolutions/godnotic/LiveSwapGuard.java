@@ -20,8 +20,13 @@ final class LiveSwapGuard {
         return hostApi2 && settingOn && !badDevice && !unfinishedTrial;
     }
 
+    /** A new trial may begin when none is in flight and the last one was not a failure. */
+    synchronized boolean canAccept() {
+        return state == State.IDLE || state == State.HEALTHY;
+    }
+
     synchronized boolean accept(long now, long timeoutMs) {
-        if (state != State.IDLE) return false;
+        if (!canAccept()) return false;
         state = State.ACCEPTED;
         deadline = timeoutMs > 0 ? now + timeoutMs : -1;
         return true;
