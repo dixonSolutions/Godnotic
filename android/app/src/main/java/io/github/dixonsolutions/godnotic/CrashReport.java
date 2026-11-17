@@ -71,6 +71,41 @@ final class CrashReport {
         }
     }
 
+    /**
+     * Whether a death becomes a report: interesting, and not the update handover.
+     *
+     * <p>An apply relaunches the app, and the old process leaves by itself (or is asked to) in the
+     * {@code quiet} or {@code replacing} phase. Its state line says so, and the next version reads
+     * the exit. That is the handover, not a crash: writing it as a report shows the player "Godnotic
+     * exited by itself" after every successful update. A crash, native crash or ANR in the same
+     * phase is still a report — only a self-exit is handover, and the state is checked as well as
+     * the version change so a real quiet-phase crash is not filtered with it.
+     */
+    static boolean shouldReport(int reason, boolean aroundUpdate, String state,
+                                boolean versionChanged) {
+        if (!interesting(reason, aroundUpdate)) {
+            return false;
+        }
+        if (reason != REASON_EXIT_SELF && reason != REASON_USER_REQUESTED) {
+            return true;
+        }
+        String phase = phase(state);
+        return !("quiet".equals(phase) || "replacing".equals(phase) || versionChanged);
+    }
+
+    /** The {@code phase=...} field of a process state summary, or "" when it has none. */
+    static String phase(String state) {
+        if (state == null) {
+            return "";
+        }
+        for (String field : state.trim().split("\\s+")) {
+            if (field.startsWith("phase=")) {
+                return field.substring("phase=".length());
+            }
+        }
+        return "";
+    }
+
     /** How the system spells the reason, for the file name and the first line. */
     static String reasonName(int reason) {
         switch (reason) {
