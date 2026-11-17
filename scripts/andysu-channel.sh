@@ -25,6 +25,11 @@
 #   andysu-channel.sh gh-check <channel> [--release ID] [--after SEQ]
 #       `check` on the channel release's assets (through the API) and on the public manifest URL
 #       hosts fetch.
+#   andysu-channel.sh gh-reassert <channel>
+#       Upload the channel's manifest and signature again, unchanged, so they are the newest assets
+#       of the release. A host that reads a manifest naming blobs that are still uploading answers
+#       "could not download <sha256>" for every one of them; the publish action uploads the blobs
+#       first, and this makes that true even when the action's own last upload raced another.
 #
 # Environment: ANDYSU_CLI (default: andysu on PATH); ANDYSU_ROOT_PUB (trusted root, default
 # keys/godnotic-public.pem); ANDYSU_KEY_FILE and ANDYSU_CERT_FILE, or ANDYSU_SIGNING_KEY and
@@ -269,6 +274,16 @@ gh_repair() { # channel [--release ID]
   output "has_release=$has"
 }
 
+gh_reassert() { # channel
+  local channel="$1" site
+  site="$(newtmp)"
+  download_channel "$channel" "$site" || die "channel-$channel has no manifest"
+  # The same signed bytes: only the asset's place in the release changes (--clobber replaces it).
+  gh release upload "channel-$channel" --repo "$repo" --clobber \
+    "$site/$channel/update.json" "$site/$channel/update.json.sig"
+  echo "$channel: manifest re-uploaded after the blobs, so no host reads it before them"
+}
+
 gh_check() { # channel [--release ID] [--after SEQ]
   local channel="$1" app site
   shift
@@ -288,6 +303,7 @@ case "$cmd" in
   repair) [ $# -eq 3 ] || die "usage: repair <site> <channel> <app>"; repair "$@" ;;
   check) [ $# -ge 3 ] || die "usage: check <manifest> <channel> <app> [--release ID] [--after SEQ]"; check "$@" ;;
   gh-repair) [ $# -ge 1 ] || die "usage: gh-repair <channel> [--release ID]"; gh_repair "$@" ;;
+  gh-reassert) [ $# -eq 1 ] || die "usage: gh-reassert <channel>"; gh_reassert "$1" ;;
   gh-check) [ $# -ge 1 ] || die "usage: gh-check <channel> [--release ID] [--after SEQ]"; gh_check "$@" ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d' >&2; exit 2 ;;
 esac

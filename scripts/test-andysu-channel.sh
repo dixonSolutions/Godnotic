@@ -166,6 +166,27 @@ bash scripts/andysu-channel.sh gh-check live-arm64 --after "$seq0" > "$t/check.l
 sed 's/^/    /' "$t/check.log"
 client new1 "$NEW" live-arm64 | grep -q '"staged": "1.3"' || fail "a $NEW host did not stage 1.3 after the repair"
 ok "a $NEW host stages 1.3 from the repaired channel"
+
+# ---- 2b. the manifest is the last asset published: a host never reads it before the blobs
+sleep 1 # so the re-upload's place in the release is visible in the file times
+GITHUB_OUTPUT=/dev/null bash scripts/andysu-channel.sh gh-reassert live-arm64 > "$t/reassert.log" 2>&1 ||
+  { cat "$t/reassert.log" >&2; fail "gh-reassert"; }
+python3 - "$GH_ROOT/$REPO/releases/download/channel-live-arm64" <<'PY'
+import os, sys
+root = sys.argv[1]
+manifest = os.path.join(root, "update.json")
+if not os.path.isfile(manifest):
+    raise SystemExit("no manifest in the release")
+m = os.stat(manifest).st_mtime_ns
+components = [os.path.join(d, f) for d, _, files in os.walk(root) for f in files
+              if f not in ("update.json", "update.json.sig")]
+if not components:
+    raise SystemExit("no blobs in the release")
+newer = [p for p in components if os.stat(p).st_mtime_ns > m]
+assert not newer, "still newer than the manifest: " + ", ".join(newer[:3])
+print(f"ok: {len(components)} blobs are all in place before update.json is published")
+PY
+ok "gh-reassert leaves the manifest newer than every blob of the release"
 GITHUB_OUTPUT=/dev/null bash scripts/andysu-channel.sh gh-repair live-arm64 | grep -q "already names $NEW" || fail "a second gh-repair changed something"
 ok "gh-repair on a right manifest only reads it"
 if out="$(client old1 "$OLD" live-arm64 2>&1)"; then fail "an $OLD host accepted the repaired channel"; fi
@@ -226,8 +247,9 @@ def index(st, text):
 live = steps(".github/workflows/build-and-publish.yml", "andysu-live")
 repair = index(live, "andysu-channel.sh gh-repair")
 publish = index(live, "dixonSolutions/AndySU/actions/publish@")
+reassert = index(live, "andysu-channel.sh gh-reassert")
 check = index(live, "andysu-channel.sh gh-check")
-assert repair < publish < check, (repair, publish, check)
+assert repair < publish < reassert < check, (repair, publish, reassert, check)
 assert live[repair]["id"] == "channel"
 assert "--release" in live[check]["run"] and "--after" in live[check]["run"]
 assert "ANDYSU_SIGNING_KEY" in live[repair]["env"]

@@ -496,6 +496,16 @@ jobs:
           # field verifies a reconstructed payload before staging it.
           pack-args: --no-rename --deltas 0
           andysu-version: 0.1.143
+      # The manifest must be the last asset a host can see change. A host that reads a manifest
+      # naming blobs that are still uploading gets 404 for every one of them, which the Android
+      # updater reports as "could not download <sha256>" (1.2.258 -> 1.2.259). The action uploads
+      # the blobs first; re-uploading the same signed manifest and signature leaves the order
+      # certain without changing a byte of either.
+      - name: Publish the manifest after the blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: ANDYSU_CLI="$RUNNER_TEMP/andysu" bash scripts/andysu-channel.sh gh-reassert "live-$SUFFIX"
       # The AndySU action creates its channel release as a pre-release, and the
       # app's updater ignores pre-releases. Users get full releases, so clear the flag.
       - name: Make the AndySU channel release a full release
