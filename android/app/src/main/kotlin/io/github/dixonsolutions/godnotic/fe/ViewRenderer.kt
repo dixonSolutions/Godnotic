@@ -1387,6 +1387,13 @@ class ViewRenderer(
                         if (lp.width != w || lp.height != h) { lp.width = w; lp.height = h; c.card.layoutParams = lp }
                     }
                     c.card.contentDescription = row?.let { listOf(c.titleV.text, ms.first ?: "", c.sub.text).filter { it.isNotEmpty() }.joinToString(". ") } ?: "Loading"
+                    // long press copies the tile (a map, a server card) as one line
+                    c.card.isLongClickable = row != null
+                    c.card.setOnLongClickListener { v ->
+                        val r0 = row ?: return@setOnLongClickListener false
+                        Kit.haptic(v)
+                        Kit.copyTo(v.context, CopyText.server(r0["cells"].obj(), VirtualList.keyOf(r0)))
+                    }
                     bindTap(c.card, e, id, row)
                 },
                 makeCell = { _ ->
@@ -1466,6 +1473,15 @@ class ViewRenderer(
                         r.animate().cancel()
                         r.alpha = dim
                         r.translationY = 0f
+                    }
+                    // long press copies the server as one line (name, address, map,
+                    // players, ping): the cells' own long presses would copy a column
+                    for (i in 0 until r.childCount) r.getChildAt(i).setOnLongClickListener(null)
+                    r.isLongClickable = data != null
+                    r.setOnLongClickListener { v ->
+                        val row = data ?: return@setOnLongClickListener false
+                        Kit.haptic(v)
+                        Kit.copyTo(v.context, CopyText.server(row["cells"].obj(), VirtualList.keyOf(row)))
                     }
                     val on = data != null && e.props["selected"].list().any { it.toString() == VirtualList.keyOf(data) }
                     r.isSelected = on

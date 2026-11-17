@@ -1,6 +1,8 @@
 package io.github.dixonsolutions.godnotic.fe
 
 import android.animation.ValueAnimator
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -28,6 +30,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -50,7 +53,38 @@ object Kit {
                 maxLines = lines
                 ellipsize = TextUtils.TruncateAt.END
             }
+            copyable(this)
         }
+
+    /**
+     * Puts [text] on the system clipboard and says so: the Android side of
+     * [CopyText]. False when the context has no clipboard service (tests).
+     */
+    fun copyTo(ctx: Context, text: CharSequence, label: String = "Godnotic"): Boolean {
+        val s = CopyText.clip(text)
+        if (s.isEmpty()) return false
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        cm.setPrimaryClip(ClipData.newPlainText(label, s))
+        Toast.makeText(ctx, "Copied", Toast.LENGTH_SHORT).show()
+        return true
+    }
+
+    /**
+     * Long press copies a label's text (settings values, release notes, the
+     * address in a server's details, a crash report). The text is read at the
+     * moment of the press, so a rebound label copies what is on screen.
+     */
+    fun copyable(t: TextView, text: () -> CharSequence = { t.text }) {
+        t.isLongClickable = true
+        t.setOnLongClickListener { v ->
+            val shown = text()
+            if (CopyText.clip(shown).isEmpty()) false
+            else {
+                haptic(v)
+                copyTo(v.context, shown)
+            }
+        }
+    }
 
     fun haptic(v: View) {
         v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
