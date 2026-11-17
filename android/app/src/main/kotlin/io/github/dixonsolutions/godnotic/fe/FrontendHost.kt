@@ -289,6 +289,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var loadingText: android.widget.TextView? = null
     private var loadingBar: android.widget.ProgressBar? = null
     private var loadingTitle: android.widget.TextView? = null
+    private var loadingBanner: View? = null
+    private var loadingCardView: View? = null
+    private var previewStrip = false
 
     /**
      * A join or a map load: the engine publishes its progress from inside the
@@ -310,10 +313,13 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // password prompt and the Could not join dialog that come after
         if (c.str("address").isNotEmpty()) { joinAddress = c.str("address"); joinLabel = c.str("label") }
         val stage = c.str("stage")
-        val busy = stage in setOf("connecting", "downloading", "loading", "signon") && !failed
+        // preview: the engine draws the join's world (touch_joinpreview.c); the
+        // page below becomes a strip at the bottom instead of a full screen
+        val busy = stage in setOf("connecting", "downloading", "loading", "signon", "preview") && !failed
         if (!busy || root.visibility == View.VISIBLE) {
             loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
             loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
+            loadingBanner = null; loadingCardView = null; previewStrip = false
             return
         }
         if (loadingStrip == null) {
@@ -327,6 +333,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             screen.isClickable = true // nothing reaches the engine underneath
             val banner = BootSplash.view(activity, 0.5f, 720)
             screen.addView(banner, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            loadingBanner = banner
             val card = android.widget.LinearLayout(activity)
             card.orientation = android.widget.LinearLayout.VERTICAL
             val p = Theme.dp(activity, 16f)
@@ -353,10 +360,14 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadingCard(true)
             reconnectBar?.bringToFront()
             loadingStrip = screen; loadingText = t; loadingBar = bar; loadingTitle = title
+            loadingCardView = card
         }
+        // the world is on screen now: the page becomes a strip at the bottom that
+        // lets it show, and comes back opaque if the preview stops
+        previewStyle(stage == "preview")
         val pct = when (stage) {
             "downloading" -> c.num("download_progress")
-            "loading" -> c.num("load_progress")
+            "loading", "preview" -> c.num("load_progress")
             else -> 0.0
         }
         val map = app.str("map")
@@ -382,6 +393,27 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         // the engine reports 1% for most of a map load: a number only once it says something
         loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
+    }
+
+    /**
+     * The engine's join preview (connect stage `preview`, touch_joinpreview.c):
+     * the world is drawn behind this page from the moment the map can be drawn,
+     * so the page drops to a strip: no banner, no black, and a touch that misses
+     * the card goes to the game. Any other stage puts the opaque page back (a
+     * download, a signon the preview is still waiting for).
+     */
+    private fun previewStyle(on: Boolean) {
+        val screen = loadingStrip ?: return
+        if (previewStrip == on) return
+        previewStrip = on
+        loadingBanner?.visibility = if (on) View.GONE else View.VISIBLE
+        screen.setBackgroundColor(if (on) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK)
+        screen.isClickable = !on
+        screen.gravity = if (on) Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM else Gravity.CENTER_HORIZONTAL
+        (loadingCardView?.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let {
+            it.bottomMargin = Theme.dp(activity, if (on) 16f else 48f)
+            loadingCardView?.layoutParams = it
+        }
     }
 
     private var loadingCardSent = ""
