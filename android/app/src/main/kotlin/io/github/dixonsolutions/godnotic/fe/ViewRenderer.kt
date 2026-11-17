@@ -378,6 +378,19 @@ class ViewRenderer(
             if (prim.isNotEmpty()) bottom.addView(actionButton(id, prim, true).apply { tag = "primary" })
             bottom.visibility = if (bottom.childCount == 0) View.GONE else View.VISIBLE
             top.visibility = if (top.childCount == 0) View.GONE else View.VISIBLE
+            // a settings search result names its row: bring it under the pinned tabs and
+            // mark it for a moment, so the player can walk there next time
+            val reveal = p.str("reveal")
+            if (reveal.isNotEmpty()) sv.post {
+                val target = nodes[reveal] ?: return@post
+                var y = 0
+                var v: View? = target.view
+                while (v != null && v !== body) { y += v.top; v = v.parent as? View }
+                sv.smoothScrollTo(0, maxOf(0, y - sv.topInset - dp(8f)))
+                val flash = android.graphics.drawable.ColorDrawable(0x552E7BFF.toInt())
+                target.view.foreground = flash
+                target.view.postDelayed({ if (target.view.foreground === flash) target.view.foreground = null }, 1200)
+            }
         }
         return e
     }

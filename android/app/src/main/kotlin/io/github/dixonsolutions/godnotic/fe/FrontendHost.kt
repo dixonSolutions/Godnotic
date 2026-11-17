@@ -230,7 +230,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         if (sig != lastSig) { lastSig = sig; Log.i(tag, "Native UI: engine $sig") }
         when {
             a.bool("advanced") || a.bool("console") -> { setVisible(false); showBackPill(a.bool("advanced")) }
-            state == "menu" -> { showBackPill(false); stopgap?.show("home"); setVisible(true) }
+            state == "menu" -> { showBackPill(false); stopgap?.showReturn(); setVisible(true) }
             state == "paused" -> { showBackPill(false); stopgap?.show("pause", a); setVisible(true) }
             else -> { showBackPill(false); setVisible(false) } // in a match, or the engine's loading screen
         }
@@ -1106,10 +1106,24 @@ class StopgapActions(private val activity: Activity, private val client: UibClie
         Json.parse(activity.assets.open("fe/$name.json").bufferedReader().readText()).obj()
     } catch (e: Exception) { Log.w("Godnotic", "Native UI: no fe/$name.json: ${e.message}"); emptyMap() }
 
+    /** The screen a game or join was started from; null when there was no menu origin. */
+    private var origin: String? = null
+
+    /** Back from a match (or a cancelled join): its origin, else Home. */
+    fun showReturn() {
+        val name = NavOrigin.leave(origin)
+        origin = null
+        show(name)
+    }
+
     fun show(name: String, app: Map<String, Any?> = emptyMap()) {
         if (name == current && name != "pause") return
         val snap = load(name)["snapshot"].obj()
-        if (snap.isEmpty()) return
+        if (snap.isEmpty()) {
+            // a UIB-only screen has no fe asset: the native host falls back Home
+            if (name != NavOrigin.HOME) show(NavOrigin.HOME, app)
+            return
+        }
         val nodes = snap["nodes"].list().map { n ->
             val m = n.obj()
             if (name == "pause" && m.str("id") == "pause") {
@@ -1138,7 +1152,10 @@ class StopgapActions(private val activity: Activity, private val client: UibClie
         val id = a.str("id")
         Log.i("Godnotic", "Native UI action: $node / $id")
         when (id) {
-            "play", "quick" -> NativeBridge.enqueue(FeArgs.command("play", "dm", STOPGAP_MAP, "4", "3"))
+            "play", "quick" -> {
+                origin = current.ifEmpty { NavOrigin.HOME }
+                NativeBridge.enqueue(FeArgs.command("play", "dm", STOPGAP_MAP, "4", "3"))
+            }
             "quit" -> NativeBridge.enqueue(FeArgs.command("menu", "quit"))
             "resume" -> NativeBridge.enqueue(FeArgs.command("menu", "resume"))
             "disconnect" -> NativeBridge.enqueue(FeArgs.command("menu", "leave"))

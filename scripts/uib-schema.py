@@ -90,7 +90,7 @@ TYPES = {
     "app": {"stack": {"type": "array", "items": ID}, "modal": {"type": "array", "items": ID},
             "busy": ref("busy"), "canBack": B, "context": enum("menu", "game", "loading"),
             "reserved": {"type": "array", "items": ref("reserved"), "maxItems": 8}},
-    "screen": {"presentation": enum("page", "sheet", "dialog", "fullscreen"),
+    "screen": {"presentation": enum("page", "sheet", "dialog", "fullscreen"), "reveal": {"type": "string", "maxLength": 512},
                "kind": enum("home", "page", "detail", "game", "loading", "status"),
                "primary": ref("action"), "background": IMG, "dismissable": B,
                "header": obj({"collapsible": B, "compact": B, "hidden": B})},

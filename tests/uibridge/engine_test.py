@@ -269,6 +269,19 @@ def main():
         c.send({"t": "ev", "ev": "value", "node": "settings/split/video/tabs/view/fov", "value": 117})
         c.settle()
         check(c.nodes["settings/split/video/tabs/view/fov"]["props"].get("value") == 117, "value event: the diff carries fov 117")
+        # settings search: the field above the sections finds rows and jumps to one
+        c.send({"t": "ev", "ev": "value", "node": "settings/search", "value": "fov"})
+        # the index walks every builder: wait for it instead of a quiet second
+        wait_for(c, lambda: any(k.startswith("settings/r") for k in c.nodes), 15)
+        results = [k for k in c.nodes if k.startswith("settings/r") and k[10:].isdigit()]
+        check(bool(results), f"settings search finds rows ({len(results)})")
+        if results:
+            act = c.nodes[results[0]]["props"].get("action", {}).get("id", "")
+            c.send({"t": "ev", "ev": "action", "node": results[0], "action": act})
+            wait_for(c, lambda: any(k.startswith("settings/split/") for k in c.nodes), 15)
+            check(c.nodes.get("settings/search", {}).get("props", {}).get("value") == "", "a result clears the query")
+            check(any(k.startswith("settings/split/") for k in c.nodes), "a result opens its section")
+            check(bool(c.nodes.get("settings", {}).get("props", {}).get("reveal")), "a result reveals its row")
         r = c.request({"t": "ev", "ev": "value", "node": "settings/split/video/tabs/view/fov", "value": "x"})
         check(r is not None and r.get("t") == "error", "a string for a slider is refused")
         r = c.request({"t": "ev", "ev": "value", "node": "home/tiles/sp", "value": True})

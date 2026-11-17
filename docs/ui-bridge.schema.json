@@ -699,6 +699,10 @@
            "fullscreen"
           ]
          },
+         "reveal": {
+          "type": "string",
+          "maxLength": 512
+         },
          "kind": {
           "type": "string",
           "enum": [

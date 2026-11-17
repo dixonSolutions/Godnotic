@@ -20,6 +20,9 @@ python3 scripts/uib-schema.py check
 echo "== fixtures validate"
 python3 scripts/uib-schema.py validate tests/uibridge/fixtures/*.json
 
+echo "== settings: no dead entries, unique binds, search index"
+python3 tests/uibridge/settings_audit_test.py
+
 echo "== the validator refuses what it should"
 python3 - <<'PY'
 import json, importlib.util, sys
