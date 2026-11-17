@@ -67,10 +67,11 @@ def servers_a():
     return out
 
 
-def write_state(servers, master_delay=0):
+def write_state(servers, master_delay=0, drop_master_queries=0):
     tmp = STATE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"servers": servers, "hold_answers": 0, "master_delay": master_delay}, f)
+        json.dump({"servers": servers, "hold_answers": 0, "master_delay": master_delay,
+                   "drop_master_queries": drop_master_queries}, f)
     os.replace(tmp, STATE)
     time.sleep(0.4)   # fakenet rereads it within 50 ms
 
@@ -82,7 +83,7 @@ def report():
         return json.load(f)
 
 
-def run_engine(userdir, fast, name, seed="0", quit_at=None):
+def run_engine(userdir, fast, name, seed="0", quit_at=None, early_open=False):
     """One session: the app's own refresh at start (if it makes one), a list opened at 8 s and again at
     14 s, where the saved rows, the summary and the bridge's source are read in the same frame, and
     all three once more at the end. Returns (stats lines, summaries, bridge windows, log)."""
@@ -102,7 +103,9 @@ def run_engine(userdir, fast, name, seed="0", quit_at=None):
                 'echo SUMMARY end "$_slist_summary" servers=$_slist_servers players=$_slist_players saved=$_slist_saved refreshing=$_slist_refreshing\n'
                 + windows(8))
     with open(os.path.join(userdir, "data", "sl.cfg"), "w") as f:
-        if quit_at:
+        if early_open:
+            f.write('toggleconsole\ndefer 1 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
+        elif quit_at:
             f.write('defer 8 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
         elif fast:
             f.write('defer 8 "net_slist_open"\ndefer 14 "exec sl_open.cfg"\ndefer 22 "exec sl_end.cfg"\ndefer 23 quit\n')
@@ -161,6 +164,14 @@ try:
     ud = os.path.join(a.work, "user")
     shutil.rmtree(ud, ignore_errors=True)
     alive = sum(1 for s in A if s["alive"])
+
+    # A lost first master query is retried without another user refresh.
+    write_state(A, drop_master_queries=1)
+    stats, sums, rows, log = run_engine(os.path.join(a.work, "user-retry"), True, "0-retry", quit_at=7, early_open=True)
+    r = report()
+    check(r["master_queries"] >= 2, "retry: silent master is asked again", str(r["master_queries"]))
+    check(int(sums.get("end", {}).get("servers", 0)) >= alive - 1,
+          "retry: servers appear without another refresh", str(sums.get("end")))
 
     # ---- 1 a fresh user directory
     write_state(A)

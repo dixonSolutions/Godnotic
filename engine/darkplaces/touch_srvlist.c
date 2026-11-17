@@ -136,6 +136,8 @@ static struct
 	unsigned masters_asked, masters_replied;
 	char mode[16];
 	double next_summary;
+	double master_retry_at;
+	unsigned master_retries;
 	// the hold
 	qbool finger, autopaused;
 	int pause_before;
@@ -649,6 +651,11 @@ void TouchSrvList_Refresh(qbool resetcache)
 	dp_strlcpy(sl.mode, sl.model ? "insanotic-model" : sl.fast ? "fast" : "stock", sizeof(sl.mode));
 	sl.running = true;
 	sl.t0 = now;
+	if (sl.fast && !sl.model && masters_set() && !TouchLAN_LanOnly() && !sl.master_retry_at)
+	{
+		sl.master_retries = 0;
+		sl.master_retry_at = now + TouchSL_MasterRetryDelay(0);
+	}
 	sl.sent = sl.answers = sl.removed = sl.frames = 0;
 	sl.t_first_row = sl.t_first_answer = sl.t50 = sl.t95 = sl.t_settled = 0;
 	// the first frame sends TOUCHSL_FIRST_BURST, the rest follows on the clock
@@ -959,6 +966,17 @@ static void hold_frame(void)
 
 void TouchSrvList_Frame(void)
 {
+	double now = now_real();
+	if (masterreplycount || !TouchSrvList_Fast() || TouchLAN_LanOnly() || !masters_set())
+		sl.master_retry_at = 0;
+	else if (sl.master_retry_at && now >= sl.master_retry_at && key_dest != key_game && !TouchJoinFail_Joining())
+	{
+		// Query only the masters: a full refresh would discard or reset rows.
+		NetConn_QueryMasters(true, false);
+		if (sl.master_retries < 8)
+			sl.master_retries++;
+		sl.master_retry_at = now + TouchSL_MasterRetryDelay(sl.master_retries);
+	}
 	hold_frame();
 	summary_update(false);
 }
