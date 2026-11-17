@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime};
 #[derive(Default)]
 struct Knobs {
     archive: Mutex<Vec<u8>>,
+    paths: Mutex<Vec<String>>,
     manifest: Mutex<Option<String>>,
     served: AtomicU64,
     ranges: Mutex<Vec<String>>,
@@ -83,6 +84,7 @@ fn serve(s: TcpStream, k: &Knobs) -> std::io::Result<()> {
             }
         }
         let head = |code: &str, extra: &str, len: usize| format!("HTTP/1.1 {code}\r\nAccept-Ranges: bytes\r\nContent-Length: {len}\r\n{extra}\r\n");
+        k.paths.lock().unwrap().push(path.clone());
         if path.ends_with(".json") {
             match k.manifest.lock().unwrap().clone() {
                 Some(m) => {
@@ -591,4 +593,32 @@ fn status_and_request_files() {
     assert_eq!(read_request(&d, SystemTime::now() + Duration::from_secs(60)), None, "older than the host");
     std::fs::write(d.join(REQUEST_FILE), "want ../x 3\n").unwrap();
     assert_eq!(read_request(&d, start), None);
+}
+
+#[test]
+fn generated_release_manifests_follow_gpu_profile_and_first_play() {
+    use godnotic_core::fetch::datasets::{choose, split_manifest};
+    let dir = tmpdir("generated-release");
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let status = std::process::Command::new("python3")
+        .arg(repo.join("tests/split-release/fixture.py")).arg(&dir).status().unwrap();
+    assert!(status.success());
+    let srv = Server::start();
+    let http = UreqHttp::new();
+    for (astc, profile) in [(true, "astc"), (false, "dxt")] {
+        let manifest = std::fs::read_to_string(dir.join(profile).join(format!("godnotic-data-{profile}.json"))).unwrap();
+        *srv.k.manifest.lock().unwrap() = Some(manifest);
+        let choice = choose(None, Some(&format!("{}/slim/Godnotic-data.zip", srv.base)), Some(astc), None);
+        let install = dir.join(format!("install-{profile}"));
+        std::fs::create_dir_all(&install).unwrap();
+        let m = split_manifest(&http, &choice, Some(astc), &install, &CancelToken::new()).unwrap().unwrap();
+        assert!(srv.k.paths.lock().unwrap().last().unwrap().ends_with(&format!("godnotic-data-{profile}.json")));
+        assert!(m.archive_url.ends_with(&format!("data-{profile}-20261107-r1/Godnotic-data-{profile}.zip")));
+        assert_eq!(m.first_play, m.maps["stormkeep"].needs);
+        assert!(m.first_play.contains(&"core".to_string()));
+        assert!(m.first_play.contains(&"map-stormkeep".to_string()));
+        assert!(!m.first_play.contains(&"map-other".to_string()));
+        assert!(m.first_play.iter().all(|name| m.pack(name).is_some()));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }

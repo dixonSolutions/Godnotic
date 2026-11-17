@@ -1,0 +1,68 @@
+name: Build split data
+
+# Build only. Publishing is a separate, explicit coordinator action.
+on:
+  workflow_dispatch:
+    inputs:
+      source_date:
+        description: Date of the full data release and its recorded usage table
+        default: '20261107'
+        required: true
+      revision:
+        description: Unused immutable release revision
+        default: '1'
+        required: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [astc, dxt]
+    env:
+      PROFILE: ${{ matrix.profile }}
+      SOURCE_DATE: ${{ inputs.source_date }}
+      REVISION: ${{ inputs.revision }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Install repack tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ffmpeg libvorbisfile3
+          python -m pip install 'numpy==2.3.5' 'pillow==12.1.1'
+          if [ "$PROFILE" = astc ]; then
+            curl -fsSL -o /tmp/astcenc.zip https://github.com/ARM-software/astc-encoder/releases/download/5.7.1/astcenc-5.7.1-linux-x64.zip
+            echo 'f1d576f0801e7701548da78d782f4bf70dfde3673a238d1a2ac0ebd3511b2f37  /tmp/astcenc.zip' | sha256sum -c -
+            unzip -q /tmp/astcenc.zip -d /tmp/astcenc
+            echo 'ASTCENC=/tmp/astcenc/bin/astcenc-avx2' >> "$GITHUB_ENV"
+          fi
+      - name: Download and verify full source packs
+        run: |
+          [[ "$SOURCE_DATE" =~ ^[0-9]{8}$ ]]
+          mkdir -p /tmp/source /tmp/download
+          gh release download "data-$SOURCE_DATE" -R dixonSolutions/Godnotic-data -D /tmp/download -p '*.zip' -p '*.zip.sha256'
+          (cd /tmp/download && sha256sum -c ./*.sha256)
+          unzip -q -j /tmp/download/*.zip 'Xonotic/data/*.pk3' -d /tmp/source
+          rm -rf /tmp/download
+          rm -f /tmp/source/*nexcompat*.pk3
+      - name: Repack and split
+        run: |
+          python scripts/repack-phone-assets.py --profile "$PROFILE" -j "$(nproc)" -o /tmp/phone /tmp/source/*.pk3
+          rm -rf /tmp/source
+          python scripts/build-split-release.py --profile "$PROFILE" --source-date "$SOURCE_DATE" --revision "$REVISION" --usage "scripts/data-usage-$SOURCE_DATE.tsv.gz" --output /tmp/split /tmp/phone
+          mkdir /tmp/artifact
+          cp /tmp/split/Godnotic-data-*.zip /tmp/split/godnotic-data-*.json /tmp/split/split-sizes.md /tmp/split/UPLOADS.txt /tmp/artifact/
+          (cd /tmp/artifact && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: split-data-${{ matrix.profile }}
+          path: /tmp/artifact
+          compression-level: 0
+          if-no-files-found: error
