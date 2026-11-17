@@ -98,6 +98,9 @@ public final class XonoticActivity extends SDLActivity {
         EngineSwap.register(this);
         super.onCreate(savedInstanceState);
         running = true;
+        ReplaceGuard.watch(this);
+        ProcessState.stage(this, "game");
+        ProcessState.engine(this, true);
         // The boot screen's banner stays up over the SDL surface until the
         // engine has drawn its first frame: no black between the two.
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(BootSplash.BACKGROUND));
@@ -208,6 +211,9 @@ public final class XonoticActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         running = false;
+        ReplaceGuard.unwatch(this);
+        ProcessState.engine(this, false);
+        ProcessState.stage(this, "none");
         if (inputManager != null) {
             inputManager.unregisterInputDeviceListener(inputDeviceListener);
         }
@@ -478,6 +484,12 @@ public final class XonoticActivity extends SDLActivity {
             // Only its details move on: the minutes since the last check, the network.
             int tick = 0;
             while (!Thread.currentThread().isInterrupted()) {
+                if (ReplaceGuard.isReplacing()) {
+                    // The package is being swapped under this process: this loop must not serve a
+                    // request, publish a status or auto-apply against it. onDestroy interrupts it
+                    // too; this is the path that does not wait for the screen to finish.
+                    return;
+                }
                 if (tick++ % 30 == 0) {
                     bridge.refresh();
                 }

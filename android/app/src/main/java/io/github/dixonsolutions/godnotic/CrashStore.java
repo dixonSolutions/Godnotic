@@ -9,17 +9,22 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Process;
 import android.util.Log;
 import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Which of the app's deaths were a bug, kept for the player to send: the system's record of recent
@@ -39,6 +44,12 @@ final class CrashStore {
     private static final String PREF_COLLECTED = "collected_ms";
     private static final String PREF_VERSION = "version";
     private static final String PREF_PAYLOAD = "payload";
+    /** The deaths already reported, so the same exit reason is not written twice. */
+    private static final String PREF_KEYS = "keys";
+    /** How many death keys are remembered (shared preferences has no ordered set). */
+    private static final int KEYS_KEPT = 32;
+    /** An uncaught report this close to an exit reason is that death, not another one. */
+    static final long MATCH_WINDOW_MS = 10_000;
     /** One handler for the process, however many Activities start. */
     private static volatile boolean handled;
 
@@ -79,9 +90,17 @@ final class CrashStore {
             public void uncaughtException(Thread thread, Throwable error) {
                 try {
                     long now = System.currentTimeMillis();
+                    int pid = Process.myPid();
+                    // The state the process dies in, for the exit reason the system keeps: the
+                    // header's versions are the ones that will read this file, not the ones in it.
+                    ProcessState.phase(app, "uncaught");
                     String text = CrashReport.formatUncaught(now, thread.getName(), version(app),
-                            payload(), host(), CrashReport.stack(error));
-                    write(app, CrashReport.PREFIX + now + "-uncaught.txt", text);
+                            payload(), host(), processName(app), pid, ProcessState.summary(),
+                            CrashReport.stack(error));
+                    // Synchronous, with an fsync: this runs in a dying process and the file has to
+                    // be complete before the system takes it away. The pid in the name is how the
+                    // next start matches it to the system's exit reason for this same death.
+                    writeSync(new File(dir(app), CrashReport.uncaughtName(now, pid)), text);
                 } catch (Throwable ignored) {
                     // A report must never be the reason the app dies without its usual dialog.
                 }
@@ -121,6 +140,10 @@ final class CrashStore {
         // and worth a report, not noise.
         boolean aroundUpdate = (!versionBefore.isEmpty() && !versionBefore.equals(versionNow))
                 || (!payloadBefore.isEmpty() && !payloadBefore.equals(payloadNow));
+        // A stack the handler wrote before the last process died: the system keeps no trace of a
+        // Java crash, so this is the only place the exception itself survives.
+        List<File> uncaught = uncaught(context);
+        List<String> keys = keys(prefs);
         long newest = collected;
         for (ApplicationExitInfo exit : exits) {
             long when = exit.getTimestamp();
@@ -131,20 +154,119 @@ final class CrashStore {
             if (!CrashReport.interesting(reason, aroundUpdate)) {
                 continue;
             }
+            int pid = exit.getPid();
+            String key = CrashReport.key(pid, when, reason, exit.getDescription());
+            newest = Math.max(newest, when);
+            if (keys.contains(key)) {
+                // Already reported: the system keeps this exit for days, and the reader runs on
+                // every start until it is pruned.
+                continue;
+            }
+            File matched = null;
+            for (File candidate : uncaught) {
+                if (CrashReport.sameDeath(pid, when, CrashReport.uncaughtPid(candidate.getName()),
+                        CrashReport.fileStamp(candidate.getName()), MATCH_WINDOW_MS)) {
+                    matched = candidate;
+                    break;
+                }
+            }
             try {
+                String trace = trace(exit);
+                if (matched != null) {
+                    String stack = text(matched);
+                    // The stack goes first: it names the exception, the system's trace (native
+                    // crashes, API 31+) is the context around it.
+                    trace = trace.isEmpty() ? stack : stack + "\n--- system trace ---\n" + trace;
+                }
                 String text = CrashReport.format(when, reason, exit.getDescription(),
                         exit.getImportance(), exit.getPss(), versionNow, payloadNow, host(),
-                        versionBefore, trace(exit));
+                        versionBefore, exit.getProcessName(), pid, state(exit), trace);
                 write(context, CrashReport.fileName(when, reason), text);
+                keys.add(key);
             } catch (RuntimeException e) {
                 Log.w(TAG, "Could not write the report of " + CrashReport.reasonName(reason), e);
             }
-            newest = Math.max(newest, when);
+            if (matched != null && uncaught.remove(matched)) {
+                // Merged into the report of this death: keeping it would show the same crash twice.
+                //noinspection ResultOfMethodCallIgnored
+                matched.delete();
+            }
         }
         prefs.edit().putLong(PREF_COLLECTED, newest)
                 .putString(PREF_VERSION, versionNow)
-                .putString(PREF_PAYLOAD, payloadNow).apply();
+                .putString(PREF_PAYLOAD, payloadNow)
+                .putStringSet(PREF_KEYS, new HashSet<>(trim(keys))).apply();
         prune(context);
+    }
+
+    /** What the dead process published about itself (ProcessState), or "" when it published none. */
+    private static String state(ApplicationExitInfo exit) {
+        try {
+            byte[] bytes = exit.getProcessStateSummary();
+            return bytes == null ? "" : new String(bytes, StandardCharsets.UTF_8);
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The uncaught reports written by processes that have died since the last read, oldest first. */
+    private static List<File> uncaught(Context context) {
+        File[] files = dir(context).listFiles();
+        List<File> out = new ArrayList<>();
+        if (files == null) {
+            return out;
+        }
+        for (File file : files) {
+            if (CrashReport.uncaughtPid(file.getName()) >= 0) {
+                out.add(file);
+            }
+        }
+        Collections.sort(out, (a, b) -> Long.compare(CrashReport.fileStamp(a.getName()), CrashReport.fileStamp(b.getName())));
+        return out;
+    }
+
+    /** The deaths remembered as reported. */
+    private static List<String> keys(SharedPreferences prefs) {
+        Set<String> stored = prefs.getStringSet(PREF_KEYS, Collections.emptySet());
+        return stored == null ? new ArrayList<>() : new ArrayList<>(stored);
+    }
+
+    /** The newest {@link #KEYS_KEPT} keys: the set has no order of its own, the timestamp leads. */
+    private static List<String> trim(List<String> keys) {
+        Collections.sort(keys);
+        return keys.size() <= KEYS_KEPT ? keys : keys.subList(keys.size() - KEYS_KEPT, keys.size());
+    }
+
+    /**
+     * A report from the dying process: written in full and fsynced before this returns, so the
+     * system's kill cannot leave it short. No temp-and-rename here; a half-written file at a crash
+     * is dropped by prune.
+     */
+    private static void writeSync(File file, String text) {
+        File dir = file.getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) {
+            Log.w(TAG, "Could not create " + dir);
+            return;
+        }
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write(text.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            out.getFD().sync();
+        } catch (IOException | RuntimeException e) {
+            Log.w(TAG, "Could not write " + file, e);
+        }
+    }
+
+    /** The process's name as the system knows it (the report has to say which one died). */
+    private static String processName(Context context) {
+        try {
+            if (Build.VERSION.SDK_INT >= 28) {
+                return android.app.Application.getProcessName();
+            }
+        } catch (RuntimeException ignored) {
+            // fall through to the package name
+        }
+        return context.getPackageName();
     }
 
     /** The native tombstone (API 31+) or ANR trace of an exit, or "" when the system kept none. */
@@ -259,6 +381,11 @@ final class CrashStore {
             if (newest.getName().contains("-" + CrashReport.reasonName(reason))) {
                 return CrashReport.headline(reason);
             }
+        }
+        if (CrashReport.uncaughtPid(newest.getName()) >= 0) {
+            // A stack the handler wrote before the process died: a Java crash, reported as one once
+            // merged with its exit reason, and worth the same headline before that.
+            return CrashReport.headline(CrashReport.REASON_CRASH);
         }
         return HostRes.string(context, "crash_banner");
     }

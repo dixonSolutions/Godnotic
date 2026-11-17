@@ -570,6 +570,12 @@ final class AppUpdater {
             return false;
         }
 
+        // The installer kills this process the moment the session commits. Stop the services,
+        // release the locks and let the engine write its configs first, so the kill lands on an
+        // idle app instead of in the middle of a file write (ReplaceGuard).
+        ReplaceGuard.beforeReplace(context);
+        ProcessState.phase(context, "install");
+
         File apk = cachedApk(update);
         PackageInstaller installer = context.getPackageManager().getPackageInstaller();
         PackageInstaller.SessionParams params =
@@ -580,7 +586,8 @@ final class AppUpdater {
         // the confirm dialog, once it is that package's installer of record.
         // The first in-app update still asks (a sideload's installer is the
         // file manager or browser); every one after it just happens.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        boolean silent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
+        if (silent) {
             params.setRequireUserAction(
                 PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
         }
@@ -617,6 +624,12 @@ final class AppUpdater {
                 }
             }
             throw e;
+        }
+        if (silent) {
+            // No confirm dialog: the system installs the APK on its own from here. This process
+            // has nothing left to do but be replaced, so it winds down now: services stopped and
+            // refusing a restart, screens finished, no work started against a swapping package.
+            ReplaceGuard.beginReplace(context);
         }
         return true;
     }

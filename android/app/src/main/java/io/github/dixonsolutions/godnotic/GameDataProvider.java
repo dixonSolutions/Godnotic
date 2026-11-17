@@ -47,6 +47,11 @@ public final class GameDataProvider extends DocumentsProvider {
 
     @Override
     public boolean onCreate() {
+        // A provider can be the first thing started in a process (the system's document UI is the
+        // only caller): say so in the state summary, so a death here is not attributed to a screen.
+        if (getContext() != null) {
+            ProcessState.stage(getContext(), "provider");
+        }
         return true;
     }
 

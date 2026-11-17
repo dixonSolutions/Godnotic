@@ -56,6 +56,11 @@ public final class KeepAliveService extends Service {
      * carries on only as long as the process does.
      */
     static boolean show(Context context, String kind, String text) {
+        if (ReplaceGuard.isReplacing()) {
+            // The package is being replaced: a foreground service started now would keep the old
+            // process alive through the swap, which is what the apply must not do.
+            return false;
+        }
         String key = kind + "\n" + text;
         String now = running;
         if (key.equals(now)) {
@@ -148,6 +153,11 @@ public final class KeepAliveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (ReplaceGuard.isReplacing()) {
+            // Asked to start (by the system or a late caller) with the package being swapped.
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         String kind = intent != null ? intent.getStringExtra(EXTRA_KIND) : null;
         String text = intent != null ? intent.getStringExtra(EXTRA_TEXT) : null;
         if (kind == null) {

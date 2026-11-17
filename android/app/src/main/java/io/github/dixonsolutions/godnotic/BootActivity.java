@@ -148,6 +148,14 @@ public class BootActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ReplaceGuard.watch(this);
+        ProcessState.stage(this, "boot");
+        if (ReplaceGuard.isReplacing()) {
+            // The package is being swapped under this process: no preparation, no update install,
+            // no screen that would run against it.
+            finish();
+            return;
+        }
         if (android.os.Build.VERSION.SDK_INT >= 31) {
             // The system splash goes at once, without its zoom-out: the banner
             // screen underneath is already on the same black.
@@ -442,6 +450,7 @@ public class BootActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        ReplaceGuard.unwatch(this);
         ui.removeCallbacks(pollBootUpdates);
         super.onDestroy();
         if (showing == this) {

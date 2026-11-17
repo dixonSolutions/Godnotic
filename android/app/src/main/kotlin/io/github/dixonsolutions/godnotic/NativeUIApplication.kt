@@ -92,9 +92,21 @@ object NativeBridge {
 class NativeUIApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // First, before anything else in the process can throw: the uncaught handler, which writes
+        // the exception synchronously (FileOutputStream + fsync) and only then chains to the
+        // system's handler. Application.onCreate is the earliest point that covers every entry
+        // path into the process: services, the content provider, the boot screen, and an AndySU
+        // host relaunching us by class name.
+        CrashStore.installHandler(this)
+        // What each ApplicationExitInfo carries about the process that died (version, payload,
+        // host, screen, engine, update phase), and what a report prints under "state:".
+        ProcessState.start(this)
         // A crash report from the last process (the system's exit reason, and the stack an
         // uncaught exception left) is read here, before any screen: the banner over the main
         // menu has it when the game starts.
         CrashStore.start(this)
+        // The installer (or an AndySU relaunch) killed the last process without a callback: drop
+        // the one-shot requests, engine state and cached build it left before any screen reads them.
+        ReplaceGuard.firstStart(this)
     }
 }

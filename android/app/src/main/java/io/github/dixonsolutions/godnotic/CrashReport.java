@@ -131,6 +131,54 @@ final class CrashReport {
     }
 
     /**
+     * The file the handler writes for an exception, tagged with the pid that threw it: the next
+     * start matches it to the system's exit reason for the same death.
+     */
+    static String uncaughtName(long whenMs, int pid) {
+        return PREFIX + whenMs + "-uncaught-" + pid + ".txt";
+    }
+
+    /** The pid an uncaught report was written by, or -1 when the name is not one of those. */
+    static int uncaughtPid(String name) {
+        if (name == null) {
+            return -1;
+        }
+        int at = name.indexOf("-uncaught-");
+        if (at < 0 || !name.endsWith(".txt")) {
+            return -1;
+        }
+        String pid = name.substring(at + "-uncaught-".length(), name.length() - 4);
+        if (pid.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < pid.length(); i++) {
+            if (!Character.isDigit(pid.charAt(i))) {
+                return -1;
+            }
+        }
+        try {
+            return Integer.parseInt(pid);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Whether an uncaught report is the same death the system recorded: the same process, and
+     * written within {@code windowMs} of the timestamp the exit reason carries.
+     */
+    static boolean sameDeath(int exitPid, long exitWhenMs, int uncaughtPid, long uncaughtWhenMs,
+                             long windowMs) {
+        return exitPid > 0 && exitPid == uncaughtPid && exitWhenMs > 0 && uncaughtWhenMs > 0
+                && Math.abs(exitWhenMs - uncaughtWhenMs) <= windowMs;
+    }
+
+    /** What identifies one death, so the same exit reason is not written to a report twice. */
+    static String key(int pid, long whenMs, int reason, String description) {
+        return whenMs + "|" + pid + "|" + reason + "|" + oneLine(description);
+    }
+
+    /**
      * The newest {@code keep} file names out of [names], oldest of those deleted. A name without a
      * timestamp is never kept: it is not one of ours.
      */
@@ -181,7 +229,7 @@ final class CrashReport {
      */
     static String format(long whenMs, int reason, String description, int importance, long pssKb,
                          String versionNow, String payloadNow, String host, String versionBefore,
-                         String trace) {
+                         String process, int pid, String state, String trace) {
         StringBuilder b = new StringBuilder();
         b.append("Godnotic crash report\n")
                 .append("when: ").append(when(whenMs)).append(" (").append(whenMs).append(")\n")
@@ -190,6 +238,10 @@ final class CrashReport {
                 .append("payload: ").append(oneLine(payloadNow)).append('\n')
                 .append("previous version: ").append(oneLine(versionBefore)).append('\n')
                 .append("host: ").append(oneLine(host)).append('\n')
+                // What the dead process was doing: written by it, not read now (see the class
+                // comment: app/payload/host at the top are the versions *reading* the report).
+                .append("process: ").append(oneLine(process)).append(" (pid ").append(pid).append(")\n")
+                .append("state: ").append(state == null || state.isEmpty() ? "(none)" : oneLine(state)).append('\n')
                 .append("importance: ").append(importance).append('\n')
                 .append("pss: ").append(pssKb > 0 ? (pssKb / 1024) + " MB" : "unknown").append('\n');
         if (description != null && !description.isEmpty()) {
@@ -206,7 +258,7 @@ final class CrashReport {
 
     /** A report from the app's own handler, before the process dies. */
     static String formatUncaught(long whenMs, String thread, String versionNow, String payloadNow,
-                                 String host, String stack) {
+                                 String host, String process, int pid, String state, String stack) {
         StringBuilder b = new StringBuilder();
         b.append("Godnotic uncaught exception\n")
                 .append("when: ").append(when(whenMs)).append(" (").append(whenMs).append(")\n")
@@ -214,6 +266,8 @@ final class CrashReport {
                 .append("app: ").append(oneLine(versionNow)).append('\n')
                 .append("payload: ").append(oneLine(payloadNow)).append('\n')
                 .append("host: ").append(oneLine(host)).append('\n')
+                .append("process: ").append(oneLine(process)).append(" (pid ").append(pid).append(")\n")
+                .append("state: ").append(state == null || state.isEmpty() ? "(none)" : oneLine(state)).append('\n')
                 .append("--- stack ---\n")
                 .append(stack == null || stack.isEmpty() ? "(none)\n" : stack);
         return b.toString();

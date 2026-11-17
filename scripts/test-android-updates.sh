@@ -25,15 +25,21 @@ javac -Xlint:all -Werror -d "$tmp" -cp "$junit" \
 	android/app/src/main/java/$pkg/AppUpdateState.java \
 	android/app/src/main/java/$pkg/UpdateRetry.java \
 	android/app/src/main/java/$pkg/CrashReport.java \
+	android/app/src/main/java/$pkg/ProcessStateText.java \
+	android/app/src/main/java/$pkg/PackageReplace.java \
 	android/app/src/test/java/$pkg/AndySUStateTest.java \
 	android/app/src/test/java/$pkg/AppUpdateStateTest.java \
 	android/app/src/test/java/$pkg/UpdateRetryTest.java \
 	android/app/src/test/java/$pkg/UpdateBackgroundTest.java \
-	android/app/src/test/java/$pkg/CrashReportTest.java
+	android/app/src/test/java/$pkg/CrashReportTest.java \
+	android/app/src/test/java/$pkg/ProcessStateTextTest.java \
+	android/app/src/test/java/$pkg/PackageReplaceTest.java
 java -cp "$tmp:$junit:$hamcrest" org.junit.runner.JUnitCore \
 	io.github.dixonsolutions.godnotic.AndySUStateTest io.github.dixonsolutions.godnotic.AppUpdateStateTest \
 	io.github.dixonsolutions.godnotic.UpdateRetryTest io.github.dixonsolutions.godnotic.UpdateBackgroundTest \
-	io.github.dixonsolutions.godnotic.CrashReportTest
+	io.github.dixonsolutions.godnotic.CrashReportTest \
+	io.github.dixonsolutions.godnotic.ProcessStateTextTest \
+	io.github.dixonsolutions.godnotic.PackageReplaceTest
 
 # Manual update actions must dispatch directly even on metered connections.
 python3 - <<'PYTEST'

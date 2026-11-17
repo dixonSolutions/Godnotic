@@ -109,6 +109,10 @@ public final class DataService extends Service {
     static void start(Context context) {
         try {
             Context app = context.getApplicationContext();
+            if (ReplaceGuard.isReplacing()) {
+                // An apply has begun: no download may start against a package being swapped.
+                return;
+            }
             synchronized (DataService.class) {
                 if (runner != null && runner.isAlive()) {
                     return;
@@ -123,8 +127,25 @@ public final class DataService extends Service {
         }
     }
 
+    /**
+     * A package replacement is about to kill this process: stop the service and let the run end.
+     * The chunks and their state are on disk, so the next start carries on (docs/DATA_FETCH.md).
+     */
+    static void stopForReplace() {
+        serviceWanted = false;
+        stopRequested = true;
+        DataService service = live;
+        if (service != null) {
+            service.stopSelf();
+        }
+    }
+
     private static void run(Context app) {
         try {
+            if (ReplaceGuard.isReplacing()) {
+                return;
+            }
+            ProcessState.phase(app, "data");
             GameData data = new GameData(app);
             DataSession session = data.session();
             // The GPU is not asked here: the engine is bringing up EGL on its
@@ -138,6 +159,7 @@ public final class DataService extends Service {
             Log.w(TAG, "The background data download stopped", e);
         } finally {
             dropService(app);
+            ProcessState.phase(app, "idle");
         }
     }
 
@@ -284,6 +306,12 @@ public final class DataService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (ReplaceGuard.isReplacing()) {
+            // One more start after the apply began: there is nothing to keep alive, and this
+            // service must not be able to hold the old process in the replacement's window.
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         startPending = false;
         try {
             if (Build.VERSION.SDK_INT >= 29) {

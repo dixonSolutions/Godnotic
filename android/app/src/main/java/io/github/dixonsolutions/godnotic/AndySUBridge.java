@@ -127,9 +127,15 @@ final class AndySUBridge {
                     break;
                 }
                 case REQUEST_APPLY:
+                    // The host relaunches this process to apply the staged release: quiet it first,
+                    // exactly as before a package install (ReplaceGuard).
+                    ReplaceGuard.beforeReplace(context);
                     // applyNow can invoke a live swap; this build never registers a handler.
                     if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
                     else AndySUCompat.applyNow();
+                    // The host is replacing the payload (and relaunching this process): from here
+                    // nothing of it starts again, and the screens end while their classes exist.
+                    ReplaceGuard.beginReplace(context);
                     break;
                 case REQUEST_AUTO_ON:
                 case REQUEST_AUTO_OFF:
@@ -160,6 +166,11 @@ final class AndySUBridge {
 
     /** Gather, decide, write. Called once a second by the update service thread. */
     synchronized void publish() {
+        if (ReplaceGuard.isReplacing()) {
+            // The package is being swapped under this process: publishing a status into the old
+            // payload (or acting on it) is exactly the work that must not happen now.
+            return;
+        }
         AndySUState.Record r = new AndySUState.Record();
         r.message = requestError;
         r.installed = AndySUState.oneLine(AndySUCompat.payloadVersion());
@@ -211,6 +222,7 @@ final class AndySUBridge {
             stagedForApply = staged;
             stateForApply = !staged.isEmpty() ? "staged" : state;
             applyPolicy = policy;
+            ProcessState.phase(context, stateForApply);
 
             if ("downloading".equals(state)) {
                 Map<String, Long> parts = parts();
@@ -300,6 +312,7 @@ final class AndySUBridge {
             announced = "";
             stagedForApply = "";
             stateForApply = "idle";
+            ReplaceGuard.beforeReplace(context);
             try {
                 if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
                 else AndySUCompat.applyNow();
@@ -307,6 +320,9 @@ final class AndySUBridge {
                 requestError = "Could not restart to apply the update: " + AndySUState.oneLine(e.getMessage());
                 Log.w(TAG, requestError, e);
             }
+            // The host is swapping the payload now: the old process stops everything and lets go
+            // before it does (services, screens, the notice's looper).
+            ReplaceGuard.beginReplace(context);
         }
     }
 
