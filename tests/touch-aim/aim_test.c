@@ -16,6 +16,7 @@ Run through scripts/test-touch-aim.sh.
 
 typedef bool qbool;
 
+#include "touch_aim_targets.h"
 #include "touch_altfire.h"
 #include "touch_weapons.h"
 
@@ -935,6 +936,66 @@ static void test_safety(void)
 	CHECK(!TouchWep_AutoShootTail(false, true, 0.0, 0.15f), "auto-shoot: off means off");
 }
 
+// Who may be a target at all: a frozen Freeze Tag enemy takes no damage, so
+// auto-shoot and the aim helpers must skip one instead of holding the
+// crosshair (and firing) at an ice block while a live enemy stands beside it.
+static void test_targets(void)
+{
+	touch_aim_cand_t c;
+
+	memset(&c, 0, sizeof(c));
+	c.has_name = true;
+	c.drawn = true;
+	CHECK_EQ(TOUCH_AIM_TARGET_OK, TouchAim_TargetCheck(&c), "targets: a live enemy is a target");
+
+	// the Freeze Tag case: the enemy is alive, solid, drawn -- and frozen
+	c.frozen = true;
+	CHECK_EQ(TOUCH_AIM_TARGET_FROZEN, TouchAim_TargetCheck(&c), "targets: a frozen enemy is not a target");
+	// even when it is also otherwise unusable, frozen is what is reported
+	c.alpha = 0.2f;
+	CHECK_EQ(TOUCH_AIM_TARGET_FROZEN, TouchAim_TargetCheck(&c), "targets: frozen is reported over a faded body");
+	c.alpha = 0;
+	c.drawn = false;
+	CHECK_EQ(TOUCH_AIM_TARGET_FROZEN, TouchAim_TargetCheck(&c), "targets: frozen is reported over an undrawn one");
+	c.frozen = false;
+	c.drawn = true;
+
+	c.dead = true;
+	CHECK_EQ(TOUCH_AIM_TARGET_DEAD, TouchAim_TargetCheck(&c), "targets: a dead enemy is not a target");
+	c.dead = false;
+
+	c.spectator = true;
+	CHECK_EQ(TOUCH_AIM_TARGET_SPECTATOR, TouchAim_TargetCheck(&c), "targets: a spectator is not a target");
+	c.spectator = false;
+
+	c.teammate = true;
+	CHECK_EQ(TOUCH_AIM_TARGET_MATE, TouchAim_TargetCheck(&c), "targets: a teammate is not a target");
+	c.teammate = false;
+
+	c.drawn = false;
+	CHECK_EQ(TOUCH_AIM_TARGET_UNDRAWN, TouchAim_TargetCheck(&c), "targets: a body with no model or nodraw is not");
+	c.drawn = true;
+	c.alpha = -1;
+	CHECK_EQ(TOUCH_AIM_TARGET_UNDRAWN, TouchAim_TargetCheck(&c), "targets: an unfaded-out -1 alpha is not");
+	c.alpha = 0.2f;
+	CHECK_EQ(TOUCH_AIM_TARGET_UNDRAWN, TouchAim_TargetCheck(&c), "targets: invisible (alpha under 0.4) is not");
+	c.alpha = 0.4f;
+	CHECK_EQ(TOUCH_AIM_TARGET_OK, TouchAim_TargetCheck(&c), "targets: 0.4 is visible enough");
+	c.alpha = 1;
+	CHECK_EQ(TOUCH_AIM_TARGET_OK, TouchAim_TargetCheck(&c), "targets: fully drawn");
+
+	c.has_name = false;
+	CHECK_EQ(TOUCH_AIM_TARGET_NO_NAME, TouchAim_TargetCheck(&c), "targets: an unused slot is not a target");
+
+	// the networked bit itself (common/animdecide.qh ANIMSTATE_FROZEN = BIT(3))
+	CHECK_EQ(8, TOUCH_AIM_ANIMSTATE_FROZEN, "targets: ANIMSTATE_FROZEN is BIT(3)");
+	CHECK(TouchAim_AnimFrozen(8), "targets: frozen alone");
+	CHECK(TouchAim_AnimFrozen(4 | 8), "targets: frozen while ducked");
+	CHECK(!TouchAim_AnimFrozen(4), "targets: ducked is not frozen");
+	CHECK(!TouchAim_AnimFrozen(1 | 2), "targets: a death animation is not frozen");
+	CHECK(!TouchAim_AnimFrozen(0), "targets: idle is not frozen");
+}
+
 int main(void)
 {
 	test_intercept();
@@ -959,6 +1020,7 @@ int main(void)
 	test_mates();
 	test_ammo();
 	test_safety();
+	test_targets();
 	test_practice();
 	{
 		// the ghost is built only from frames in sight

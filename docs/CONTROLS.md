@@ -766,7 +766,7 @@ With `_radius 0`, `_delay 0.1`, `_alt 0`, `_lead 0`, `_steer 0`, `_safe 0`,
 `_autoswitch 0`, `_track 0`, strength `0.35` and rate `40` it behaves as the
 first version did.
 
-**Who is a target** (unchanged rules):
+**Who is a target**:
 
 - **Players** are the CSQC edicts whose engine-set `entnum` is a client slot
   (1…maxclients): Xonotic networks players through CSQCModel, so their
@@ -778,9 +778,17 @@ first version did.
   global; if that cannot be found the game is treated as a team game, so a
   player wearing your colour is never shot.
 - **Not** yourself, the player you are spectating, corpses (`solid ==
-  SOLID_CORPSE`), gibs and copied bodies (not player slots), hidden or
-  invisible players (`EF_NODRAW`, no drawmask, alpha below 0.4). Nothing is
-  tracked that the player could not see.
+  SOLID_CORPSE`, or the CSQC's `csqcmodel_isdead`), gibs and copied bodies
+  (not player slots), hidden or invisible players (`EF_NODRAW`, no drawmask,
+  alpha below 0.4). Nothing is tracked that the player could not see.
+- **Not a frozen player** (Freeze Tag and the ice status effect): the server
+  sets `ANIMSTATE_FROZEN` in the player's `anim_state`, which CSQCModel
+  networks, and a frozen player takes no damage -- aiming at one only means
+  the live enemy beside it is not being shot, and the crosshair sits on the
+  ice block. The gate is `engine/darkplaces/touch_aim_targets.h`, shared with
+  `tests/touch-aim`.
+- Respawn protection is **not** excluded: `spawnshieldtime` stays on the
+  server and nothing in the client's copy of a player says it.
 - **Line of sight**: a world trace (plus CSQC brush models such as doors)
   from the view origin to the body; a led shot also needs a clear line to the
   lead point (not a steered rocket, which is re-aimed in flight).
