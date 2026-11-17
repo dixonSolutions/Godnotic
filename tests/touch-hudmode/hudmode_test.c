@@ -96,8 +96,8 @@ static void check_controls(void)
 	// match end: MENU and nothing else, whatever the flags
 	for (flags = 0; flags < 32; flags++)
 	{
-		CHECK_INT(TOUCHCTL_MENU, TouchMode_Controls(TOUCHMODE_INTERMISSION, flags), "intermission: MENU only");
-		CHECK_INT(TOUCHCTL_MENU, TouchMode_Controls(TOUCHMODE_MAPVOTE, flags), "map vote: MENU only");
+		CHECK_INT(TOUCHCTL_MENU | TOUCHCTL_SCORE | TOUCHCTL_CHAT, TouchMode_Controls(TOUCHMODE_INTERMISSION, flags), "intermission: top bar");
+		CHECK_INT(TOUCHCTL_MENU | TOUCHCTL_SCORE | TOUCHCTL_CHAT, TouchMode_Controls(TOUCHMODE_MAPVOTE, flags), "map vote: top bar");
 		CHECK_INT(0, TouchMode_Controls(TOUCHMODE_OFF, flags), "off: nothing");
 	}
 	for (mode = TOUCHMODE_OBSERVING; mode <= TOUCHMODE_OUT_FREE; mode++)
@@ -244,6 +244,17 @@ static void check_join_dialog(void)
 		memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES; d.since = 1;
 		r = TouchJoinDlg_Frame(&d, TOUCHMODE_OBSERVING, team ? TOUCHMODE_F_TEAMS : 0, 1, campaign, 1, 1, autojoin, 3);
 		CHECK_INT((autojoin || (campaign && (!team || campaign == 2))) ? TOUCHJOINDLG_JOIN : TOUCHJOINDLG_OPEN, r, "autojoin, mode and campaign decision");
+	}
+	{
+		touchlocaljoin_t retry = {0};
+		TouchLocalJoin_Start(&retry, 10);
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 10.4), "local join does not retry too early");
+		CHECK_INT(1, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 10.5), "local join retries after early server rejection");
+		CHECK_INT(1, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 11.0), "local join retries after the one second grace period");
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_PLAYING, 0, 11.1), "successful local join stops retries");
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 12), "later spectating does not rejoin");
+		TouchLocalJoin_Start(&retry, 20);
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 1, 21), "queued local join does not retry");
 	}
 	// a public server, Deathmatch: connecting, then an observer
 	memset(&d, 0, sizeof(d));

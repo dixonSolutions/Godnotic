@@ -1,6 +1,6 @@
 #!/bin/bash
 # Checks the in-match HUD modes (engine/darkplaces/touch_hudmode.h): the mode
-# derived from the client state, the controls each mode has (MENU only at the
+# derived from the client state, the controls each mode has (the top bar at the
 # end of the match and on the next-map vote), the MENU sheet's action list,
 # and the join dialog (when it opens, what its rows send). Then that the port's
 # CSQC mirror (qcsrc/client/touch_mode.qh) uses the same numbers. No engine
@@ -29,3 +29,5 @@ python3 "$dir/gamemenu_order.py" \
 python3 "$dir/menu_spectate.py" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/dialog_touch_gamemenu.qc" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/touch_uib_screens.qc"
+
+python3 "$dir/leave_one_click.py" "$ROOT"

@@ -217,9 +217,8 @@ static inline int TouchMode_Controls(int mode, int flags)
 		break;
 	case TOUCHMODE_INTERMISSION:
 	case TOUCHMODE_MAPVOTE:
-		// The scoreboard and the vote own the screen: MENU only (and the
-		// console button, touch_shellbtn.c, which is not part of the HUD).
-		return TOUCHCTL_MENU;
+		// The fitted bar remains available above the match-end panels.
+		return TOUCHCTL_MENU | TOUCHCTL_CHAT | TOUCHCTL_SCORE;
 	default:
 		return 0;
 	}
@@ -437,6 +436,31 @@ static inline const char *TouchJoinDlg_Command(const char *choice, int teams)
 	if (!strcmp(choice, "pink")) return "cmd selectteam pink; cmd join pink";
 	if (!strcmp(choice, "spectate")) return "cmd spectate";
 	return "";
+}
+
+// A local server can receive the choice before its one-second spectator
+// grace period ends. Retry that same choice briefly once it can be accepted.
+typedef struct touchlocaljoin_s
+{
+	int remaining;
+	double next;
+} touchlocaljoin_t;
+
+static inline void TouchLocalJoin_Start(touchlocaljoin_t *j, double now)
+{
+	j->remaining = 4;
+	j->next = now + 0.5;
+}
+
+static inline int TouchLocalJoin_Frame(touchlocaljoin_t *j, int mode, int queued, double now)
+{
+	if (mode == TOUCHMODE_OFF || mode == TOUCHMODE_PLAYING || TouchMode_IsMatchEnd(mode) || queued)
+		j->remaining = 0;
+	if (!j->remaining || !TouchMode_IsSpectating(mode) || now < j->next)
+		return 0;
+	--j->remaining;
+	j->next = now + 0.5;
+	return 1;
 }
 
 // ---------------------------------------------------------------------------
