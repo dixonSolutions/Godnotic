@@ -53,10 +53,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * The pk3 download asks first: the setup step says how much it fetches and
  * how much space is free. With the split data set (docs/DATA_FETCH.md) that
- * is only first_play, the packs the first match needs; the game then starts
- * and {@link DataService} fetches the other maps and the music behind it,
- * without asking again. Without a manifest it is the single archive, music
- * included, as before the split.
+ * is the music pack (for the boot theme) followed by first_play, the packs
+ * the first match needs; the game then starts and {@link DataService} fetches
+ * the other maps behind it, without asking again. Without a manifest it is the
+ * single archive, music included, as before the split.
  */
 public class BootActivity extends Activity {
 
@@ -121,6 +121,8 @@ public class BootActivity extends Activity {
     /** The setup step is for the music pack only (the shortcut), the game is playable. */
     private static volatile boolean musicOnly;
     private AndySUBridge bootUpdates;
+    /** The theme while no engine is alive; the engine owns it after the hand-off. */
+    private BootTheme theme;
     private final Runnable pollBootUpdates = new Runnable() {
         @Override public void run() {
             if (showing != BootActivity.this || XonoticActivity.running || bootUpdates == null) return;
@@ -179,6 +181,8 @@ public class BootActivity extends Activity {
         }
         bootUpdates = new AndySUBridge(this, new GameData(this).baseDir());
         buildScreen();
+        GameData bootData = new GameData(this);
+        theme = new BootTheme(this, bootData.baseDir(), bootData.dataDir());
         retry.setOnClickListener(v -> start());
         cancel.setOnClickListener(v -> cancelPreparation());
         quit.setOnClickListener(v -> confirmQuit());
@@ -436,11 +440,16 @@ public class BootActivity extends Activity {
         } else if (failedWhileAway) {
             failedWhileAway = false;
             start();
+        } else if (theme != null && !XonoticActivity.running) {
+            theme.start();
         }
     }
 
     @Override
     protected void onPause() {
+        if (theme != null) {
+            theme.stop();
+        }
         ui.removeCallbacks(pollBootUpdates);
         super.onPause();
         if (showing == this) {
@@ -451,6 +460,9 @@ public class BootActivity extends Activity {
     @Override
     protected void onDestroy() {
         ReplaceGuard.unwatch(this);
+        if (theme != null) {
+            theme.release();
+        }
         ui.removeCallbacks(pollBootUpdates);
         super.onDestroy();
         if (showing == this) {
@@ -615,8 +627,8 @@ public class BootActivity extends Activity {
             return;
         }
         // Music is part of the game: a missing music pack is fetched like any
-        // other. Only for an install of the single archive; with the split
-        // set the music is one of the packs DataService fetches later.
+        // other. With the split set it is the first boot pack, so the download
+        // screen can play the theme while first_play is still arriving.
         boolean music = data.musicMissing();
         Boolean agreed = chosenMusic;
         if (agreed == null && consentGiven(this) && data.assetsMissing()) {
@@ -742,6 +754,9 @@ public class BootActivity extends Activity {
         quit.setVisibility(musicOnly ? View.GONE : View.VISIBLE);
         later.setVisibility(musicOnly ? View.VISIBLE : View.GONE);
         updateChoice(plan);
+        if (theme != null && !XonoticActivity.running) {
+            theme.start();
+        }
     }
 
     private void updateChoice(GameData.Setup plan) {
@@ -820,6 +835,9 @@ public class BootActivity extends Activity {
         progress.setIndeterminate(true);
         status.setText(HostRes.string(this, "boot_downloading"));
         detail.setText("");
+        if (theme != null && !XonoticActivity.running) {
+            theme.start();
+        }
         startService();
         GameData data = new GameData(this);
         startPreparation(new Thread(() -> {
@@ -1078,6 +1096,9 @@ public class BootActivity extends Activity {
             if (live != null) {
                 live.revealIfStillWorking();
                 live.applyProgress(text, note, percent);
+                if (live.theme != null) {
+                    live.theme.refresh();
+                }
                 // The download's notification follows along while the screen
                 // shows too (the service owns it), once a second.
                 long now = android.os.SystemClock.elapsedRealtime();
@@ -1159,6 +1180,10 @@ public class BootActivity extends Activity {
             });
             decor.invalidate();
             return;
+        }
+        // The engine's menu theme takes over from here; never play both.
+        if (theme != null) {
+            theme.stop();
         }
         Intent intent = new Intent(this, XonoticActivity.class);
         intent.putExtra(XonoticActivity.EXTRA_BASEDIR, data.baseDir().getAbsolutePath());

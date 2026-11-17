@@ -145,18 +145,18 @@ public class DataFetchTest {
         assertNull("no manifest before one is fetched", s.manifest());
         assertEquals(DataSession.Refresh.CURRENT, s.refresh(server.manifestUrl()));
         assertFalse(s.playable());
-        assertEquals(f.bytes("core", "shared-1", "map-alpha"), s.firstPlayNeed()[0]);
-        assertEquals(f.bytes("shared-2", "map-beta", "music", "extras"), s.restBytes());
+        assertEquals(f.bytes("music", "core", "shared-1", "map-alpha"), s.firstPlayNeed()[0]);
+        assertEquals(f.bytes("shared-2", "map-beta", "extras"), s.restBytes());
 
         List<long[]> progress = Collections.synchronizedList(new ArrayList<long[]>());
         s.firstPlay((done, total, verifying) -> progress.add(new long[] { done, total }));
 
         assertTrue(s.playable());
-        f.assertInstalled(data, "core", "shared-1", "map-alpha");
-        f.assertAbsent(data, "shared-2", "map-beta", "music", "extras");
-        // first_play's bytes and not one more: no directory read, no retries.
-        assertEquals(f.bytes("core", "shared-1", "map-alpha"), server.archiveBytes.get());
-        assertEquals(f.bytes("core", "shared-1", "map-alpha"), progress.get(progress.size() - 1)[1]);
+        f.assertInstalled(data, "music", "core", "shared-1", "map-alpha");
+        f.assertAbsent(data, "shared-2", "map-beta", "extras");
+        // The boot scope's bytes (music first) and not one more: no directory read, no retries.
+        assertEquals(f.bytes("music", "core", "shared-1", "map-alpha"), server.archiveBytes.get());
+        assertEquals(f.bytes("music", "core", "shared-1", "map-alpha"), progress.get(progress.size() - 1)[1]);
         assertEquals(progress.get(progress.size() - 1)[0], progress.get(progress.size() - 1)[1]);
         assertNoParts();
 
@@ -170,7 +170,7 @@ public class DataFetchTest {
         f.assertInstalled(data, "core", "shared-1", "map-alpha", "shared-2", "map-beta", "music", "extras");
         assertEquals(f.archiveBytesOfPacks(), server.archiveBytes.get());
         assertEquals(Arrays.asList("godnotic-T-shared-2.pk3", "godnotic-T-map-beta.pk3",
-                "godnotic-T-music.pk3", "godnotic-T-extras.pk3"), sorted(host.landed, f));
+                "godnotic-T-extras.pk3"), sorted(host.landed, f));
         assertNoParts();
         String status = status();
         assertTrue(status, status.startsWith("format 1\nset A\nstate complete\n"));
@@ -208,7 +208,7 @@ public class DataFetchTest {
         assertTrue(offline.playable());
         assertEquals(DataSession.Refresh.UNREACHABLE, offline.refresh(server.manifestUrl()));
         assertNotNull("a failed fetch keeps the stored one", offline.manifest());
-        assertEquals(f.bytes("shared-2", "map-beta", "music", "extras"), offline.restBytes());
+        assertEquals(f.bytes("shared-2", "map-beta", "extras"), offline.restBytes());
     }
 
     // ---------------------------------------------------------------- resume
@@ -220,7 +220,7 @@ public class DataFetchTest {
         server.delayMs = 3;
         DataSession s = session();
         s.refresh(server.manifestUrl());
-        long first = f.bytes("core", "shared-1", "map-alpha");
+        long first = f.bytes("music", "core", "shared-1", "map-alpha");
 
         Throwable[] thrown = new Throwable[1];
         Thread run = new Thread(() -> {
@@ -254,7 +254,7 @@ public class DataFetchTest {
         // A new process: a new session over the same directory.
         server.delayMs = 0;
         server.ranges.clear();
-        long othersOnDisk = doneBytesOf(f, "shared-1", "map-alpha");
+        long othersOnDisk = doneBytesOf(f, "music", "shared-1", "map-alpha");
         DataSession next = session();
         assertEquals(first - onDisk - othersOnDisk, next.firstPlayNeed()[0]);
         next.firstPlay((d, t, v) -> { });
@@ -584,17 +584,17 @@ public class DataFetchTest {
         DataInstall install = new DataInstall(data, env);
         install.adopt(DataManifest.parse(f.json));
 
-        assertEquals(Arrays.asList("core", "shared-1", "map-alpha"), names(install.order(null, true)));
-        // By priority map-beta would be first of the rest; its needs go before it.
-        assertEquals(Arrays.asList("core", "shared-1", "map-alpha", "shared-2", "map-beta", "map-gamma",
-                "music", "extras"), names(install.order(null, false)));
+        assertEquals(Arrays.asList("music", "core", "shared-1", "map-alpha"), names(install.order(null, true)));
+        // Music first; then first_play, then the rest by priority.
+        assertEquals(Arrays.asList("music", "core", "shared-1", "map-alpha", "shared-2", "map-beta", "map-gamma",
+                "extras"), names(install.order(null, false)));
         // A want: that map's needs in front, its own pack after them.
-        assertEquals(Arrays.asList("core", "shared-2", "map-gamma", "shared-1", "map-alpha", "map-beta",
-                "music", "extras"), names(install.order("gamma", false)));
+        assertEquals(Arrays.asList("core", "shared-2", "map-gamma", "music", "shared-1", "map-alpha", "map-beta",
+                "extras"), names(install.order("gamma", false)));
         assertEquals(Arrays.asList("core", "shared-1", "shared-2", "map-beta"), names(install.missingNeeds("beta")));
         assertEquals(install.order(null, false), install.order("no-such-map", false));
         // The boot phase is first_play whatever is wanted.
-        assertEquals(Arrays.asList("core", "shared-1", "map-alpha"), names(install.order("gamma", true)));
+        assertEquals(Arrays.asList("music", "core", "shared-1", "map-alpha"), names(install.order("gamma", true)));
         assertFalse(install.ready(install.manifest().pack("map-gamma")));
         assertTrue(install.ready(install.manifest().pack("core")));
     }
@@ -797,7 +797,7 @@ public class DataFetchTest {
             s.firstPlay((d, t, v) -> { });
             fail();
         } catch (DataFetch.NoSpace e) {
-            assertEquals(f.bytes("core", "shared-1", "map-alpha") + DataFetch.SLACK_BYTES, e.needed);
+            assertEquals(f.bytes("music", "core", "shared-1", "map-alpha") + DataFetch.SLACK_BYTES, e.needed);
         }
         assertEquals(0, server.archiveRequests.get());
     }

@@ -26,6 +26,12 @@ int main(void)
     assert(TouchMusic_JoinPolicy(TM_STAGE_JOINING, 1, 1, 0, 0) == 0);  /* keep it through the load */
     assert(TouchMusic_JoinPolicy(TM_STAGE_MENU, 1, 1, 0, 0) == 0);
 
+    /* The first-run data download screen is not a match either: the theme
+     * starts as soon as the music pack lands and keeps going into the menu. */
+    assert(TouchMusic_JoinPolicy(TM_STAGE_DOWNLOAD, 1, 0, 0, 0) == 1);
+    assert(TouchMusic_JoinPolicy(TM_STAGE_DOWNLOAD, 1, 1, 0, 0) == 0);
+    assert(TouchMusic_JoinPolicy(TM_STAGE_DOWNLOAD, 0, 0, 0, 0) == 0);
+
     /* The map's own track replaces the stream: the theme is done, in a join or
      * in a match, and the mixer fades the new track in. */
     assert(TouchMusic_JoinPolicy(TM_STAGE_JOINING, 1, 1, 1, 0) == -1);

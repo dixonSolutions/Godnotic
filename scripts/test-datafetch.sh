@@ -49,7 +49,7 @@ q() { python3 - "$SPLIT/godnotic-data.json" "$@" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1])); P = {p["name"]: p for p in m["packs"]}
 w = sys.argv[2]
-if w == "first": print(sum(P[n]["size"] for n in m["first_play"]))
+if w == "first": print(sum(P[n]["size"] for n in m["first_play"]) + next(p["size"] for p in m["packs"] if p["name"] == "music" or "-music" in p["install_as"]))
 elif w == "total": print(sum(p["size"] for p in m["packs"]))
 elif w == "count": print(len(m["packs"]))
 elif w == "offset": print(P[sys.argv[3]]["offset"] + 1000)
@@ -73,13 +73,13 @@ requests() { awk -v p="r1/$(basename "$ZIP")" '$1==p{print $2; f=1} END{if(!f)pr
 packs() { ls "$1" 2>/dev/null | grep -c '^godnotic-.*\.pk3$' || true; }
 mb() { echo "$(( ($1 + 524288) / 1048576 )) MB"; }
 
-# --- 1. fresh install: playable after the first_play bytes -------------------
+# --- 1. fresh install: music first, then the first_play bytes ---------------
 serve
 D="$W/d1"; E="$W/e1"; mkdir -p "$D" "$E"
 out="$("$DF" --url "$URL" --dir "$D" --engine-dir "$E" $FLAG --first-play-only)"
 sleep 0.3
 s="$(served)"
-[ "$s" = "$FIRST" ] && ok "fresh install: the game may start after exactly the first_play bytes ($(mb "$s") of $(mb "$TOTAL")); ${out#first_play }" || bad "first play fetched $s bytes, first_play is $FIRST ($out)"
+[ "$s" = "$FIRST" ] && ok "fresh install: music + first_play fetched exactly ($(mb "$s") of $(mb "$TOTAL")); ${out#first_play }" || bad "first play fetched $s bytes, first_play is $FIRST ($out)"
 [ -e "$D/.assets-ready" ] && [ -s "$D/.godnotic-data.json" ] && ! ls "$D" | grep -q '\.part' && ok "the ready marker and the manifest are stored, no part left" || bad "after first play: $(ls -a "$D" | tr '\n' ' ')"
 
 # --- 2. the rest in the background, a kill in the middle, a damaged pack -----

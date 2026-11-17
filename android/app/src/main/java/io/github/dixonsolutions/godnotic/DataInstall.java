@@ -281,7 +281,9 @@ final class DataInstall {
         if (want != null && !firstPlayOnly) {
             addNeeds(out, want);
         }
-        for (DataManifest.Pack p : manifest.firstPlay) {
+        // Music first: it carries the menu theme, and the download screen plays
+        // it as soon as the pack lands while first_play keeps downloading.
+        for (DataManifest.Pack p : manifest.firstPlayWithMusic()) {
             add(out, p);
         }
         if (!firstPlayOnly) {

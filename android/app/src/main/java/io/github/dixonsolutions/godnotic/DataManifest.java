@@ -55,6 +55,11 @@ final class DataManifest {
         /** Position in the manifest's pack list: the tie-break for equal priorities. */
         final int index;
 
+        /** The music pack holds the menu theme and the cdtrack list. */
+        boolean isMusic() {
+            return installAs.contains("-music") || name.equals("music") || name.endsWith("-music");
+        }
+
         Pack(String name, String installAs, long size, long crc32, String sha256, long priority,
              long offset, List<String> depends, int index) {
             this.name = name;
@@ -112,6 +117,36 @@ final class DataManifest {
             sum += p.size;
         }
         return sum;
+    }
+
+    /** The music pack, or null for a set that has none. */
+    Pack music() {
+        for (Pack p : packs) {
+            if (p.isMusic()) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * What the boot fetch asks for: the music pack first, then first_play. Music
+     * is not required for {@link #playable} -- it is fetched first so the theme
+     * can start on the download screen, and first_play still decides when the
+     * game may start.
+     */
+    List<Pack> firstPlayWithMusic() {
+        List<Pack> out = new ArrayList<>();
+        Pack music = music();
+        if (music != null) {
+            out.add(music);
+        }
+        for (Pack p : firstPlay) {
+            if (!out.contains(p)) {
+                out.add(p);
+            }
+        }
+        return Collections.unmodifiableList(out);
     }
 
     /** The packs sorted by {@code priority} (lower first), manifest order among equals. */
