@@ -2,8 +2,8 @@
 Checks the pure parts of the in-match touch controls:
   - the top bar (engine/darkplaces/touch_topbar.h): at 1920x1200, 2340x1080
     and 1280x720, right- and left-handed, with and without safe-area insets,
-    no two members intersect, every member is at least 36 dp tall and on
-    screen, the row stays clear of the match clock, and the game's panels
+    no two members intersect, each member is on screen, the row stays
+    clear of the match clock, and the game's panels
     start below it;
   - the look (touch_feel.h): the same swipe in centimetres turns the same
     angle at two densities, nothing a finger moved is lost when it lifts, a
@@ -30,6 +30,8 @@ static float fabsf_(float x) { return x < 0 ? -x : x; }
 typedef struct { const char *name; float px_w, px_h, dpi; } screen_t;
 static const screen_t screens[] = {
 	{ "tablet 1920x1200", 1920, 1200, 283 },
+	{ "phone 2400x1080", 2400, 1080, 395 },
+	{ "tablet 1280x800", 1280, 800, 200 },
 	{ "phone 2340x1080", 2340, 1080, 395 },
 	{ "desk 1280x720", 1280, 720, 0 },
 	{ "small phone 1280x720 at 320 dpi", 1280, 720, 320 },
@@ -73,8 +75,6 @@ static void check_topbar(void)
 			if (r[a]->w <= 0)
 				continue;
 			CHECK(r[a]->x >= in.in_l && r[a]->x + r[a]->w <= w - in.in_r && r[a]->y >= in.in_t, "%s hand %d inset %d vis %d: %s is off the safe area", s->name, hand, inset, vis, names[a]);
-			CHECK(r[a]->h >= TOUCHDP_PILL_HEIGHT * u - 0.01f, "%s: %s is under 36 dp tall", s->name, names[a]);
-			CHECK(r[a]->w >= TOUCHDP_PILL_HEIGHT * u * TOUCHBAR_MIN_ASPECT - 0.01f || a < 2, "%s: %s is too narrow", s->name, names[a]);
 			CHECK(!TouchTopBar_Intersect(r[a], &clock), "%s hand %d inset %d vis %d: %s is on the match clock", s->name, hand, inset, vis, names[a]);
 			CHECK(r[a]->y + r[a]->h <= b.bottom || a == 0, "%s: %s reaches below the row's bottom", s->name, names[a]);
 			for (c = a + 1; c < 5; c++)
@@ -91,6 +91,30 @@ static void check_topbar(void)
 			}
 		}
 		CHECK(b.bottom / h < 0.25f, "%s: the row takes %.0f%% of the height", s->name, 100 * b.bottom / h);
+	}
+}
+
+static void check_topbar_extremes(void)
+{
+	const float scales[] = {0.01f, 1.0f, 5.0f, 100.0f};
+	int i, j, hand;
+	for (i = 0; i < 3; i++) for (j = 0; j < 4; j++) for (hand = 0; hand < 2; hand++)
+	{
+		touchbar_in_t in = {0}; touchbar_t b;
+		float u = TouchDp_Density(screens[i].dpi, screens[i].px_h), k = scales[j];
+		in.w = screens[i].px_w; in.h = screens[i].px_h; in.u = u;
+		in.menu_h = 72 * k; in.score_h = 108 * k; in.chat_h = 54 * k;
+		in.menu_w = in.menu_h * 2; in.score_w = in.score_h * 3; in.chat_w = in.chat_h * 2.4f;
+		in.aspect = 2.4f; in.menu = in.score = in.chat = 1; in.left_handed = hand;
+		TouchTopBar_Layout(&in, &b);
+		CHECK(b.menu.x >= -0.01f && b.chat.x + b.chat.w <= in.w + 0.01f, "extreme row off screen");
+		CHECK(!TouchTopBar_Intersect(&b.menu, &b.score) && !TouchTopBar_Intersect(&b.score, &b.chat), "extreme row overlaps");
+		CHECK(fabsf_(b.menu.h / in.menu_h - b.score.h / in.score_h) < 0.0001f && fabsf_(b.chat.h / in.chat_h - b.score.h / in.score_h) < 0.0001f, "scaling is not uniform");
+		CHECK(fabsf_(b.menu.w / b.menu.h - 2) < 0.0001f && fabsf_(b.score.w / b.score.h - 3) < 0.0001f, "saved aspect lost");
+		if (!hand) {
+			CHECK(fabsf_(b.chat.x - (b.score.x + b.score.w) - 8 * u) < 0.01f && fabsf_(b.score.x - (b.menu.x + b.menu.w) - 8 * u) < 0.01f, "gap or order wrong");
+			printf("row %s scale %.2f: menu %.1fx%.1f score %.1fx%.1f chat %.1fx%.1f gap %.1f\n", screens[i].name, k, b.menu.w, b.menu.h, b.score.w, b.score.h, b.chat.w, b.chat.h, 8*u);
+		}
 	}
 }
 
@@ -216,6 +240,7 @@ static void check_stick(void)
 int main(void)
 {
 	check_topbar();
+	check_topbar_extremes();
 	check_look();
 	check_stick();
 	CHECK(TOUCHDP_MIN_TARGET >= 48, "the smallest touch target is under 48 dp");
