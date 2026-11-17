@@ -64,8 +64,10 @@ class ViewRenderer(
         var strip: View? = null
     }
 
-    private val serverListState = ServerListState()
-    private var serverFlushQueued = false
+    private val serverListStates = HashMap<String, ServerListState>()
+    private fun serverState(source: String) = serverListStates.getOrPut(source) { ServerListState() }
+    private fun isServerSource(source: String) = source == "servers" || source.startsWith("servers.")
+    private val serverListState get() = serverState(nodes["mp/servers"]?.source ?: "servers")
     private val fadedIn = HashSet<String>()
     private val nodes = HashMap<String, Entry>()
     private val lists = HashMap<String, MutableList<VirtualList>>() // by source
@@ -87,6 +89,7 @@ class ViewRenderer(
         e.parent = parent
         nodes[id] = e
         bindSafe(e)
+        if (e.list != null && isServerSource(e.source)) flushServers(e.source)
         e.view.visibility = if (props.bool("hidden")) View.GONE else View.VISIBLE
         val p = parent?.let { nodes[it] } ?: return
         if (p.type == "tabs") { tabsAdd(p, e); return }
@@ -146,12 +149,11 @@ class ViewRenderer(
 
     override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         // The server browser is merged, never replaced: a refresh keeps the rows on
-        // screen (dimmed until they answer), updates them by address, and the replies
-        // that land in one frame go to the list as one update.
-        if (source == "servers" || source.startsWith("servers.")) {
-            if (rows.isEmpty() && offset == 0) serverListState.begin(total) else serverListState.accept(offset, total, rows)
-            queueServers()
-            for (l in lists[source].orEmpty()) nodes[l.id]?.let { bindEmpty(it) }
+        // screen (dimmed until they answer) and updates them by address.
+        if (isServerSource(source)) {
+            val state = serverState(source)
+            if (rows.isEmpty() && offset == 0) state.begin(total) else state.accept(offset, total, rows)
+            flushServers(source)
             return
         }
         for (l in lists[source].orEmpty()) {
@@ -160,25 +162,12 @@ class ViewRenderer(
         }
     }
 
-    /** One server list update per frame, however many replies arrived. */
-    private fun queueServers() {
-        if (serverFlushQueued) return
-        val any = lists["servers"]?.firstOrNull()?.view ?: return
-        serverFlushQueued = true
-        any.post {
-            serverFlushQueued = false
-            flushServers()
-        }
-    }
-
-    private fun flushServers() {
-        serverListState.settle()
-        for (l in lists["servers"].orEmpty()) {
-            val runs = serverListState.runs()
-            // one write per loaded run: positions not on screen keep their rows, so
-            // the row under the finger and the scroll position never shift
-            for ((offset, rows) in runs) l.rows(offset, serverListState.size, rows)
-            if (runs.isEmpty() && serverListState.size == 0) l.rows(0, 0, emptyList())
+    /** Copy cached rows into every list reading this source, including newly opened lists. */
+    private fun flushServers(source: String) {
+        val state = serverState(source)
+        state.settle()
+        for (l in lists[source].orEmpty()) {
+            state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
         }
     }
@@ -1507,7 +1496,7 @@ class ViewRenderer(
             val p = x.props
             // a new source (the map picker after a mode change): drop the old rows, window the new ones
             val src = p.str("source")
-            if (moveSource(lists, vl, x.source, src)) { x.source = src; vl.reset(-1) }
+            if (moveSource(lists, vl, x.source, src)) { x.source = src; vl.reset(-1); if (isServerSource(src)) flushServers(src) }
             // only `selected` changed (a tap's diff): rebind in place, the list keeps its position
             val sel = p["selected"].list()
             if (sel != lastSelected) { lastSelected = sel; vl.refresh() }
@@ -1547,8 +1536,10 @@ class ViewRenderer(
             }
             // a new sort or filter re-windows the visible range
             val query = "${p.str("sort")}|${p.bool("desc")}|${p.str("filter")}"
-            if (lastQuery.isNotEmpty() && query != lastQuery) vl.reset(maxOf(0, vl.window.total))
-            else if (vl.window.total < 0 && p.containsKey("count")) vl.reset(p.int("count"))
+            if (lastQuery.isNotEmpty() && query != lastQuery) {
+                vl.reset(maxOf(0, vl.window.total))
+                if (isServerSource(src)) flushServers(src)
+            } else if (vl.window.total < 0 && p.containsKey("count")) vl.reset(p.int("count"))
             lastQuery = query
             if (colsChanged) vl.refresh()
             bindEmpty(x)
@@ -1609,7 +1600,7 @@ class ViewRenderer(
         empty.removeAllViews()
         val st = p.str("state", "ready")
         val m = if (st == "error") p["error"].obj() else p["empty"].obj()
-        val show = (st == "error") || (st == "ready" && total == 0)
+        val show = ServerListState.showEmpty(st, total)
         if (show) {
             empty.addView(Kit.text(ctx, Icons.label(m.str("icon"), m.str("title", if (st == "error") "Something went wrong" else "Nothing here yet")), Theme.SP_TITLE, Theme.TEXT, bold = true).apply { gravity = Gravity.CENTER })
             m.str("text").takeIf { it.isNotEmpty() }?.let { empty.addView(Kit.text(ctx, it, Theme.SP_BODY, Theme.TEXT_MUTED).apply { gravity = Gravity.CENTER }) }

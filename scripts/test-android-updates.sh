@@ -27,3 +27,14 @@ javac -Xlint:all -Werror -d "$tmp" -cp "$junit" \
 	android/app/src/test/java/$pkg/AppUpdateStateTest.java
 java -cp "$tmp:$junit:$hamcrest" org.junit.runner.JUnitCore \
 	io.github.dixonsolutions.godnotic.AndySUStateTest io.github.dixonsolutions.godnotic.AppUpdateStateTest
+
+# Manual update actions must dispatch directly even on metered connections.
+python3 - <<'PYTEST'
+from pathlib import Path
+s = Path('engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/touch_uib_settings.qc').read_text()
+for action in ('updates.download', 'updates.apply', 'updates.install'):
+    lines = [line for line in s.splitlines() if 'UIB_Button(' in line and '"' + action + '"' in line]
+    assert lines and all('UIB_A(' in line and 'UIB_AC(' not in line for line in lines), action
+assert 'Download on mobile data?' not in s
+print('Manual update actions dispatch without confirmation.')
+PYTEST
