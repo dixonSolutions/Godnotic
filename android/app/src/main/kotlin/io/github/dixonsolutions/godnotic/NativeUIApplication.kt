@@ -89,4 +89,12 @@ object NativeBridge {
  * lua_mod_enable ...) and the in-game Mods dialog. Old hosts whose manifest
  * does not name this class lose nothing: the game starts from the activities.
  */
-class NativeUIApplication : Application()
+class NativeUIApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        // A crash report from the last process (the system's exit reason, and the stack an
+        // uncaught exception left) is read here, before any screen: the banner over the main
+        // menu has it when the game starts.
+        CrashStore.start(this)
+    }
+}

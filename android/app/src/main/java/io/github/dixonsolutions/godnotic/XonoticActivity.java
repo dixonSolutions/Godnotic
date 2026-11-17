@@ -123,6 +123,10 @@ public final class XonoticActivity extends SDLActivity {
         modImport.start();
         watchNetState();
         DataService.start(this); // Touch: the rest of the split data set, behind the game (docs/DATA_FETCH.md)
+        // A crash report the player has not seen yet: one line over the main menu, which is what
+        // the game shows first. Reading the system's exit reasons happens on its own thread at
+        // start (CrashStore.start); this only shows what it found.
+        CrashBanner.showIfNeeded(this);
     }
 
     /**
@@ -466,6 +470,8 @@ public final class XonoticActivity extends SDLActivity {
         }
         final UpdateBridge bridge = new UpdateBridge(this, new File(baseDir));
         final AppUpdater updater = new AppUpdater(this);
+        // Settings > Crash reports writes this; the same tokens the QuakeC menu uses for updates.
+        final File crashRequest = new File(GameData.engineWriteDir(new File(baseDir)), "touch/crash-reports-request.txt");
         updateService = new Thread(() -> {
             // Whatever BootActivity last published stands until someone asks for
             // something; re-checking here would double every launch's API call.
@@ -491,6 +497,19 @@ public final class XonoticActivity extends SDLActivity {
                     if (payloadRequest != null) payloadBridge.serve(payloadRequest);
                     payloadBridge.publish();
                     payloadBridge.autoApply(updateGameBusy(), inFront);
+                }
+                final String crash = CrashStore.takeRequest(crashRequest);
+                if (crash != null) {
+                    runOnUiThread(() -> {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        if ("share".equals(crash)) {
+                            CrashStore.shareNewest(this);
+                        } else {
+                            CrashStore.showList(this);
+                        }
+                    });
                 }
             }
         }, "xonotic-update-service");

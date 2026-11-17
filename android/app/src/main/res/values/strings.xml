@@ -78,4 +78,13 @@
     <!-- The split data set (docs/DATA_FETCH.md): the setup step's line about what follows, and DataService's notification. -->
     <string name="boot_setup_rest">The other maps and the music (%1$s) follow by themselves while you play.</string>
     <string name="data_rest_progress">Getting the rest of the maps: %1$s of %2$s MB</string>
+    <!-- Crash reports: the banner over the main menu, the share sheet, Settings > Crash reports. -->
+    <string name="crash_banner">Godnotic crashed — Share report</string>
+    <string name="crash_banner_with">%1$s — Share report</string>
+    <string name="crash_share">Share</string>
+    <string name="crash_share_all">Share all</string>
+    <string name="crash_title">Crash reports</string>
+    <string name="crash_none">No crash report has been recorded on this device.</string>
+    <string name="crash_subject">Godnotic crash report</string>
+    <string name="crash_no_share">No app on this device can share the report.</string>
 </resources>
