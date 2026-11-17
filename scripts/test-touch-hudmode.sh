@@ -29,3 +29,5 @@ python3 "$dir/gamemenu_order.py" \
 python3 "$dir/menu_spectate.py" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/dialog_touch_gamemenu.qc" \
     "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc/menu/xonotic/touch_uib_screens.qc"
+
+python3 "$dir/leave_one_click.py" "$ROOT"

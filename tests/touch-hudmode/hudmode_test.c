@@ -237,6 +237,17 @@ static void check_join_dialog(void)
 {
 	touchjoindlg_t d;
 	int joins;
+	{
+		touchlocaljoin_t retry = {0};
+		TouchLocalJoin_Start(&retry, 10);
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 10.4), "local join does not retry too early");
+		CHECK_INT(1, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 10.5), "local join retries after early server rejection");
+		CHECK_INT(1, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 11.0), "local join retries after the one second grace period");
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_PLAYING, 0, 11.1), "successful local join stops retries");
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 0, 12), "later spectating does not rejoin");
+		TouchLocalJoin_Start(&retry, 20);
+		CHECK_INT(0, TouchLocalJoin_Frame(&retry, TOUCHMODE_OBSERVING, 1, 21), "queued local join does not retry");
+	}
 	// a public server, Deathmatch: connecting, then an observer
 	memset(&d, 0, sizeof(d));
 	run_dialog(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, NULL);
