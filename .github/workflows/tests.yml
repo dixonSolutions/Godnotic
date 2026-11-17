@@ -76,6 +76,8 @@ jobs:
         run: PYTHON=python sh scripts/test-phone-archive.sh
       - name: The split set (core, maps, shared, music, detail, extras; manifest)
         run: PYTHON=python bash scripts/test-data-split.sh
+      - name: Every texture and skybox a shipped map names is in the set
+        run: python scripts/test-phone-textures.py --self-test
 
   touch-aim:
     name: Touch auto-shoot weapon logic
