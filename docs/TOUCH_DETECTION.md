@@ -200,13 +200,14 @@ and mouse input work the same in them.
 
 ## On-screen keyboard
 
-Only when the system lists no keyboard (`vid_keyboard_detected 0`). With
-one, text input stays on so its characters arrive, the console sheet shows
-the COMMANDS palette without a KEYS tab, the engine chat sheet keeps just
-its quick phrases, and the touch CSQC chat sheet drops its glass keys and
-takes typing from the keyboard instead. With none, console and chat also
-ask the platform for its own keyboard (`SDL_StartTextInput`: the Android
-IME, GNOME's and Lomiri's OSK through Wayland text-input).
+Text entry is the **system** keyboard's, in landscape too: console, chat and
+the menu's text fields all ask for it (`SDL_StartTextInput`: the Android IME,
+GNOME's and Lomiri's OSK through Wayland text-input). The engine's own keys
+(`touch_ui.c`) never take its place; **KEYBOARD** opens them, and only then
+does the system keyboard step aside. On a device with a keyboard listed the
+console sheet shows the COMMANDS palette without a KEYS tab, the engine chat
+sheet keeps just its quick phrases, and the touch CSQC chat sheet drops its
+glass keys and takes typing from the keyboard instead.
 
 ## Android
 

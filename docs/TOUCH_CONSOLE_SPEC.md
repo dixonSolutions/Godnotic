@@ -44,13 +44,13 @@ character in it is in Xolonium, with unifont behind it.
 
 ## Keys with a keyboard and mouse
 
-With the touch controls on and no keyboard listed the keys show, as before.
-Otherwise (a keyboard listed, or touch controls off) they start hidden and a
-**KEYBOARD** button opens them; **HIDE KEYS** closes them. With the controls off
+The keys start hidden whatever the hardware: typing is the system keyboard's,
+which the console and chat raise on entering, in landscape too. A **KEYBOARD**
+button opens the engine's keys; **HIDE KEYS** closes them. With the controls off
 the classic console stays, with the button under its right end (chat: top
 right) and the keys along the bottom; mouse clicks press them. The choice holds
-until that default changes (a keyboard plugged in or out, an input-mode
-switch). The CSQC chat sheet has the same button in its header.
+until the input changes (a keyboard plugged in or out, an input-mode switch).
+The CSQC chat sheet has the same button in its header.
 
 ## Spectator actions
 

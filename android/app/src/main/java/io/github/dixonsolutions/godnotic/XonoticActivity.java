@@ -753,10 +753,35 @@ public final class XonoticActivity extends SDLActivity {
         final View decor = getWindow().getDecorView();
         decor.setOnApplyWindowInsetsListener((view, insets) -> {
             setSystemBarsVisible(isKeyboardVisible(insets, view));
+            reportSystemKeyboardHeight(insets); // the engine keeps its input line above it
             BootSplash.reportSafeInsets(this, insets); // the engine's console button keeps clear of cutouts
             return view.onApplyWindowInsets(insets);
         });
     }
+
+    /**
+     * The system keyboard's height in window pixels, for the engine
+     * (`_touch_ime_height`): its console and chat draw the line being typed
+     * above it, as they do above the engine's own keys, in landscape too.
+     */
+    private void reportSystemKeyboardHeight(WindowInsets insets) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return; // no IME inset before Android 11; the engine keeps its own layout
+        }
+        int height = insets.getInsets(WindowInsets.Type.ime()).bottom;
+        if (height == reportedImeHeight) {
+            return;
+        }
+        reportedImeHeight = height;
+        try {
+            NativeBridge.enqueue("set _touch_ime_height " + height);
+        } catch (RuntimeException e) {
+            Log.w("Godnotic", "System keyboard height not reported", e);
+        }
+    }
+
+    /** Last height sent to the engine, so the command queue only hears about changes. */
+    private int reportedImeHeight = -1;
 
     private static boolean isKeyboardVisible(WindowInsets insets, View decor) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
