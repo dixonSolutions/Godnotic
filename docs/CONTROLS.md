@@ -128,12 +128,13 @@ checked by `scripts/test-touch-spectate.sh`; the port's CSQC mirrors it in
 `touch_spectate.qc`. Nothing a spectator touches sends `+jump`: that is the
 join. A look-zone tap does not fire while spectating, and auto-shoot never
 fires. `touch_specbar_x`, `_y` and `_size` move and size the bar (46 dp tall at
-least), and `touch_specbar_visible` turns it on: the bar is off by default on a
-touch screen, so FOLLOW is not in the way while the player watches. MENU is
-the way in without it: **Follow player** while free-flying, and **Previous
-player / Next player / Free-fly** while following (with **Join game**,
-**Change team** and the rest). The bar, when on, is a shortcut for the same
-commands. Turn it on in **Touch controls** to have them on the HUD.
+least). The bar is always available while spectating, including for installs
+whose old `touch_specbar_visible 0` used to hide it; MENU has the same
+actions: **Follow player** while free-flying, and **Previous player / Next
+player / Free-fly** while following (with **Join game**, **Change team** and
+the rest). With the touch controls off (a keyboard and a mouse in use) the
+bar is still drawn as a quiet strip, and a finger on it acts like a click on
+it: `<`, `>` and FREE switch player or camera even when there is no mouse.
 
 #### Joining: Xonotic's join dialog
 

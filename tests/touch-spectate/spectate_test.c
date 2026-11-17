@@ -140,6 +140,30 @@ int main(void)
 	CHECK_INT(0, TouchSpec_JoinShown(TOUCHSPEC_OUT_FREE), "join out free");
 	CHECK_INT(0, TouchSpec_JoinShown(TOUCHSPEC_NONE), "join playing");
 
+	// The bar's hit test: the desk strip and the HUD both use it, so a finger
+	// on < / > / FREE runs the same action the bar shows.
+	{
+		touchspec_bar_rect_t r[TOUCHSPEC_BAR_PARTS];
+		TouchSpec_BarLayout(1920, 1080, 1650, 950, 30, 2.0f, 1, r);
+		int prev = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_PREV].cx, r[TOUCHSPEC_BAR_PREV].cy);
+		int main_part = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_MAIN].cx, r[TOUCHSPEC_BAR_MAIN].cy);
+		int next = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_NEXT].cx, r[TOUCHSPEC_BAR_NEXT].cy);
+		int join = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_JOIN].cx, r[TOUCHSPEC_BAR_JOIN].cy);
+		CHECK_INT(TOUCHSPEC_BAR_PREV, prev, "bar hit: previous");
+		CHECK_INT(TOUCHSPEC_BAR_MAIN, main_part, "bar hit: main");
+		CHECK_INT(TOUCHSPEC_BAR_NEXT, next, "bar hit: next");
+		CHECK_INT(TOUCHSPEC_BAR_JOIN, join, "bar hit: join");
+		CHECK_INT(TOUCHSPEC_ACT_PREV, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, prev), "hit previous runs previous player");
+		CHECK_INT(TOUCHSPEC_ACT_FREE, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, main_part), "hit main runs free-fly");
+		CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, next), "hit next runs next player");
+		CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, join), "hit join runs the join");
+		// An edge of the bar is still on it (fat fingers), the screen corner is not.
+		CHECK_INT(TOUCHSPEC_BAR_NEXT, TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_NEXT].cx + r[TOUCHSPEC_BAR_NEXT].hx, r[TOUCHSPEC_BAR_NEXT].cy + r[TOUCHSPEC_BAR_NEXT].hy), "bar hit: its own edge");
+		CHECK_INT(-1, TouchSpec_BarPartAt(r, 1, 5, 5), "bar hit: far away");
+		// JOIN is only part of the row when it is offered.
+		CHECK_INT(-1, TouchSpec_BarPartAt(r, 0, r[TOUCHSPEC_BAR_JOIN].cx, r[TOUCHSPEC_BAR_JOIN].cy), "no join part: no hit");
+	}
+
 	// nothing sent, nothing held
 	memset(&j, 0, sizeof(j));
 	CHECK_INT(0, TouchSpec_JoinFrame(&j, TOUCHSPEC_OBSERVING, 5.0), "no join: no jump");
