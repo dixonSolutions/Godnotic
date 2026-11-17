@@ -298,7 +298,11 @@ final class AndySUBridge {
             announced = "";
             return;
         }
-        if (version.isEmpty()) version = "?";
+        if (version.isEmpty()) {
+            // A staged release without a version cannot be told apart from a stale status.
+            announced = "";
+            return;
+        }
         final String noticeVersion = version;
         long now = SystemClock.elapsedRealtime();
         if (!version.equals(announced)) {
@@ -308,6 +312,20 @@ final class AndySUBridge {
                     : "Updating to " + noticeVersion + " — restarting…",
                     Toast.LENGTH_SHORT).show());
         } else if (now - announcedAt >= 1000) {
+            android.content.SharedPreferences prefs =
+                    context.getSharedPreferences("andysu_apply", Context.MODE_PRIVATE);
+            long wall = System.currentTimeMillis();
+            if (!AndySUState.mayAutoRestart(noticeVersion, prefs.getString("version", ""),
+                    prefs.getLong("at", 0L), wall)) {
+                // Already restarted for this release and it is still staged (or its version is
+                // unknown): restarting again would loop. It applies at the next start instead.
+                announced = "";
+                stagedForApply = "";
+                stateForApply = "idle";
+                Log.w(TAG, "Not restarting again for " + noticeVersion + "; it applies at the next start");
+                return;
+            }
+            prefs.edit().putString("version", noticeVersion).putLong("at", wall).commit();
             // Do not repeatedly ask if the host rejects or returns from the relaunch.
             announced = "";
             stagedForApply = "";

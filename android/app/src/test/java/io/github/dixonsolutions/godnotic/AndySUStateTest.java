@@ -182,4 +182,17 @@ public class AndySUStateTest {
         p.sample(1000, parts("k", 2_100_000), k -> -1);
         assertEquals("2.1 MB of 40.0 MB · 2.1 MB/s · 19 s left", AndySUState.progressLine(p));
     }
+
+    @Test
+    public void autoRestartNeverLoopsOnTheSameRelease() {
+        long w = AndySUState.AUTO_RESTART_WINDOW_MS;
+        org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("?", "", 0L, 1000L));
+        org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("", "", 0L, 1000L));
+        org.junit.Assert.assertTrue(AndySUState.mayAutoRestart("1.2.266", "", 0L, 1000L));
+        org.junit.Assert.assertTrue(AndySUState.mayAutoRestart("1.2.266", "1.2.265", 900L, 1000L));
+        // the relaunch came back still staged: no second restart inside the window
+        org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + 5000L));
+        org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w - 1));
+        org.junit.Assert.assertTrue(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w));
+    }
 }

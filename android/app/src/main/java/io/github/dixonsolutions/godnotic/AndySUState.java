@@ -25,6 +25,23 @@ import java.util.Map;
 final class AndySUState {
     private AndySUState() {}
 
+    /** Ten minutes: one automatic restart per staged version in that window. */
+    static final long AUTO_RESTART_WINDOW_MS = 10 * 60 * 1000L;
+
+    /**
+     * Whether an automatic restart into {@code version} may be requested now. Never for an
+     * unknown version, and never twice for the same version inside the window: the host can keep
+     * reporting "staged" after a relaunch that did not promote it, and asking again on every
+     * start turned the app into a restart loop. The last request is persisted because the
+     * process that made it is gone by the time the next one decides.
+     */
+    static boolean mayAutoRestart(String version, String lastVersion, long lastAtMs, long nowMs) {
+        if (version == null || version.isEmpty() || "?".equals(version)) return false;
+        if (!version.equals(lastVersion)) return true;
+        long since = nowMs - lastAtMs;
+        return since < 0 || since >= AUTO_RESTART_WINDOW_MS;
+    }
+
     /** Unknown policy is held; null means the host has no policy API. */
     static boolean shouldAutoApply(String state, boolean inMatch, String policy) {
         return "staged".equals(state) && !inMatch
