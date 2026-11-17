@@ -321,6 +321,7 @@ installed.
     scripts/pack-phone-archive.py -o Godnotic-data.zip out/*-phone.pk3
     scripts/test-phone-assets.sh                                     # self-checks, run by tests.yml
     scripts/test-phone-archive.sh
+    scripts/test-phone-textures.py out                               # every texture and skybox a map names
 
 `slim-data.yml` in Godnotic-data runs on demand (publishing data is a decision,
 not a schedule). It takes that repository's pinned full release (`data-<date>`,
@@ -386,6 +387,24 @@ artifacts first, publish a chosen run second, immutable
   ~1.7 bit/pixel, would save VRAM only, needs a q3bsp loader change).
 - An old install that already downloaded the official packs keeps them:
   `PackFetch` matches them by role, and the names are the same.
+
+`scripts/test-phone-textures.py PHONEDIR` reads every `maps/*.bsp` in the set,
+from its texture lump and the worldspawn `sky` key, and fails on a name with
+no `dds/<name>.ktx`/`.dds`, no source image and no shader (or a shader whose
+own images are missing), and on a sky with fewer than six `env/` sides. It is
+the check for the failure a player sees as the missing-texture checkerboard
+and a black sky; tests.yml runs its `--self-test`, which needs no data set.
+
+## A map whose assets are not installed
+
+A client can load a map whose textures and skybox it does not have: a server
+running a community map (the engine downloads only the `.bsp`), or a pack set
+that is still coming in. Every surface then draws the 16x16 missing-texture
+checkerboard, and a sky without any of its six `env/` sides is drawn black.
+`engine/darkplaces/touch_sky.h` (one hook in `r_sky.c`) draws a sky the set
+does ship instead and says which in the console: `r_sky_fallback` 1 (the
+default) with `r_sky_fallback_name` `env/extragalactic/asteroids`. It cannot
+stand in for the map's own textures; nothing but those files can.
 
 ## Godnotic size policy
 
