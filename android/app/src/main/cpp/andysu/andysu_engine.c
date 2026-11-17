@@ -120,6 +120,12 @@ void Andysu_RestoreState(void)
 		Cbuf_AddText(cmd_local, ev);
 		Cbuf_Execute(cmd_local->cbuf);
 	}
+	if (Andysu_JsonGet(state, "menu", v, sizeof v) && atoi(v))
+	{
+		// The menu was on screen: bring it back even when a connect/map is loading behind it.
+		Cbuf_AddText(cmd_local, "togglemenu 1\n");
+		Cbuf_Execute(cmd_local->cbuf);
+	}
 	dpsnprintf(ev, sizeof ev, "{\"event\":\"engine_state_restored\",\"build_id\":\"" ANDYSU_BUILD_ID "\",\"state\":%s}", state);
 	andysu_loader->emit(ev);
 }
