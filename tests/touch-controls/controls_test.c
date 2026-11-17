@@ -20,6 +20,7 @@ Run through scripts/test-touch-controls.sh.
 #include "touch_hudmode.h"
 #include "touch_topbar.h"
 #include "touch_feel.h"
+#include "touch_spectate.h"
 
 static int failures;
 #define CHECK(cond, ...) do { if (!(cond)) { printf("FAIL "); printf(__VA_ARGS__); printf("\n"); failures++; } } while (0)
@@ -76,6 +77,43 @@ static void check_portrait_controls(void)
 			} else radius = rx[a] + rx[b];
 			CHECK(dx*dx + dy*dy >= radius*radius, "%.0fx%.0f hand %d: %s overlaps %s", w, h, hand, name[a], name[b]);
 		}
+	}
+}
+
+/* The spectator bar's four parts always fit: no part off screen, JOIN's right
+ * edge clear of the margin, no two parts touching, and one uniform height. */
+static void check_specbar(void)
+{
+	const screen_t bar_screens[] = {
+		{ "tablet 1920x1200", 1920, 1200, 283 },
+		{ "phone 2400x1080", 2400, 1080, 395 },
+		{ "tablet 1280x800", 1280, 800, 200 },
+		{ "portrait tablet 1200x1920", 1200, 1920, 283 },
+		{ "portrait phone 1080x2400", 1080, 2400, 395 },
+	};
+	size_t i;
+	int a, b;
+	for (i = 0; i < sizeof(bar_screens) / sizeof(bar_screens[0]); i++)
+	{
+		const screen_t *s = &bar_screens[i];
+		float u = TouchDp_Density(s->dpi, fminf(s->px_w, s->px_h));
+		float hy = 36 * u;
+		float margin = TOUCHSPEC_BAR_MARGIN_DP * u;
+		touchspec_bar_rect_t r[TOUCHSPEC_BAR_PARTS];
+		TouchSpec_BarLayout(s->px_w, s->px_h, s->px_w * 0.815f, s->px_h * 0.885f, hy, u, 1, r);
+		for (a = 0; a < TOUCHSPEC_BAR_PARTS; a++)
+		{
+			CHECK(r[a].hy > 0 && r[a].hx > 0, "%s: spectator part %d has no size", s->name, a);
+			CHECK(fabsf_(r[a].hy - hy) < 0.0001f || r[a].hy < hy, "%s: spectator part %d grew", s->name, a);
+			CHECK(r[a].cx - r[a].hx >= -0.01f && r[a].cx + r[a].hx <= s->px_w + 0.01f, "%s: spectator part %d off screen", s->name, a);
+			CHECK(r[a].cy - r[a].hy >= -0.01f && r[a].cy + r[a].hy <= s->px_h + 0.01f, "%s: spectator part %d off screen vertically", s->name, a);
+		}
+		CHECK(r[TOUCHSPEC_BAR_JOIN].cx + r[TOUCHSPEC_BAR_JOIN].hx <= s->px_w - margin + 0.01f, "%s: JOIN pushed off the right edge", s->name);
+		CHECK(r[TOUCHSPEC_BAR_PREV].cx - r[TOUCHSPEC_BAR_PREV].hx >= margin - 0.01f, "%s: previous pushed off the left edge", s->name);
+		CHECK(fabsf_(r[0].hy - r[3].hy) < 0.0001f, "%s: spectator parts shrank differently", s->name);
+		for (a = 0; a < TOUCHSPEC_BAR_PARTS; a++) for (b = a + 1; b < TOUCHSPEC_BAR_PARTS; b++)
+			CHECK(r[a].cx + r[a].hx <= r[b].cx - r[b].hx + 0.01f || r[b].cx + r[b].hx <= r[a].cx - r[a].hx + 0.01f,
+			      "%s: spectator parts %d and %d overlap", s->name, a, b);
 	}
 }
 
@@ -283,6 +321,7 @@ int main(void)
 {
 	check_topbar();
 	check_portrait_controls();
+	check_specbar();
 	check_topbar_extremes();
 	check_look();
 	check_stick();

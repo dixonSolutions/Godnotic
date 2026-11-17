@@ -259,13 +259,13 @@ static void check_join_dialog(void)
 	// "not yet" sentinel of the settle timer, not a time)
 #define T0 1.0
 	memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES;
-	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0), "nothing during the settle time");
-	CHECK_INT(TOUCHJOINDLG_OPEN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0 + TOUCHJOINDLG_SETTLE + 0.1), "the dialog opens over the preview, before observing");
+	CHECK_INT(TOUCHJOINDLG_OPEN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0), "the dialog is the first thing over the preview, before observing");
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0 + 0.1), "and only once");
 	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, T0 + TOUCHJOINDLG_SETTLE + 1.0), "and only once");
 	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OBSERVING, 0, 0, 0, 1, 1, 0, 0, T0 + TOUCHJOINDLG_SETTLE + 2.0), "an observer after the preview gets no second question");
 	memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES;
-	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0), "auto-join waits the settle time too");
-	CHECK_INT(TOUCHJOINDLG_JOIN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0 + TOUCHJOINDLG_SETTLE + 0.1), "auto-join goes ahead over the preview instead of asking");
+	CHECK_INT(TOUCHJOINDLG_JOIN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0), "auto-join goes ahead on the first preview frame instead of asking");
+	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0 + 0.1), "auto-join only once");
 
 	// The in-match menu is an overlay on the live game: it hides the touch
 	// controls, keeps the game (dimmed) behind it, and pauses only where the
