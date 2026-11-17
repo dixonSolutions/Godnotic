@@ -15,6 +15,14 @@ int main(void)
 	int n, i, total;
 	double now;
 
+	CHECK(TouchSL_MasterRetryDelay(0) == 1.5 && TouchSL_MasterRetryDelay(1) == 3.0 &&
+	      TouchSL_MasterRetryDelay(2) == 6.0 && TouchSL_MasterRetryDelay(8) == 30.0,
+	      "silent masters are retried with capped exponential backoff");
+	CHECK(TouchSL_MasterState(0, 1, 0, 20, 0) == 0 && TouchSL_MasterState(1, 1, 0, 1, 0) == 0 &&
+	      TouchSL_MasterState(1, 1, 0, 2, 0) == 2 && TouchSL_MasterState(1, 1, 0, 2, 1) == 1 &&
+	      TouchSL_MasterState(1, 1, 1, 2, 0) == 0 && TouchSL_MasterState(1, 0, 0, 2, 0) == 0,
+	      "master status distinguishes waiting, no reply, reply and LAN-only");
+
 	// a record survives the file
 	memset(&r, 0, sizeof(r));
 	strcpy(r.cname, "[2001:db8::1]:26000");

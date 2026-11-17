@@ -25,6 +25,26 @@ class ServerListStateTest {
     private fun keys(s: ServerListState = state): List<String?> = (0 until s.size).map { s.keyAt(it) }
 
     @Test
+    fun selectionDoesNotRestoreRowsExcludedBySearch() {
+        val window = ListWindow("mp/servers")
+        state.accept(0, 2, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta")))
+        screen(state, window)
+        state.setSearch("ALP")
+        // A filtered bridge window follows a previously unfiltered listing.
+        state.begin(1)
+        state.accept(0, 1, listOf(row("a:1", name = "Alpha")))
+        state.select("a:1")
+        assertEquals(listOf("a:1"), keys())
+        // A later source notice has the unfiltered source count.
+        state.begin(2)
+        screen(state, window)
+        assertEquals("the nonmatching cached row is not drawn", 1, window.total)
+        state.setSearch("")
+        assertEquals(listOf("a:1", "b:2"), keys())
+    }
+
+
+    @Test
     fun cachedRowsArePublishedWhenTheScreenOpens() {
         state.accept(0, 3, listOf(row("a"), row("b"), row("c")))
         val window = ListWindow("mp/servers")

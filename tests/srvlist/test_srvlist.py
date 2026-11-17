@@ -67,10 +67,11 @@ def servers_a():
     return out
 
 
-def write_state(servers, master_delay=0):
+def write_state(servers, master_delay=0, drop_master_queries=0):
     tmp = STATE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"servers": servers, "hold_answers": 0, "master_delay": master_delay}, f)
+        json.dump({"servers": servers, "hold_answers": 0, "master_delay": master_delay,
+                   "drop_master_queries": drop_master_queries}, f)
     os.replace(tmp, STATE)
     time.sleep(0.4)   # fakenet rereads it within 50 ms
 
@@ -82,7 +83,7 @@ def report():
         return json.load(f)
 
 
-def run_engine(userdir, fast, name, seed="0", quit_at=None):
+def run_engine(userdir, fast, name, seed="0", quit_at=None, early_open=False):
     """One session: the app's own refresh at start (if it makes one), a list opened at 8 s and again at
     14 s, where the saved rows, the summary and the bridge's source are read in the same frame, and
     all three once more at the end. Returns (stats lines, summaries, bridge windows, log)."""
@@ -102,13 +103,16 @@ def run_engine(userdir, fast, name, seed="0", quit_at=None):
                 'echo SUMMARY end "$_slist_summary" servers=$_slist_servers players=$_slist_players saved=$_slist_saved refreshing=$_slist_refreshing\n'
                 + windows(8))
     with open(os.path.join(userdir, "data", "sl.cfg"), "w") as f:
-        if quit_at:
+        if early_open:
+            f.write('toggleconsole\ndefer 1 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
+        elif quit_at:
             f.write('defer 8 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
         elif fast:
             f.write('defer 8 "net_slist_open"\ndefer 14 "exec sl_open.cfg"\ndefer 22 "exec sl_end.cfg"\ndefer 23 quit\n')
         else:
             f.write('defer 8 "net_slist_open"\ndefer 30 "exec sl_end.cfg"\ndefer 31 quit\n')
     env = dict(os.environ, SDL_VIDEODRIVER="offscreen", SDL_AUDIODRIVER="dummy")
+    env["LD_PRELOAD"] = os.environ["SRVLIST_TEST_PRELOAD"]
     env.pop("DISPLAY", None); env.pop("WAYLAND_DISPLAY", None)
     if a.libs:
         env["LD_LIBRARY_PATH"] = a.libs + ":" + env.get("LD_LIBRARY_PATH", "")
@@ -162,6 +166,14 @@ try:
     shutil.rmtree(ud, ignore_errors=True)
     alive = sum(1 for s in A if s["alive"])
 
+    # A lost first master query is retried without another user refresh.
+    write_state(A, drop_master_queries=1)
+    stats, sums, rows, log = run_engine(os.path.join(a.work, "user-retry"), True, "0-retry", quit_at=7, early_open=True)
+    r = report()
+    check(r["master_queries"] >= 2, "retry: silent master is asked again", str(r["master_queries"]))
+    check(int(sums.get("end", {}).get("servers", 0)) == alive,
+          "retry: servers appear without another refresh", str(sums.get("end")))
+
     # ---- 1 a fresh user directory
     write_state(A)
     stats, sums, rows, log = run_engine(ud, True, "1-cold")
@@ -178,14 +190,14 @@ try:
         check(f(s, "t50") < 1.0, "cold: half of the answers within 1.0 s", "%.3f s" % f(s, "t50"))
         check(f(s, "t95") < 2.5, "cold: 95% of the answers within 2.5 s", "%.3f s" % f(s, "t95"))
         check(f(s, "settled") < 6.0, "cold: settled within 6 s", "%.3f s" % f(s, "settled"))
-        check(int(s["answers"]) >= alive - 1, "cold: every live server answered despite 3% loss", "%s of %d" % (s["answers"], alive))
+        check(int(s["answers"]) == alive, "cold: every live server answered despite 3% loss", "%s of %d" % (s["answers"], alive))
         e = sums.get("end", {})
-        check(abs(int(e.get("servers", -1)) - alive) <= 1, "cold: the summary counts the listed servers", str(e))
-        check(abs(int(e.get("players", -1)) - sum(x["humans"] for x in A if x["alive"])) <= 3, "cold: and their human players", str(e))
+        check(int(e.get("servers", -1)) == alive, "cold: the summary counts the listed servers", str(e))
+        check(int(e.get("players", -1)) == sum(x["humans"] for x in A if x["alive"]), "cold: and their human players", str(e))
         check(e.get("text", "").endswith("players") and "servers" in e.get("text", ""), "cold: the summary reads N servers · M players", e.get("text", ""))
     if opening:
         o = opening[-1]       # the list opened again in the same session
-        check(int(o["rows_at_open"]) >= alive - 1 and f(o, "first_answer") == 0, "same session: opening the list again shows the rows at once", "%s rows" % o["rows_at_open"])
+        check(int(o["rows_at_open"]) == alive and f(o, "first_answer") == 0, "same session: opening the list again shows the rows at once", "%s rows" % o["rows_at_open"])
     check(r["dropped_flood"] == 0, "cold: no server was asked twice within a second, over three refreshes", "min gap %s s %s" % (r["min_gap_same_server"], r.get("flood_examples")))
     check(r["max_host_burst"] <= 16 + 10 + 1, "cold: one host with 24 ports gets at most 16 queries at once, then 100 a second", "%s within 100 ms" % r["max_host_burst"])
     budget = (alive + 2 * (len(A) - alive) + 25) + 2 * (len(A) + 25)
@@ -204,19 +216,21 @@ try:
     else:
         first, o, s = done[0], opening[-1], done[-1]
         print("     " + first["line"])
-        check(int(first["rows_at_open"]) >= alive - 1 and f(first, "first_row") <= 0.001,
+        check(int(first["rows_at_open"]) == alive and f(first, "first_row") <= 0.001,
               "warm: the first refresh of the session starts with the saved rows up (time to first row 0)", "%s rows" % first["rows_at_open"])
         check(f(first, "t95") < 2.5 and f(first, "settled") < 6.0, "warm: refreshed and settled in time", "t95 %.3f, settled %.3f" % (f(first, "t95"), f(first, "settled")))
-        check(int(o["rows_at_open"]) >= alive - 1, "warm: opening the list: the rows are up in that frame", "%s rows" % o["rows_at_open"])
+        check(int(o["rows_at_open"]) == alive, "warm: opening the list: the rows are up in that frame", "%s rows" % o["rows_at_open"])
         check(f(o, "first_answer") == 0, "warm: before any server answered", "first answer %.3f" % f(o, "first_answer"))
-        check(int(sums.get("open", {}).get("servers", 0)) >= alive - 1 and sums.get("open", {}).get("saved") == "1",
+        check(int(sums.get("open", {}).get("servers", 0)) == alive and sums.get("open", {}).get("saved") == "1",
               "warm: the summary has them at once, flagged as saved", str(sums.get("open")))
         w = rows.get(7)
         stale = sum(1 for x in (w or {}).get("rows", []) if x["cells"].get("stale")) if w else -1
-        check(w is not None and w["total"] >= alive - 1 and stale >= w["total"] - 12, "warm: the bridge's servers source has them, marked stale", "total %s, stale %d" % (w and w["total"], stale))
+        check(w is not None and w["total"] == alive and stale >= w["total"] - 12, "warm: the bridge's servers source has them, marked stale", "total %s, stale %d" % (w and w["total"], stale))
         check(w is not None and all("image" not in x for x in w["rows"]), "warm: server rows carry no image")
         e = rows.get(8)
-        check(e is not None and e["total"] >= alive - 1 and not any(x["cells"].get("stale") for x in e["rows"]), "warm: after the refresh no row is stale")
+        check(e is not None and e["total"] == alive and not any(x["cells"].get("stale") for x in e["rows"]), "warm: after the refresh no row is stale")
+        check(e is not None and len({x["key"] for x in e["rows"]}) == alive,
+              "warm: every listed address occurs exactly once")
         check(e is not None and w is not None and e["rev"] > w["rev"], "warm: the source's rev moved as the answers came", "%s -> %s" % (w and w["rev"], e and e["rev"]))
         check(sums.get("end", {}).get("saved") == "0", "warm: the summary is live after the refresh", str(sums.get("end")))
     check(r["dropped_flood"] == 0, "warm: no server was asked twice within a second", str(r.get("flood_examples")))
@@ -239,18 +253,18 @@ try:
     else:
         first, o = done[0], opening[-1]
         print("     " + first["line"])
-        check(int(first["rows_at_open"]) >= alive - 1, "changed: the session opens with what was saved", first["rows_at_open"])
-        check(19 <= int(first["removed"]) <= 22, "changed: the 20 servers that are gone were taken out", "removed %s" % first["removed"])
+        check(int(first["rows_at_open"]) == alive, "changed: the session opens with what was saved", first["rows_at_open"])
+        check(int(first["removed"]) == 20, "changed: the 20 servers that are gone were taken out", "removed %s" % first["removed"])
         w = rows.get(7)
         names = set(x["cells"]["name"] for x in w["rows"]) if w else set()
-        check(abs(int(o["rows_at_open"]) - alive_b) <= 1, "changed: opening the list afterwards shows the live set at once", o["rows_at_open"])
+        check(int(o["rows_at_open"]) == alive_b, "changed: opening the list afterwards shows the live set at once", o["rows_at_open"])
         check(w is not None and not any(n in names for n in ("Fake %d" % i for i in range(20, 40))), "changed: no removed server among the saved rows")
         e = rows.get(8)
         names = set(x["cells"]["name"] for x in e["rows"]) if e else set()
-        check(e is not None and abs(e["total"] - alive_b) <= 1, "changed: the list is the live servers", "%s rows, %d live" % (e and e["total"], alive_b))
+        check(e is not None and e["total"] == alive_b, "changed: the list is the live servers", "%s rows, %d live" % (e and e["total"], alive_b))
         check(sum(1 for n in names if n.startswith("New ")) == 10, "changed: the 10 new servers are listed")
         check(not any(n in names for n in ("Fake %d" % i for i in range(20, 40))), "changed: none of the gone servers is listed")
-        check(abs(int(sums.get("end", {}).get("servers", -1)) - alive_b) <= 1, "changed: the summary follows", str(sums.get("end")))
+        check(int(sums.get("end", {}).get("servers", -1)) == alive_b, "changed: the summary follows", str(sums.get("end")))
 
     # ---- 4 stock scheduler, for comparison
     write_state(A)
@@ -262,7 +276,7 @@ try:
     else:
         s = done[0]
         print("     " + s["line"])
-        check("stock" in s["line"] and int(s["answers"]) >= alive - 3, "stock: net_slist_fast 0 is the stock scheduler and still lists the servers", "%s answers" % s["answers"])
+        check("stock" in s["line"] and int(s["answers"]) == alive, "stock: net_slist_fast 0 is the stock scheduler and still lists the servers", "%s answers" % s["answers"])
 
     # ---- 5 the seed: a fresh install, a slow master
     seeded = [x for x in A if x["alive"]][:60] + [x for x in A if not x["alive"]][:5]
@@ -282,11 +296,11 @@ try:
         print("     " + s["line"])
         check(int(s.get("seeded", 0)) == len(seeded), "seed: every seeded address is taken", "seeded %s of %d" % (s.get("seeded"), len(seeded)))
         check(f(s, "first_row") < 0.5, "seed: the first row is up before the master has answered (0.6 s)", "%.3f s" % f(s, "first_row"))
-        check(int(s["answers"]) >= alive - 1, "seed: and every live server is listed, seeded or not", "%s of %d" % (s["answers"], alive))
+        check(int(s["answers"]) == alive, "seed: and every live server is listed, seeded or not", "%s of %d" % (s["answers"], alive))
     check(r["dropped_flood"] == 0, "seed: no server was asked twice within a second", str(r.get("flood_examples")))
     stats, sums, rows, log = run_engine(ud5, True, "5-seed-next", seed="seed.txt", quit_at=16)
     done = [s for s in stats if not s["running"]]
-    check(bool(done) and int(done[0].get("seeded", -1)) == 0 and int(done[0]["rows_at_open"]) >= alive - 1,
+    check(bool(done) and int(done[0].get("seeded", -1)) == 0 and int(done[0]["rows_at_open"]) == alive,
           "seed: the next session has the saved list and takes no seed", done[0]["line"] if done else log)
 
     # ---- 6 the model of Insanotic's scheduler (docs/NETWORK.md, "Measured")
@@ -297,7 +311,7 @@ try:
         bad("model: net_slist_fast 2 never settled (log: %s)" % log)
     else:
         print("     " + done[0]["line"])
-        check("insanotic-model" in done[0]["line"] and int(done[0]["answers"]) >= alive - 3 and int(done[0]["rows_at_open"]) == 0,
+        check("insanotic-model" in done[0]["line"] and int(done[0]["answers"]) == alive and int(done[0]["rows_at_open"]) == 0,
               "model: net_slist_fast 2 runs Insanotic's scheduler (nothing saved) and lists the servers", "%s answers" % done[0]["answers"])
 finally:
     net.terminate()
