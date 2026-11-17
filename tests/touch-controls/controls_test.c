@@ -31,6 +31,8 @@ typedef struct { const char *name; float px_w, px_h, dpi; } screen_t;
 static const screen_t screens[] = {
 	{ "tablet 1920x1200", 1920, 1200, 283 },
 	{ "phone 2400x1080", 2400, 1080, 395 },
+	{ "portrait tablet 1200x1920", 1200, 1920, 283 },
+	{ "portrait phone 1080x2400", 1080, 2400, 395 },
 	{ "tablet 1280x800", 1280, 800, 200 },
 	{ "phone 2340x1080", 2340, 1080, 395 },
 	{ "desk 1280x720", 1280, 720, 0 },
@@ -38,6 +40,44 @@ static const screen_t screens[] = {
 	{ "tablet window 1200x750", 1200, 750, 283 },
 	{ "small tablet 1024x600", 1024, 600, 200 },
 };
+
+/* Default portrait controls, in pixels. Check their visible bounds together
+ * with the wheel, which is transient but may be shown over the HUD. */
+static void check_portrait_controls(void)
+{
+	const float sizes[][2] = {{1200, 1920}, {1080, 2400}};
+	int i, hand, a, b;
+	for (i = 0; i < 2; i++) for (hand = 0; hand < 2; hand++)
+	{
+		float w = sizes[i][0], h = sizes[i][1], s = w;
+		float x[] = {0.20f*w, 0.855f*w, 0.770f*w, 0.855f*w, 0.660f*w, 0.5f*w};
+		float y[] = {0.680f*h, 0.680f*h, 0.755f*h, 0.885f*h, 0.885f*h, 0.45f*h};
+		float rx[] = {0.20f*s, 0.08f*s, 0.05f*s, 0.072f*2.6f*0.5f*s, 0.04f*s, 0.22f*s};
+		float ry[] = {rx[0], rx[1], rx[2], 0.036f*s, rx[4], rx[5]};
+		float u = TouchDp_Density(i ? 395 : 283, s);
+		const char *name[] = {"stick", "FIRE", "ALT", "HOP", "DUCK", "wheel"};
+		for (a = 1; a <= 4; a++) if (a != 3) rx[a] = ry[a] = fmaxf(rx[a], 24*u);
+		ry[3] = fmaxf(ry[3], 18*u); rx[3] = ry[3]*2.6f;
+		rx[0] = ry[0] = fmaxf(rx[0], 64*u);
+		x[0] = fmaxf(x[0], rx[0]);
+		for (a = 0; a < 6; a++)
+		{
+			if (hand) x[a] = w - x[a];
+			CHECK(x[a] - rx[a] >= -0.01f && x[a] + rx[a] <= w + 0.01f && y[a] - ry[a] >= 0 && y[a] + ry[a] <= h,
+			      "%.0fx%.0f hand %d: %s off screen", w, h, hand, name[a]);
+		}
+		for (a = 0; a < 6; a++) for (b = a + 1; b < 6; b++)
+		{
+			float dx = fabsf(x[a] - x[b]), dy = fabsf(y[a] - y[b]), radius;
+			if (a == 3 || b == 3) {
+				int pill = a == 3 ? a : b, circle = a == 3 ? b : a;
+				dx = fmaxf(0, dx - rx[pill]); dy = fmaxf(0, dy - ry[pill]);
+				radius = rx[circle];
+			} else radius = rx[a] + rx[b];
+			CHECK(dx*dx + dy*dy >= radius*radius, "%.0fx%.0f hand %d: %s overlaps %s", w, h, hand, name[a], name[b]);
+		}
+	}
+}
 
 static void check_topbar(void)
 {
@@ -54,7 +94,7 @@ static void check_topbar(void)
 		const touchbar_rect_t *r[5];
 		const char *names[5] = { "chip", "console", "MENU", "SCORE", "CHAT" };
 		touchbar_rect_t clock;
-		float density = TouchDp_Density(s->dpi, s->px_h);
+		float density = TouchDp_Density(s->dpi, fminf(s->px_w, s->px_h));
 		// the 2D space the engine uses on these screens: the pixels (vid_conwidthauto)
 		float w = s->px_w, h = s->px_h, u = density;
 		int a, c;
@@ -62,7 +102,7 @@ static void check_topbar(void)
 		in.w = w; in.h = h; in.u = u;
 		in.in_l = in.in_r = inset ? w * 0.035f : 0;   // a cutout: 82 px on the 2340 px phone
 		in.in_t = inset ? h * 0.02f : 0;
-		in.pill_h = (h * 0.060f > TOUCHDP_PILL_HEIGHT * u) ? h * 0.060f : TOUCHDP_PILL_HEIGHT * u;
+		in.pill_h = (fminf(w, h) * 0.060f > TOUCHDP_PILL_HEIGHT * u) ? fminf(w, h) * 0.060f : TOUCHDP_PILL_HEIGHT * u;
 		in.aspect = 2.4f;
 		in.console = 48 * u > in.pill_h ? 48 * u : in.pill_h;
 		in.menu = (vis & 1) == 0; in.score = (vis & 2) == 0; in.chat = (vis & 4) == 0;
@@ -242,6 +282,7 @@ static void check_stick(void)
 int main(void)
 {
 	check_topbar();
+	check_portrait_controls();
 	check_topbar_extremes();
 	check_look();
 	check_stick();
