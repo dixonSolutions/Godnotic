@@ -7,8 +7,9 @@
 //   T fup ID X Y
 //   T glide ID X1 Y1 X2 Y2 DUR [up]   down at X1 Y1, moves to X2 Y2 over DUR s at 60 Hz, then up if "up"
 //   T mmove X Y             mouse to window pixel X Y
-//   T mdown / T mup         left button
+//   T mdown [BUTTON] / T mup [BUTTON]  SDL mouse button (default left)
 //   T key SYM               SDL keycode, pressed and released
+//   T keydown SYM / T keyup SYM       hold/release a key
 //   T cmd TEXT...           console text (Cbuf_AddText)
 // $XT_REL=1 reports the mouse as relative (grabbed).
 #define _GNU_SOURCE
@@ -24,7 +25,7 @@ typedef struct { double t; int type; int id; float x, y; char text[200]; } ev_t;
 static ev_t evs[MAXEV];
 static int nev = -1, next;
 static double t0 = -1;
-static int mx, my, mb;
+static int mx, my, mb, rx, ry;
 
 enum { E_FDOWN = 1, E_FMOVE, E_FUP, E_MMOVE, E_MDOWN, E_MUP, E_KEYD, E_KEYU, E_CMD };
 
@@ -71,8 +72,10 @@ static void load(void)
 			if (strstr(p, "up")) add(t + dur + 0.02, E_FUP, id, x2, y2, 0);
 		}
 		else if (!strcmp(w, "mmove") && sscanf(p, "%f %f", &x, &y) == 2) add(t, E_MMOVE, 0, x, y, 0);
-		else if (!strcmp(w, "mdown")) add(t, E_MDOWN, 0, 0, 0, 0);
-		else if (!strcmp(w, "mup")) add(t, E_MUP, 0, 0, 0, 0);
+		else if (!strcmp(w, "mdown")) { id = SDL_BUTTON_LEFT; sscanf(p, "%d", &id); add(t, E_MDOWN, id, 0, 0, 0); }
+		else if (!strcmp(w, "mup")) { id = SDL_BUTTON_LEFT; sscanf(p, "%d", &id); add(t, E_MUP, id, 0, 0, 0); }
+		else if (!strcmp(w, "keydown") && sscanf(p, "%d", &id) == 1) add(t, E_KEYD, id, 0, 0, 0);
+		else if (!strcmp(w, "keyup") && sscanf(p, "%d", &id) == 1) add(t, E_KEYU, id, 0, 0, 0);
 		else if (!strcmp(w, "key") && sscanf(p, "%d", &id) == 1) { add(t, E_KEYD, id, 0, 0, 0); add(t + 0.1, E_KEYU, id, 0, 0, 0); }
 		else if (!strcmp(w, "cmd")) { p[strcspn(p, "\n")] = 0; add(t, E_CMD, 0, 0, 0, p); }
 	}
@@ -121,15 +124,16 @@ int SDL_PollEvent(SDL_Event *ev)
 		case E_MMOVE:
 		{
 			int dx = (int)e->x - mx, dy = (int)e->y - my;
+			rx += dx; ry += dy;
 			mx = (int)e->x; my = (int)e->y;
 			ev->type = SDL_MOUSEMOTION; ev->motion.x = mx; ev->motion.y = my; ev->motion.xrel = dx; ev->motion.yrel = dy; ev->motion.windowID = 1;
-			ev->motion.state = mb ? SDL_BUTTON_LMASK : 0;
+			ev->motion.state = mb;
 			return 1;
 		}
 		case E_MDOWN: case E_MUP:
-			mb = e->type == E_MDOWN;
-			ev->type = mb ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
-			ev->button.x = mx; ev->button.y = my; ev->button.button = SDL_BUTTON_LEFT; ev->button.state = mb; ev->button.clicks = 1; ev->button.windowID = 1;
+			if (e->type == E_MDOWN) mb |= SDL_BUTTON(e->id); else mb &= ~SDL_BUTTON(e->id);
+			ev->type = e->type == E_MDOWN ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+			ev->button.x = mx; ev->button.y = my; ev->button.button = e->id; ev->button.state = e->type == E_MDOWN; ev->button.clicks = 1; ev->button.windowID = 1;
 			return 1;
 		case E_KEYD: case E_KEYU:
 			ev->type = e->type == E_KEYD ? SDL_KEYDOWN : SDL_KEYUP;
@@ -144,7 +148,9 @@ int SDL_PollEvent(SDL_Event *ev)
 	return real(ev);
 }
 
-Uint32 SDL_GetMouseState(int *x, int *y) { if (x) *x = mx; if (y) *y = my; return mb ? SDL_BUTTON_LMASK : 0; }
+Uint32 SDL_GetMouseState(int *x, int *y) { if (x) *x = mx; if (y) *y = my; return mb; }
+Uint32 SDL_GetRelativeMouseState(int *x, int *y) { if (x) *x = rx; if (y) *y = ry; rx = ry = 0; return mb; }
+void SDL_WarpMouseInWindow(SDL_Window *window, int x, int y) { (void)window; mx = x; my = y; }
 int SDL_GetNumTouchDevices(void) { return getenv("XT_NOTOUCH") ? 0 : 1; }
 SDL_TouchID SDL_GetTouchDevice(int i) { (void)i; return 1; }
 SDL_TouchDeviceType SDL_GetTouchDeviceType(SDL_TouchID id) { (void)id; return SDL_TOUCH_DEVICE_DIRECT; }

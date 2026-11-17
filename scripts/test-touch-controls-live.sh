@@ -21,6 +21,8 @@
 #           vote; no two controls (nor the score list, clock and info
 #           messages) intersect in any of them.
 #   local   a local Deathmatch puts the player straight into the game.
+#   mouse_keyboard   mouse motion and both buttons, keyboard aim and fire,
+#                    and the assist gate in an offscreen local match.
 #
 #   BASEDIR=<Godnotic basedir> STOCKBASE=<basedir with upstream Xonotic data only> \
 #       scripts/test-touch-controls-live.sh [input] [join] [rects] [local]
@@ -162,10 +164,25 @@ case_local() {
 	if grep -a "^TOUCHMENU" "$WORK/local/client.log" | tail -1 | grep -q "up=0"; then echo "ok   local: no dialog in the way"; else echo "FAIL local: a menu is up"; fail=1; fi
 }
 
+case_mouse_keyboard() {
+	{
+		echo '0 cmd cmd join'; mark 4 base
+		echo '5 mmove 800 500'; mark 6 mouse_turn
+		echo '7 mdown 1'; mark 8 mouse_fire; echo '9 mup 1'; mark 10 mouse_up
+		echo '11 mdown 3'; mark 12 mouse_alt; echo '13 mup 3'; mark 14 mouse_alt_up
+		echo '15 keydown 106'; mark 16 key_turn; echo '17 keyup 106'
+		echo '18 keydown 104'; mark 19 key_fire; echo '20 keyup 104'; mark 21 key_up
+		echo '22 keydown 110'; mark 23 key_alt; echo '24 keyup 110'; mark 25 key_alt_up
+		echo '26 cmd quit'
+	} > "$WORK/mouse_keyboard.txt"
+	client mouse_keyboard desk "$WORK/mouse_keyboard.txt" "$QUIET; set forceqmenu 1; set _menu_alpha 0; set vid_touchscreen 0; set cl_touch_autoshoot 1; set cl_touch_aimassist 1; set cl_touch_aim_debug 1; exec touch_keyboard.cfg; set g_warmup 0; set bot_number 0; map stormkeep; defer 16 \"set xt_go 1\"" 60
+	python3 "$T/check_live.py" mouse_keyboard "$WORK/mouse_keyboard/client.log" || fail=1
+}
+
 # A case that fails is run once more: these are timed scripts against a
 # real engine, and a machine busy with other work can stall one for a second.
 for c in ${*:-input join rects local}; do
-	case $c in input|join|rects|local) ;; *) echo "unknown case $c"; exit 2 ;; esac
+	case $c in input|join|rects|local|mouse_keyboard) ;; *) echo "unknown case $c"; exit 2 ;; esac
 	fail=0
 	"case_$c" > "$WORK/$c.out" 2>&1
 	if [ $fail != 0 ]; then

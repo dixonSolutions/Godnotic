@@ -15,3 +15,7 @@ trap 'rm -rf "$out"' EXIT
 "$CC" -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
     -I"$ROOT/engine/darkplaces" -o "$out/aim_test" "$dir/aim_test.c" -lm
 "$out/aim_test"
+
+"$CC" -std=c99 -Wall -Wextra -Werror -I"$ROOT/engine/darkplaces" \
+    -o "$out/input_test" "$dir/input_test.c"
+"$out/input_test"
