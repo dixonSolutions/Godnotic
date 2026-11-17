@@ -156,7 +156,10 @@ make_template() {
 	echo "echo startup.cfg" > "$TEMPLATE/data/touch/startup.cfg"
 	cat > "$TEMPLATE/data/bench-quit.cfg" <<'EOF'
 alias _bq_0 "defer 0.05 _bq_poll"
-alias _bq_1 "echo BENCH_DONE"
+# one more frame, so the menu's first frame is swapped and LOADTIME
+# menu_presented is written before the process stops
+alias _bq_1 "defer 0.05 _bq_done"
+alias _bq_done "echo BENCH_DONE"
 alias _bq_poll "_bq_$_touch_loadtime_menu"
 _bq_poll
 EOF
@@ -283,7 +286,7 @@ for path in logs:
         if "LOADTIME" not in line:
             continue
         line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-        m = re.match(r"LOADTIME (menu_ready|game_ready|world_preview|world_presented|after_ready|vote_ready)\s+(.*)", line)
+        m = re.match(r"LOADTIME (menu_ready|menu_presented|game_ready|world_preview|world_presented|after_ready|vote_ready)\s+(.*)", line)
         if m:
             stage = m.group(1)
             for k, v in re.findall(r"(\w+)=([-0-9.]+)", m.group(2)):
@@ -310,7 +313,7 @@ make_template
 for sc in "$@"; do
 	logs=()
 	case $sc in
-		menu)
+		launch|menu)
 			for r in $(seq 1 "$RUNS"); do log=$(run_menu "$r") || exit 1; logs+=("$log"); done ;;
 		cold-menu)
 			for r in $(seq 1 "$RUNS"); do
