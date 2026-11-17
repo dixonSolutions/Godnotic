@@ -44,6 +44,9 @@ final class EngineSwap {
     /** The loader answers for the engine library it loads; null means the swap was accepted. */
     static native String nativeRequestSwap(String enginePath);
 
+    /** In-process engine swaps; off until the loader can swap without shutting the app. */
+    static final boolean LIVE_SWAP = false;
+
     static void register(Context context) {
         appContext = context.getApplicationContext();
         try {
@@ -56,6 +59,14 @@ final class EngineSwap {
             int level = (Integer) api.getMethod("apiLevel").invoke(current);
             if (level < 2) {
                 return; // an older host: no live native swaps, updates apply on the next start
+            }
+            if (!LIVE_SWAP) {
+                // Swapping libmain inside the running process shut the app on the tablet
+                // ("Apply live", 1.2.24x): the SDL/JNI natives, GL context and engine threads
+                // still belong to the old library. Without a handler the host applies the
+                // staged release by relaunching, as it does for an older host.
+                Log.i(TAG, "Live engine swap off; updates apply by relaunching (API level " + level + ")");
+                return;
             }
             Class<?> handlerClass = Class.forName("com.andysu.api.LiveSwapHandler");
             InvocationHandler ih = (proxy, method, args) -> {
