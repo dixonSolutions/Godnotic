@@ -65,6 +65,8 @@ class ViewRenderer(
     }
 
     private val serverListState = ServerListState()
+    private var serverFlushQueued = false
+    private val fadedIn = HashSet<String>()
     private val nodes = HashMap<String, Entry>()
     private val lists = HashMap<String, MutableList<VirtualList>>() // by source
     private val saved = HashMap<String, MutableMap<String, Any?>>()
@@ -143,8 +145,40 @@ class ViewRenderer(
     override fun toast(text: String, kind: String) = host.toast(text, kind)
 
     override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>) {
+        // The server browser is merged, never replaced: a refresh keeps the rows on
+        // screen (dimmed until they answer), updates them by address, and the replies
+        // that land in one frame go to the list as one update.
+        if (source == "servers" || source.startsWith("servers.")) {
+            if (rows.isEmpty() && offset == 0) serverListState.begin(total) else serverListState.accept(offset, total, rows)
+            queueServers()
+            for (l in lists[source].orEmpty()) nodes[l.id]?.let { bindEmpty(it) }
+            return
+        }
         for (l in lists[source].orEmpty()) {
             if (rows.isEmpty() && offset == 0) l.reset(total) else l.rows(offset, total, rows)
+            nodes[l.id]?.let { bindEmpty(it) }
+        }
+    }
+
+    /** One server list update per frame, however many replies arrived. */
+    private fun queueServers() {
+        if (serverFlushQueued) return
+        val any = lists["servers"]?.firstOrNull()?.view ?: return
+        serverFlushQueued = true
+        any.post {
+            serverFlushQueued = false
+            flushServers()
+        }
+    }
+
+    private fun flushServers() {
+        serverListState.settle()
+        for (l in lists["servers"].orEmpty()) {
+            val runs = serverListState.runs()
+            // one write per loaded run: positions not on screen keep their rows, so
+            // the row under the finger and the scroll position never shift
+            for ((offset, rows) in runs) l.rows(offset, serverListState.size, rows)
+            if (runs.isEmpty() && serverListState.size == 0) l.rows(0, 0, emptyList())
             nodes[l.id]?.let { bindEmpty(it) }
         }
     }
@@ -1412,8 +1446,26 @@ class ViewRenderer(
                     if (r.childCount != columns.size) rebuildRow(r, columns, rowH)
                     val cells = data?.get("cells").obj()
                     for ((i, c) in columns.withIndex()) bindCell(r.getChildAt(i) as TextView, c, cells, data == null)
-                    // `stale`: a saved server not answered yet this refresh (drawn dimmed)
-                    r.alpha = if (data?.bool("disabled") == true) 0.5f else if (cells.bool("stale") || data?.bool("stale") == true) 0.55f else 1f
+                    // `stale`: no answer this refresh (drawn dimmed until its grace runs
+                    // out); `fresh`: new this refresh, so it fades and slides in rather
+                    // than appearing between two frames
+                    val dim = if (data?.bool("disabled") == true) 0.5f else if (cells.bool("stale") || data?.bool("stale") == true) 0.55f else 1f
+                    if (data != null && data.bool("fresh")) {
+                        if (fadedIn.size > 4096) fadedIn.clear()
+                        if (fadedIn.add(VirtualList.keyOf(data))) {
+                            r.animate().cancel()
+                            r.alpha = 0f
+                            r.translationY = dp(8f).toFloat()
+                            r.animate().alpha(dim).translationY(0f).setDuration(180).start()
+                        } else if (r.alpha != dim) {
+                            r.alpha = dim
+                            r.translationY = 0f
+                        }
+                    } else if (r.alpha != dim || r.translationY != 0f) {
+                        r.animate().cancel()
+                        r.alpha = dim
+                        r.translationY = 0f
+                    }
                     val on = data != null && e.props["selected"].list().any { it.toString() == VirtualList.keyOf(data) }
                     r.isSelected = on
                     r.background = if (on) Theme.rounded(0xFF1D3A73.toInt(), dp(8f).toFloat(), max(1, dp(1.5f)), Theme.EMBER)
@@ -1445,7 +1497,10 @@ class ViewRenderer(
         }
         lists.getOrPut(e.source) { ArrayList() }.add(vl)
         e.list = vl
-        vl.onVisible = { r, touching -> events.visible(id, r.first, r.last - r.first + 1, touching) }
+        vl.onVisible = { r, touching ->
+            if (touching != null) serverListState.hold = touching // no re-ordering under a finger
+            events.visible(id, r.first, r.last - r.first + 1, touching)
+        }
         var lastQuery = ""
         var lastSelected: List<Any?> = emptyList()
         e.bind = { x ->
