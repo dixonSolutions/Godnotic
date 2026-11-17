@@ -124,9 +124,7 @@ bool UIB_JoinBack()
 	// returns there (UIB_ReturnFromGame). Watching a match, it just closes.
 	bool cancel_join = cvar_string("_uib_join_cancel") != "";
 	// dismissing the question is not a choice: stop hiding the observer HUD
-	localcmd("
-touch_join_cancel
-");
+	localcmd("\ntouch_join_cancel\n");
 	UIB_JoinClose();
 	if (cancel_join)
 		localcmd("\ndisconnect\n");
