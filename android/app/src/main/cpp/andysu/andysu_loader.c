@@ -473,6 +473,8 @@ __attribute__((visibility("default"))) int AndySU_SDL_main(int argc, char *argv[
             else rc = ANDYSU_RUN_FAILED;
         }
         g_trial = 0;
+        /* No input may reach a library whose engine has returned. */
+        g_engine = NULL;
         if (rc == ANDYSU_RUN_SWAP && g_next_engine) {
             emit_stage("engine_stopped", path, e, swapped); /* after the old engine's teardown */
             /* The old library stays mapped on purpose; remember its file for a rollback. */

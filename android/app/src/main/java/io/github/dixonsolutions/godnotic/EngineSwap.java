@@ -1,10 +1,12 @@
 package io.github.dixonsolutions.godnotic;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -38,14 +40,44 @@ final class EngineSwap {
     private static volatile Object host;           // com.andysu.api.HostApi
     private static volatile String fromVersion;    // the release running before the swap: where a rollback goes
     private static volatile String toVersion;      // the release being swapped in
+    private static final long WATCHDOG_MS = 90_000;    // data preparation + engine start + health
+    private static final long STARTED_WATCHDOG_MS = 60_000;
+    private static final String PREFS = "engine_swap";
+    private static final LiveSwapGuard guard = new LiveSwapGuard();
+    private static final Handler main = new Handler(Looper.getMainLooper());
+    private static final Runnable watchdog = EngineSwap::onWatchdog;
+    private static volatile String deviceKey;
 
     private EngineSwap() {}
 
     /** The loader answers for the engine library it loads; null means the swap was accepted. */
     static native String nativeRequestSwap(String enginePath);
 
-    /** In-process engine swaps; off until the loader can swap without shutting the app. */
-    static final boolean LIVE_SWAP = false;
+    /** The swap is attempted only on a device class whose last trial did not crash or time out. */
+    private static boolean liveSwapAllowed(Context context) {
+        SharedPreferences p = prefs(context);
+        deviceKey = deviceKey();
+        boolean trial = p.getBoolean("trial_" + deviceKey, false);
+        boolean bad = p.getBoolean("bad_" + deviceKey, false);
+        if (trial && !bad) {
+            // The process died between writing the trial marker and reporting healthy: this is
+            // exactly the "Apply live" crash the tablet saw. Never try that class again.
+            p.edit().putBoolean("bad_" + deviceKey, true).remove("trial_" + deviceKey).apply();
+            bad = true;
+            Log.w(TAG, "Live swap disabled for this device class after an unfinished trial: " + deviceKey);
+        }
+        return LiveSwapGuard.allowed(true, p.getBoolean("live_swap", true), bad, trial);
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    private static String deviceKey() {
+        String abi = Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "?";
+        String s = Build.MANUFACTURER + "|" + Build.MODEL + "|" + Build.HARDWARE + "|" + Build.VERSION.SDK_INT + "|" + abi;
+        return Integer.toHexString(s.hashCode());
+    }
 
     static void register(Context context) {
         appContext = context.getApplicationContext();
@@ -60,12 +92,10 @@ final class EngineSwap {
             if (level < 2) {
                 return; // an older host: no live native swaps, updates apply on the next start
             }
-            if (!LIVE_SWAP) {
-                // Swapping libmain inside the running process shut the app on the tablet
-                // ("Apply live", 1.2.24x): the SDL/JNI natives, GL context and engine threads
-                // still belong to the old library. Without a handler the host applies the
-                // staged release by relaunching, as it does for an older host.
-                Log.i(TAG, "Live engine swap off; updates apply by relaunching (API level " + level + ")");
+            if (!liveSwapAllowed(context)) {
+                // An unfinished trial on this device class is the "Apply live" crash; the host
+                // then applies the staged release by relaunching, as it does for an older host.
+                Log.i(TAG, "Live engine swap off for this device class; updates apply by relaunching (API level " + level + ")");
                 return;
             }
             Class<?> handlerClass = Class.forName("com.andysu.api.LiveSwapHandler");
@@ -121,19 +151,28 @@ final class EngineSwap {
         // still the running release, and a rollback goes back to it.
         fromVersion = AndySUCompat.payloadVersion();
         toVersion = version;
+        // Write the trial marker before touching the native side: if the process dies inside the
+        // request or the swap, the next start must not offer live apply to this device class again.
+        deviceKey = deviceKey();
+        SharedPreferences p = prefs(appContext);
+        p.edit().putBoolean("trial_" + deviceKey, true).remove("bad_" + deviceKey).apply();
         try {
             String refused = nativeRequestSwap(lib.getAbsolutePath());
             if (refused != null) {
                 Log.w(TAG, "Live swap to " + version + " declined by the loader: " + refused);
+                p.edit().remove("trial_" + deviceKey).apply();
                 fromVersion = toVersion = null;
                 return false;
             }
         } catch (UnsatisfiedLinkError e) {
             Log.w(TAG, "Live swap to " + version + " declined: no loader in this build", e);
+            p.edit().remove("trial_" + deviceKey).apply();
             fromVersion = toVersion = null;
             return false;
         }
         callback = cb;
+        guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS);
+        armWatchdog(WATCHDOG_MS);
         Log.i(TAG, "Live swap to " + version + " accepted: " + lib);
         return true;
     }
@@ -174,13 +213,24 @@ final class EngineSwap {
     static void onEngineEvent(int kind, String detail) {
         switch (kind) {
             case EV_STARTED:
+                if (!guard.started(SystemClock.elapsedRealtime(), STARTED_WATCHDOG_MS)) break;
+                armWatchdog(STARTED_WATCHDOG_MS);
                 callback("started", null);
                 break;
             case EV_FAILED:
+                if (!guard.failed()) break;
+                markDeviceBad();
+                cancelWatchdog();
                 callback("failed", detail.isEmpty() ? "the new engine failed to start" : detail);
                 callback = null;
                 break;
             case EV_HEALTHY:
+                // A rollback's old engine also reports healthy, but the host must not commit a
+                // failed trial. A cold start has no live guard state and still reports through.
+                boolean trialHealthy = guard.healthy();
+                if (guard.state() == LiveSwapGuard.State.FAILED || guard.state() == LiveSwapGuard.State.EXPIRED) break;
+                main.removeCallbacks(watchdog);
+                if (trialHealthy && appContext != null && deviceKey != null) prefs(appContext).edit().remove("trial_" + deviceKey).putBoolean("ok_" + deviceKey, true).apply();
                 try {
                     Object h = Class.forName("com.andysu.api.Host").getMethod("current").invoke(null);
                     if (h != null) {
@@ -232,6 +282,9 @@ final class EngineSwap {
                     + "\",\"ms\":" + (System.currentTimeMillis() - t0) + "}");
             return 0;
         } catch (IOException | RuntimeException | InterruptedException e) {
+            guard.failed();
+            markDeviceBad();
+            cancelWatchdog();
             Log.e(TAG, "Preparing the game data failed (swapped=" + swapped + ")", e);
             Log.i("AndySU-Event", "{\"event\":\"game_data_failed\",\"pid\":" + Process.myPid() + ",\"swapped\":" + swapped + "}");
             if (swapped == 2) {
@@ -242,6 +295,33 @@ final class EngineSwap {
                 restartThroughHost();
             }
             return 1;
+        }
+    }
+
+    private static void armWatchdog(long ms) {
+        main.removeCallbacks(watchdog);
+        main.postDelayed(watchdog, ms);
+    }
+
+    private static void cancelWatchdog() {
+        main.removeCallbacks(watchdog);
+    }
+
+    /** The new engine did not report healthy: report failed, then relaunch on the old slot. */
+    private static void onWatchdog() {
+        if (!guard.expire(SystemClock.elapsedRealtime())) return;
+        Log.w(TAG, "Live swap watchdog expired; falling back to relaunch");
+        markDeviceBad();
+        callback("failed", "the new engine did not report healthy in time");
+        callback = null;
+        main.postDelayed(() -> {
+            if (guard.state() != LiveSwapGuard.State.HEALTHY) restartThroughHost();
+        }, 1_500);
+    }
+
+    private static void markDeviceBad() {
+        if (appContext != null && deviceKey != null) {
+            prefs(appContext).edit().putBoolean("bad_" + deviceKey, true).remove("trial_" + deviceKey).apply();
         }
     }
 
