@@ -512,4 +512,25 @@ static inline float TouchDp_Density(float dpi, float short_px)
 	return d < 1 ? 1 : d > 4 ? 4 : d;
 }
 
+// The in-match menu is an overlay on the live game: the game stays behind it,
+// dimmed, and the touch controls and the join preview step aside while it is
+// open. Pause wording is separate (TouchMode_MenuPaused).
+static inline int TouchMode_MenuOverlay(int menu_open)
+{
+	return menu_open ? 1 : 0;
+}
+
+// How dark the game is behind the menu, in percent: a light scrim, deeper when
+// the game really pauses.
+static inline int TouchMode_MenuScrim(int menu_open, int really_paused)
+{
+	return menu_open ? (really_paused ? 72 : 55) : 0;
+}
+
+// While the menu is open the touch controls are not on screen.
+static inline int TouchMode_MenuHidesHud(int menu_open)
+{
+	return menu_open ? 1 : 0;
+}
+
 #endif

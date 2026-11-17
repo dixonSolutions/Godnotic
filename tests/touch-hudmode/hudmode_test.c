@@ -267,6 +267,18 @@ static void check_join_dialog(void)
 	CHECK_INT(TOUCHJOINDLG_NOTHING, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0), "auto-join waits the settle time too");
 	CHECK_INT(TOUCHJOINDLG_JOIN, TouchJoinDlg_Frame(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 1, 1, T0 + TOUCHJOINDLG_SETTLE + 0.1), "auto-join goes ahead over the preview instead of asking");
 
+	// The in-match menu is an overlay on the live game: it hides the touch
+	// controls, keeps the game (dimmed) behind it, and pauses only where the
+	// game really pauses.
+	CHECK_INT(0, TouchMode_MenuOverlay(0), "no overlay while playing");
+	CHECK_INT(1, TouchMode_MenuOverlay(1), "opening the menu is an overlay");
+	CHECK_INT(0, TouchMode_MenuHidesHud(0), "touch controls stay while playing");
+	CHECK_INT(1, TouchMode_MenuHidesHud(1), "touch controls hide behind the menu");
+	CHECK_INT(0, TouchMode_MenuScrim(0, 0), "no scrim while playing");
+	CHECK_INT(1, TouchMode_MenuScrim(1, 0) >= 40 && TouchMode_MenuScrim(1, 0) <= 70, "a light scrim over the remote game");
+	CHECK_INT(1, TouchMode_MenuScrim(1, 1) > TouchMode_MenuScrim(1, 0), "a deeper scrim when the game really pauses");
+	CHECK_INT(1, TouchMode_MenuPaused(1, 1, 1), "a paused listen server is a pause");
+
 	// The spectator bar carries a JOIN button beside < FREE > (touch_spectate.h).
 	CHECK_INT(4, TOUCHSPEC_BAR_PARTS, "the spectator bar has a JOIN part beside it");
 	CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_JOIN), "JOIN is offered while observing");

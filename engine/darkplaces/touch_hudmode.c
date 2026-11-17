@@ -53,6 +53,7 @@ static double pending_join_at;
 
 static cvar_t pub_menu_paused = {CF_CLIENT | CF_READONLY, "_touch_menu_paused", "0", "the local server is actually paused; read-only"};
 static cvar_t pub_join_preview = {CF_CLIENT | CF_READONLY, "_touch_join_preview", "0", "the map is drawable while a join finishes (touch_joinpreview.c); read-only"};
+static cvar_t pub_menu_scrim = {CF_CLIENT | CF_READONLY, "_touch_menu_scrim", "0", "how dark the menu overlay dims the live game, percent (0: menu closed); read-only"};
 static cvar_t pub_mode = {CF_CLIENT | CF_READONLY, "_touch_hud_mode", "off", "the in-match HUD mode (touch_hudmode.c); read-only"};
 static cvar_t pub_target = {CF_CLIENT | CF_READONLY, "_touch_hud_target", "", "the followed player's name while following; read-only"};
 static cvar_t pub_flags = {CF_CLIENT | CF_READONLY, "_touch_hud_flags", "0", "TOUCHMODE_F_* bits: 1 warmup, 2 ready wanted, 4 teams, 8 round live, 16 carrying; read-only"};
@@ -190,6 +191,7 @@ static void publish(void)
 	}
 	set_number(&pub_menu_paused, TouchMode_MenuPaused(sv.active, host.paused, sv.paused));
 	set_number(&pub_join_preview, TouchJoinPreview_Active());
+	set_number(&pub_menu_scrim, TouchMode_MenuScrim(TouchMode_MenuOverlay(key_dest != key_game), TouchMode_MenuPaused(sv.active, host.paused, sv.paused)));
 	set_string(&pub_mode, TouchMode_Name(current.mode));
 	set_string(&pub_target, current_target);
 	set_number(&pub_flags, current.flags);
@@ -502,6 +504,7 @@ void TouchHudMode_Init(void)
 	int act;
 	Cvar_RegisterVariable(&pub_menu_paused);
 	Cvar_RegisterVariable(&pub_join_preview);
+	Cvar_RegisterVariable(&pub_menu_scrim);
 	Cvar_RegisterVariable(&pub_mode);
 	Cvar_RegisterVariable(&pub_target);
 	Cvar_RegisterVariable(&pub_flags);

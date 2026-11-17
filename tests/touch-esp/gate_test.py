@@ -58,7 +58,8 @@ source += weapons[weapons.index('typedef struct touch_practice_s'):
 source += '''
 int main(void) {
  const char *values[] = {"off", "0", "false", "FALSE", "no", "No", "", "local", "LOCAL", "1", "true", "yes", "on", "all"};
- const int open[] =      {  0,   0,    0,      0,     0,   0,   0,    1,       1,     1,    1,     1,    1,    1};
+ // "local" is the old default and now reads as off; only an explicit on is on.
+ const int open[] =      {  0,   0,    0,      0,     0,   0,   0,    0,       0,     1,    1,     1,    1,    0};
  int failed = 0;
  for (int i=0; i<14; ++i) {
   cl_touch_esp_enabled.string = values[i];
@@ -74,6 +75,12 @@ int main(void) {
   if (p.seethrough != open[i] || p.full360 != open[i] || p.instant != open[i] || markers != open[i] || intel != open[i]) failed = 1;
   if (lua_all != open[i]) failed = 1;
  }
+ // A listen server with bots: the legacy default stays off, an explicit on is on.
+ tlua_test_offline = 1;
+ cl_touch_esp_enabled.string = "local";
+ { int g = TouchTactics_EspGate(TW_GATE_OPEN); puts(g == TW_GATE_OPEN ? "FAIL listen-server legacy local opened the gate" : "listen-server legacy local: closed"); if (g == TW_GATE_OPEN) failed = 1; }
+ cl_touch_esp_enabled.string = "on";
+ { int g = TouchTactics_EspGate(TW_GATE_OPEN); puts(g == TW_GATE_OPEN ? "listen-server explicit on: open" : "FAIL listen-server explicit on stayed closed"); if (g != TW_GATE_OPEN) failed = 1; }
  // Not an offline match: even with ESP on, xt.entities must not see through walls.
  tlua_test_offline = 0;
  cl_touch_esp_enabled.string = "local";

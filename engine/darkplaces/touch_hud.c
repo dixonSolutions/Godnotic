@@ -906,7 +906,10 @@ qbool TouchHUD_Active(void)
 	// The CSQC's pointer UI takes the fingers (TouchHUD_CursorFrame), as the
 	// port's own HUD steps aside for it.
 	// Match end (scoreboard, next-map vote): draw_endmenu owns the top bar.
-	return in_play() && !cl.csqc_wantsmousemove && !TouchMode_IsMatchEnd(TouchHudMode_Current()->mode);
+	// The in-match menu is an overlay on the live game: it owns the screen,
+	// so the touch controls step aside while it is open.
+	return key_dest == key_game && in_play() && !cl.csqc_wantsmousemove
+		&& !TouchMode_IsMatchEnd(TouchHudMode_Current()->mode);
 }
 
 // ---------------------------------------------------------------------------
