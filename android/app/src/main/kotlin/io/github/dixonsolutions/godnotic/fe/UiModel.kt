@@ -275,6 +275,7 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
         private set
     private val rows = HashMap<Int, Map<String, Any?>>()
     private val asked = HashSet<Int>() // page numbers requested and not yet answered
+    private val stale = HashSet<Int>() // pages to ask for again although their rows are here
 
     fun row(i: Int): Map<String, Any?>? = rows[i]
     val loaded: Int get() = rows.size
@@ -288,6 +289,11 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
         while (page * pageSize <= hi) {
             val start = page * pageSize
             val end = if (total > 0) minOf(start + pageSize, total) - 1 else start + pageSize - 1
+            if (page in stale) {
+                stale.remove(page)
+                asked.add(page)
+                return start..end
+            }
             val complete = (start..end).all { rows.containsKey(it) }
             if (!complete && page !in asked) {
                 asked.add(page)
@@ -304,12 +310,32 @@ class ListWindow(val listId: String, val pageSize: Int = 40) {
         total = msg.int("total", total)
         msg["rows"].list().forEachIndexed { i, r -> rows[offset + i] = r.obj() }
         asked.remove(offset / pageSize)
+        stale.remove(offset / pageSize)
         if (total >= 0) rows.keys.removeAll { it >= total }
+    }
+
+    /**
+     * Ask for these pages again although their rows are on screen: the source has
+     * a new revision, so the window must be re-read, not blanked (the rows stay
+     * until the replacement arrives).
+     */
+    fun refreshWindow(first: Int, last: Int) {
+        if (total <= 0) return
+        val lo = maxOf(0, first)
+        val hi = minOf(last, total - 1)
+        if (lo > hi) return
+        var page = lo / pageSize
+        while (page * pageSize <= hi) {
+            stale.add(page)
+            asked.remove(page)
+            page++
+        }
     }
 
     fun invalidate() {
         rows.clear()
         asked.clear()
+        stale.clear()
         total = -1
     }
 }

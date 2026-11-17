@@ -57,6 +57,8 @@ internal class ServerListState(
     /** One window held the whole listing (offset 0, every row): all other rows went. */
     private var whole = false
     private var received = false
+    /** The source's row count from the last notice or window, drawn or not here yet. */
+    private var want = 0
 
     /** The column chosen in the header (the engine orders the windows it sends). */
     var sort = ""
@@ -81,7 +83,8 @@ internal class ServerListState(
 
     /** The row chosen in the list (its address), kept across refreshes. */
     private var selectedKey = ""
-    val selected: String get() = selectedKey
+    /** The chosen address, while its row is still listed (a refresh can drop it). */
+    val selected: String get() = selectedKey.takeIf { items.containsKey(it) } ?: ""
 
     /** Slot indices drawn, in slot order: the rows that pass the chips now. */
     private val shown = ArrayList<Int>()
@@ -103,6 +106,18 @@ internal class ServerListState(
 
     /** Has the player flipped this chip since the screen opened? */
     fun chosen(chip: String): Boolean = chip in chosen
+
+    /**
+     * The engine's value for a chip (its props' `value`, from `menu_slist_showempty`
+     * and friends, or `mp.lan`), adopted until the player flips that chip. The
+     * model's own default can disagree with the setting (Laggy starts off), and
+     * then a tap on that chip looked dead: the model already believed it was on.
+     */
+    fun sync(chip: String, on: Boolean) {
+        if (chip in chosen || chips[chip] == on) return
+        chips[chip] = on
+        rebuildShown()
+    }
 
     /** A chip is narrowing the list, so its count is no longer the engine's. */
     val filtering: Boolean get() = chosen.isNotEmpty()
@@ -195,6 +210,7 @@ internal class ServerListState(
         to = -1
         whole = false
         for (item in items.values) item.answered = false
+        want = total
         resize(total)
         rebuildShown()
     }
@@ -207,6 +223,7 @@ internal class ServerListState(
         received = true
         if (!running) begin(total)
         resize(maxOf(total, offset + rows.size))
+        want = maxOf(total, offset + rows.size)
         for ((i, row) in rows.withIndex()) {
             val key = keyOf(row)
             if (key.isEmpty()) continue
@@ -317,12 +334,18 @@ internal class ServerListState(
         return out
     }
 
-    /** Publish the current snapshot to a list, whether it opened before or after the reply. */
+    /**
+     * Publish the current snapshot to a list, whether it opened before or after
+     * the reply. The count is the source's, not just the rows drawn: a list told
+     * "0 rows" never asks for a window, so a browser opened while the engine's
+     * cache was still empty stayed blank and never started its query.
+     */
     fun publish(write: (Int, Int, List<Map<String, Any?>>) -> Unit) {
         if (!received) return
+        val total = maxOf(size, want)
         val batches = runs()
-        if (batches.isEmpty()) write(0, size, emptyList())
-        else for ((offset, rows) in batches) write(offset, size, rows)
+        if (batches.isEmpty()) write(0, total, emptyList())
+        else for ((offset, rows) in batches) write(offset, total, rows)
     }
 
     private fun resize(total: Int) {
@@ -372,11 +395,19 @@ internal class ServerListState(
     private fun ping(cells: Map<String, Any?>): Double = cells.num("ping").let { if (it <= 0.0) Double.MAX_VALUE else it }
 
     /** `merge` publishes the local selection over the engine's, so a refresh cannot drop it. */
-    private fun mergedSelection(props: Map<String, Any?>): List<Any?> =
-        if (selectedKey.isEmpty()) props["selected"].list() else listOf(selectedKey)
+    private fun mergedSelection(props: Map<String, Any?>): List<Any?> {
+        val mine = selected // "" once its row left the list: not a target any more
+        return if (mine.isEmpty()) props["selected"].list() else listOf(mine)
+    }
 
     companion object {
-        fun showEmpty(state: String, total: Int) = state == "error" || (state == "ready" && total == 0)
+        /**
+         * The empty message covers only a list with nothing left to draw: a source
+         * still holding rows through a refresh (or past a chip) is not empty, and
+         * saying so covered a list that was about to fill.
+         */
+        fun showEmpty(state: String, total: Int, drawn: Int = 0) =
+            state == "error" || (state == "ready" && total == 0 && drawn == 0)
 
         /**
          * The screen's "N servers · M players" with what this list actually

@@ -129,6 +129,20 @@ class VirtualList(
     }
 
     /**
+     * The source has a new revision (a ping landed, a server answered): ask for the
+     * visible window again even though its rows are here. Publishing the cached rows
+     * alone never asked the engine for the new ones, so the list never refreshed.
+     */
+    fun reask() {
+        val lm = view.layoutManager as? LinearLayoutManager ?: return
+        val first = max(0, lm.findFirstVisibleItemPosition())
+        val last = max(first, lm.findLastVisibleItemPosition())
+        val margin = window.pageSize / 2
+        window.refreshWindow(max(0, first - margin), last + margin)
+        ask()
+    }
+
+    /**
      * New rows from the bridge: rebinds only the changed positions. A refresh
      * changes the count as each server answers; notifying that as a whole-list
      * change re-laid out and re-bound every row (the list blinked and jumped),

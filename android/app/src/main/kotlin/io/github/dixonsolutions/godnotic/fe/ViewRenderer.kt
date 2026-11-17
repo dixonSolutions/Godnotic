@@ -152,8 +152,12 @@ class ViewRenderer(
         // screen (dimmed until they answer) and updates them by address.
         if (isServerSource(source)) {
             val state = serverState(source)
-            if (rows.isEmpty() && offset == 0) state.begin(total) else state.accept(offset, total, rows)
+            val notice = rows.isEmpty() && offset == 0
+            if (notice) state.begin(total) else state.accept(offset, total, rows)
             flushServers(source)
+            // a source notice is a new revision: the rows on screen are cached, and
+            // publishing them alone never asked the engine for the new ones
+            if (notice) for (l in lists[source].orEmpty()) l.reask()
             return
         }
         for (l in lists[source].orEmpty()) {
@@ -1167,10 +1171,13 @@ class ViewRenderer(
         e.bind = { x ->
             holder.removeAllViews()
             val state = serverListState
-            // Once the player has flipped a filter chip, the list's model owns it: a
-            // refresh that rebinds this node, or engine props that still carry the
-            // value from before the tap, cannot flip it back or a second time.
-            val on = if (filter != null && state.chosen(filter)) state.include(filter) else x.props.bool("value")
+            // The engine's value is the truth until the player flips the chip (its
+            // props come from menu_slist_showempty and friends, which the model's
+            // default can disagree with: Laggy starts off). Once flipped, the model
+            // owns it: a refresh that rebinds this node, or engine props that still
+            // carry the value from before the tap, cannot flip it back or twice.
+            if (filter != null) state.sync(filter, x.props.bool("value"))
+            val on = if (filter != null) state.include(filter) else x.props.bool("value")
             val chip = chipView(title(x.props), on) {
                 if (filter != null) {
                     val now = state.toggle(filter)
@@ -1665,7 +1672,10 @@ class ViewRenderer(
             // The engine's query is over (its list is no longer "loading"): rows it
             // did not send again are dimmed once, here, and kept through the grace
             // period. While it refreshes they stay as bright as they were.
-            if (isServerSource(src) && p.str("state", "ready") != "loading") serverState(src).settle()
+            if (isServerSource(src) && p.str("state", "ready") != "loading") {
+                serverState(src).settle() // dims what the query did not confirm
+                flushServers(src)          // and draws it dimmed
+            }
             bindEmpty(x)
         }
         return e
@@ -1735,7 +1745,9 @@ class ViewRenderer(
         empty.removeAllViews()
         val st = p.str("state", "ready")
         val m = if (st == "error") p["error"].obj() else p["empty"].obj()
-        val show = ServerListState.showEmpty(st, total)
+        // rows still held through a refresh (or past a chip) are not "no servers"
+        val drawn = if (isServerSource(e.source)) serverState(e.source).size else 0
+        val show = ServerListState.showEmpty(st, total, drawn)
         if (show) {
             empty.addView(Kit.text(ctx, Icons.label(m.str("icon"), m.str("title", if (st == "error") "Something went wrong" else "Nothing here yet")), Theme.SP_TITLE, Theme.TEXT, bold = true).apply { gravity = Gravity.CENTER })
             m.str("text").takeIf { it.isNotEmpty() }?.let { empty.addView(Kit.text(ctx, it, Theme.SP_BODY, Theme.TEXT_MUTED).apply { gravity = Gravity.CENTER }) }
@@ -1754,9 +1766,13 @@ class ViewRenderer(
         for (c in columns) {
             val t = Kit.text(ctx, "", Theme.SP_BODY, Theme.TEXT, lines = 1)
             // the row copies the whole server and handles the tap: a cell must not
-            // be long-clickable (it would swallow the press) nor copy on its own
-            t.isLongClickable = false
+            // be long-clickable (it would swallow the press), must not forward the
+            // tap on to the row itself (its handler would run for the same press),
+            // nor copy on its own
+            t.setOnClickListener(null)
             t.setOnLongClickListener(null)
+            t.isClickable = false
+            t.isLongClickable = false
             t.gravity = gravityOf(c) or Gravity.CENTER_VERTICAL
             t.setPadding(dp(4f), 0, dp(4f), 0)
             r.addView(t, LinearLayout.LayoutParams(0, h, colWeight(c)))

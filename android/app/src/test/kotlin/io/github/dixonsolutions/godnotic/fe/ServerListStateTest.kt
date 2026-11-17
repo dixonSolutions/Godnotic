@@ -331,4 +331,166 @@ class ServerListStateTest {
         assertEquals("", ServerListState.summary("", 3, 1))
         assertEquals(5, ServerListState.players(listOf(row("a:1", players = 6, bots = 1), row("b:2", players = 2, bots = 2))))
     }
+
+    /** Publishes into a list window the way ViewRenderer's flushServers does. */
+    private fun screen(state: ServerListState, window: ListWindow) {
+        state.publish { offset, total, rows ->
+            window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
+        }
+    }
+
+    /**
+     * A fresh install: the browser opens while the engine's cache is still empty
+     * (count 0), so the list has no page to ask for; the cache then fills and the
+     * source notice carries the count. The model must tell the list the source has
+     * rows even though none have arrived, or the list asks for nothing, ever.
+     */
+    @Test
+    fun aFreshListingStartsItsQueryAndItsRowsReachTheScreen() {
+        val state = ServerListState()
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+        assertEquals("nothing has been listed yet", -1, window.total)
+
+        // the list node binds with count 0: the engine cleared its cache for the refresh
+        state.begin(0)
+        screen(state, window)
+        assertEquals(0, window.total)
+        assertNull("zero rows: nothing to ask for yet", window.missing(0, 20))
+
+        // the cache refills: 157 rows, no window of them sent yet
+        state.begin(157)
+        screen(state, window)
+        assertEquals(157, window.total)
+        assertEquals("the list asks for page 0, so the query runs", 0..49, window.missing(0, 20))
+
+        // the engine answers the window: the rows reach the model and the list
+        state.accept(0, 157, (0 until 50).map { row("s$it:26000") })
+        screen(state, window)
+        assertEquals("s0:26000", window.row(0)!!.str("key"))
+        assertEquals(50, window.loaded)
+        assertNull("page 0 is here", window.missing(0, 20))
+    }
+
+    /**
+     * A refresh: the engine broadcasts a source notice per change and expects the
+     * visible window to be asked for again. Keeping the cached rows and never
+     * asking again left pings and players frozen (and a refresh never happened).
+     */
+    @Test
+    fun aRefreshAsksForTheVisibleWindowAgain() {
+        val window = ListWindow("mp/servers", 50)
+        window.accept(mapOf("offset" to 0.0, "total" to 157.0, "rows" to (0 until 50).map { row("s$it") }))
+        assertNull("page 0 is loaded", window.missing(0, 20))
+
+        window.refreshWindow(0, 20) // what VirtualList.reask does for a source notice
+        assertEquals("asked again despite the cached rows", 0..49, window.missing(0, 20))
+
+        window.accept(mapOf("offset" to 0.0, "total" to 157.0, "rows" to listOf(row("s0", ping = 12))))
+        assertNull("the answer ends the re-read", window.missing(0, 20))
+    }
+
+    /**
+     * The chips show the engine's settings (`menu_slist_showempty`, `mp.lan`), and the
+     * model's defaults can differ (Laggy starts off in Xonotic, on here): a chip the
+     * engine has off must read off, or its first tap flips it to off again and looks
+     * dead, and a filter the engine applies must not be "included" locally.
+     */
+    @Test
+    fun aChipFollowsTheEngineUntilThePlayerFlipsIt() {
+        state.accept(0, 3, listOf(row("slow:1", ping = 320), row("a:2", ping = 30), row("empty:3", players = 0)))
+        assertTrue("the model's guess before it hears the engine", state.include("laggy"))
+
+        state.sync("laggy", false) // the engine hides laggy servers
+        state.sync("empty", true)
+        assertFalse("the model hears the engine", state.include("laggy"))
+        assertEquals("the laggy row is filtered as the engine did", listOf("a:2", "empty:3"), keys())
+
+        assertTrue("one tap turns it on", state.toggle("laggy"))
+        assertEquals(3, state.size)
+        state.sync("laggy", false) // engine props echoing the value from before the tap
+        assertTrue("a stale echo cannot flip it back", state.include("laggy"))
+        assertFalse("one tap is one flip", state.toggle("laggy"))
+        assertEquals(listOf("a:2", "empty:3"), keys())
+    }
+
+    /** The empty message must not cover rows the model is still drawing. */
+    @Test
+    fun theEmptyMessageOnlyCoversARowlessList() {
+        assertFalse("rows held through a refresh", ServerListState.showEmpty("ready", 0, drawn = 3))
+        assertFalse("the source has rows", ServerListState.showEmpty("ready", 157, drawn = 0))
+        assertTrue(ServerListState.showEmpty("ready", 0, drawn = 0))
+        assertFalse(ServerListState.showEmpty("loading", 0, drawn = 0))
+        assertTrue(ServerListState.showEmpty("error", 0, drawn = 0))
+    }
+
+    /** A refresh that drops the chosen server must not leave the old address as the Join target. */
+    @Test
+    fun aChosenRowThatLeftTheListIsNoLongerTheJoinTarget() {
+        state.accept(0, 2, listOf(row("a:1"), row("b:2")))
+        assertTrue(state.select("b:2"))
+        assertEquals("b:2", state.selected)
+
+        repeat(2) {
+            state.begin(1)
+            state.accept(0, 1, listOf(row("a:1")))
+            state.settle()
+        }
+        assertEquals(1, state.size)
+        assertEquals("b is gone: no row to join", "", state.selected)
+        val engine = mapOf("selection" to "single", "selected" to emptyList<Any?>())
+        assertEquals(emptyList<Any?>(), state.merge(engine)["selected"])
+    }
+
+    /**
+     * The whole engine sequence: open the list (cache empty) -> query -> batches ->
+     * refresh -> tap a chip -> tap a row -> Join has a target. The renderer turns a
+     * tap into toggle()/select()/merge(); this is the model's side of it.
+     */
+    @Test
+    fun theWholeSequenceOpensQueriesRefreshesFiltersAndPicks() {
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+
+        // open: the refresh has just cleared the engine's cache
+        state.begin(0)
+        screen(state, window)
+        assertEquals(0, window.total)
+
+        // the cache is back: the list asks for the rows it now knows about
+        state.begin(3)
+        screen(state, window)
+        assertEquals(0..2, window.missing(0, 20))
+
+        // the engine answers in windows: the rows reach the list as they arrive
+        state.accept(0, 3, listOf(row("lan:1", net = "lan"), row("online:2", ping = 40, players = 4), row("slow:3", ping = 300, players = 1)))
+        screen(state, window)
+        assertEquals(3, window.loaded)
+        assertEquals("online:2", window.row(1)!!.str("key"))
+
+        // a refresh: a notice per change, the visible window asked for again
+        state.begin(3)
+        screen(state, window)
+        window.refreshWindow(0, 2)
+        assertEquals(0..2, window.missing(0, 2))
+        state.accept(0, 3, listOf(row("lan:1", net = "lan"), row("online:2", ping = 35, players = 5), row("slow:3", ping = 310, players = 1)))
+        screen(state, window)
+        assertEquals(5, window.row(1)!!["cells"].obj().int("players"))
+
+        // chip: Laggy is off in the engine; one tap turns it on, the row comes back
+        state.sync("laggy", false)
+        assertEquals(2, state.size)
+        assertTrue(state.toggle("laggy"))
+        assertEquals(3, state.size)
+        state.accept(0, 3, listOf(row("lan:1", net = "lan"), row("online:2", ping = 35, players = 5), row("slow:3", ping = 310, players = 1)))
+        screen(state, window)
+        assertEquals(3, window.total)
+
+        // row: chosen, and the join target is the row's address
+        assertTrue(state.select("online:2"))
+        val engine = mapOf("selection" to "single", "selected" to emptyList<Any?>(), "sort" to "ping", "desc" to false)
+        assertEquals(listOf("online:2"), state.merge(engine)["selected"])
+        assertEquals("online:2", state.selected)
+        assertTrue("Join has a target", state.selected.isNotEmpty())
+    }
 }
