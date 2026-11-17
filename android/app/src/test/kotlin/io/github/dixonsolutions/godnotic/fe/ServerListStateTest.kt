@@ -18,8 +18,9 @@ class ServerListStateTest {
     private var now = 0L
     private val state = ServerListState(clock = { now })
 
-    private fun row(key: String, ping: Int = 50, players: Int = 0, name: String = key): Map<String, Any?> =
-        mapOf("key" to key, "cells" to mapOf("address" to key, "name" to name, "ping" to ping.toDouble(), "players" to players.toDouble()))
+    private fun row(key: String, ping: Int = 50, players: Int = 0, name: String = key, net: String = "internet", max: Int = 16, bots: Int = 0): Map<String, Any?> =
+        mapOf("key" to key, "cells" to mapOf("address" to key, "name" to name, "ping" to ping.toDouble(), "players" to players.toDouble(),
+            "max" to max.toDouble(), "bots" to bots.toDouble(), "net" to net))
 
     private fun keys(s: ServerListState = state): List<String?> = (0 until s.size).map { s.keyAt(it) }
 
@@ -266,5 +267,68 @@ class ServerListStateTest {
         state.settle()
         assertEquals("b went after two silent queries", listOf("a:1", "c:3"), keys())
         assertTrue("never zero", sizes.all { it > 0 })
+    }
+
+    @Test
+    fun aChipReFiltersInTheSameFrameAndFlipsOncePerTap() {
+        state.accept(0, 5, listOf(
+            row("lan:1", net = "lan"),
+            row("vpn:2", net = "vpn"),
+            row("net:3", ping = 40, players = 2),
+            row("net:4", ping = 240, players = 2),
+            row("net:5", ping = 40, players = 8, max = 8)))
+        assertEquals(5, state.size)
+
+        assertTrue("LAN was off", state.toggle("lan"))
+        assertEquals(listOf("lan:1", "vpn:2"), keys())
+        assertFalse("one tap is one flip", state.toggle("lan"))
+        assertEquals(5, state.size)
+
+        assertFalse("Laggy starts on", state.toggle("laggy"))
+        assertEquals(listOf("lan:1", "vpn:2", "net:3", "net:5"), keys())
+        assertFalse("Empty starts on", state.toggle("empty"))
+        assertEquals(listOf("net:3", "net:5"), keys())
+        assertFalse("Full starts on", state.toggle("full"))
+        assertEquals(listOf("net:3"), keys())
+        assertEquals(1, state.size)
+        assertTrue(state.chosen("lan") && state.chosen("empty") && state.chosen("full") && state.chosen("laggy"))
+    }
+
+    @Test
+    fun botsDoNotCountAsPlayersAndABotOnlyServerIsEmpty() {
+        state.accept(0, 2, listOf(row("a:1", players = 6, bots = 2), row("b:2", players = 2, bots = 2)))
+        state.toggle("empty")
+        assertEquals(listOf<String?>("a:1"), keys())
+    }
+
+    @Test
+    fun aChosenRowSurvivesEveryRefreshAndItsOwnAddressIsKept() {
+        state.accept(0, 2, listOf(row("a:1"), row("b:2")))
+        assertTrue(state.select("b:2"))
+        assertFalse("the same row again is not a new choice", state.select("b:2"))
+        assertEquals("b:2", state.selected)
+
+        val engine = mapOf("selection" to "single", "selected" to emptyList<Any?>(), "sort" to "ping", "desc" to false)
+        assertEquals(listOf("b:2"), state.merge(engine)["selected"])
+
+        state.begin(2)
+        state.accept(0, 2, listOf(row("a:1", ping = 33), row("b:2", ping = 44)))
+        assertEquals(listOf("b:2"), state.merge(engine)["selected"])
+
+        state.toggle("lan")
+        state.toggle("lan")
+        assertEquals("a filter is not a selection", "b:2", state.selected)
+        assertTrue(state.select(""))
+        assertEquals(emptyList<Any?>(), state.merge(engine)["selected"])
+    }
+
+    @Test
+    fun theHeaderCountFollowsTheRowsDrawn() {
+        assertEquals("12 servers · 3 players · refreshing…",
+            ServerListState.summary("157 servers · 6 players · refreshing…", 12, 3))
+        assertEquals("0 servers · 0 players", ServerListState.summary("157 servers · 6 players", 0, 0))
+        assertEquals("Looking for servers…", ServerListState.summary("Looking for servers…", 3, 1))
+        assertEquals("", ServerListState.summary("", 3, 1))
+        assertEquals(5, ServerListState.players(listOf(row("a:1", players = 6, bots = 1), row("b:2", players = 2, bots = 2))))
     }
 }

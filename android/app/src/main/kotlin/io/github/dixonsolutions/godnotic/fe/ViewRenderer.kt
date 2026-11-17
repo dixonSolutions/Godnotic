@@ -173,6 +173,7 @@ class ViewRenderer(
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
+            showServerCount(l.id, source)
         }
     }
 
@@ -1162,19 +1163,90 @@ class ViewRenderer(
     private fun checkChip(id: String, props: Map<String, Any?>): Entry {
         val holder = FrameLayout(ctx)
         val e = Entry(id, "switch", holder, null, props)
+        val filter = filterOf(id)
         e.bind = { x ->
             holder.removeAllViews()
-            val on = x.props.bool("value")
+            val state = serverListState
+            // Once the player has flipped a filter chip, the list's model owns it: a
+            // refresh that rebinds this node, or engine props that still carry the
+            // value from before the tap, cannot flip it back or a second time.
+            val on = if (filter != null && state.chosen(filter)) state.include(filter) else x.props.bool("value")
             val chip = chipView(title(x.props), on) {
-                x.props = x.props + ("value" to !on)
-                bindSafe(x)
-                events.value(id, !on)
+                if (filter != null) {
+                    val now = state.toggle(filter)
+                    x.props = x.props + ("value" to now)
+                    bindSafe(x)
+                    applyServerFilter() // the rows change in this frame, no round trip
+                    events.value(id, now)
+                } else {
+                    x.props = x.props + ("value" to !on)
+                    bindSafe(x)
+                    events.value(id, !on)
+                }
             }
             Kit.icon(chip, x.props.str("icon"), if (on) Color.WHITE else Theme.TEXT_MUTED, 18f)
             chip.isEnabled = !x.props.containsKey("enabled") || x.props.bool("enabled")
             holder.addView(chip)
         }
         return e
+    }
+
+    /** The server browser's filter chips, by node id (`mp/bar/filters/lan` …). */
+    private val filterChips = setOf("lan", "empty", "full", "laggy")
+
+    private fun filterOf(id: String): String? =
+        if (id.startsWith("mp/bar/filters/")) id.removePrefix("mp/bar/filters/").takeIf { it in filterChips } else null
+
+    /** Re-windows every list on the server source now: a chip's rows change in this frame. */
+    private fun applyServerFilter() {
+        flushServers(nodes["mp/servers"]?.source ?: "servers")
+    }
+
+    /**
+     * A chosen row lowers into the join bar at once: its address in the field,
+     * Join on. The engine hears the address too, so the join, and the props it
+     * sends next, agree with the row the player picked.
+     */
+    private fun chooseServer(address: String) {
+        nodes["mp/join/address"]?.let { f ->
+            if (f.props.str("value") != address) {
+                f.props = f.props + ("value" to address)
+                bindSafe(f)
+            }
+        }
+        nodes["mp/join/go"]?.let { g ->
+            if (!g.props.bool("enabled")) {
+                g.props = g.props + ("enabled" to true)
+                bindSafe(g)
+            }
+        }
+        events.value("mp/join/address", address)
+    }
+
+    private fun screenOf(id: String): Entry? {
+        var cur = nodes[id]?.parent
+        while (cur != null) {
+            val e = nodes[cur] ?: return null
+            if (e.type == "screen") return e
+            cur = e.parent
+        }
+        return null
+    }
+
+    /**
+     * The screen's "N servers · M players" over the rows the chips leave: the
+     * engine's summary counts every server it holds, so with a filter on it
+     * said 157 over a list of 12. Only touched while a chip is filtering.
+     */
+    private fun showServerCount(listId: String, source: String) {
+        val state = serverState(source)
+        if (!state.filtering) return
+        val screen = screenOf(listId) ?: return
+        val rows = (0 until state.size).mapNotNull { state.row(it) }
+        val shown = ServerListState.summary(screen.props.str("subtitle"), state.size, ServerListState.players(rows))
+        if (shown == screen.props.str("subtitle")) return
+        screen.props = screen.props + ("subtitle" to shown)
+        bindSafe(screen)
     }
 
     /** A compact on/off pill; tapping it never opens anything. */
@@ -1290,7 +1362,9 @@ class ViewRenderer(
             val act = p["action"].obj().ifEmpty { mapOf("id" to id) }
             val a = act + mapOf("style" to p.str("style", act.str("style")), "label" to p.str("label").ifEmpty { act.str("label") })
             val b = actionButton(id, a)
-            b.isEnabled = !p.containsKey("enabled") || p.bool("enabled")
+            // a chosen server keeps Join usable through the engine's next props
+            b.isEnabled = (id == "mp/join/go" && serverListState.selected.isNotEmpty()) ||
+                !p.containsKey("enabled") || p.bool("enabled")
             holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         return e
@@ -1637,9 +1711,20 @@ class ViewRenderer(
     }
 
     private fun select(e: Entry, id: String, key: String, send: Boolean) {
+        val multi = e.props.str("selection") == "multi"
         val cur = e.props["selected"].list().map { it.toString() }
-        val next = if (e.props.str("selection") == "multi") (if (key in cur) cur - key else cur + key) else listOf(key)
-        if (next != cur) { e.props = e.props + mapOf("selected" to next); e.list?.refresh() }
+        val next = if (multi) (if (key in cur) cur - key else cur + key) else listOf(key)
+        if (isServerSource(e.source) && !multi) {
+            // the list's model keeps the row, the engine's next props cannot undo it
+            if (serverState(e.source).select(key)) {
+                chooseServer(key)
+                e.props = e.props + ("selected" to next)
+                e.list?.refresh()
+            }
+        } else if (next != cur) {
+            e.props = e.props + mapOf("selected" to next)
+            e.list?.refresh()
+        }
         if (send) events.row(id, key, "select")
     }
 
@@ -1668,6 +1753,10 @@ class ViewRenderer(
         r.setPadding(dp(12f), 0, dp(12f), 0)
         for (c in columns) {
             val t = Kit.text(ctx, "", Theme.SP_BODY, Theme.TEXT, lines = 1)
+            // the row copies the whole server and handles the tap: a cell must not
+            // be long-clickable (it would swallow the press) nor copy on its own
+            t.isLongClickable = false
+            t.setOnLongClickListener(null)
             t.gravity = gravityOf(c) or Gravity.CENTER_VERTICAL
             t.setPadding(dp(4f), 0, dp(4f), 0)
             r.addView(t, LinearLayout.LayoutParams(0, h, colWeight(c)))

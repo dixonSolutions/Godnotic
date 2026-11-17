@@ -67,19 +67,118 @@ internal class ServerListState(
     /** A finger on the list: nothing is re-ordered under it. */
     var hold = false
 
-    /** Rows the list draws, including the ones still in their grace period. */
-    val size: Int get() = slots.size
+    /**
+     * The chip filters (lan, empty, full, laggy): true includes those servers.
+     * Held here, not in the chip views, so a diff that rebinds a chip or a
+     * refresh that re-windows the list cannot lose a filter (and two taps on
+     * the same chip flip it twice, never once plus a stale rebind). Absent
+     * means the engine's default: everything included.
+     */
+    private val chips = HashMap<String, Boolean>()
+    /** Chips the player has flipped: theirs beats any later value from the engine. */
+    private val chosen = HashSet<String>()
+    private var laggyMs = 150.0
 
-    fun keyAt(position: Int): String? = slots.getOrNull(position)
+    /** The row chosen in the list (its address), kept across refreshes. */
+    private var selectedKey = ""
+    val selected: String get() = selectedKey
+
+    /** Slot indices drawn, in slot order: the rows that pass the chips now. */
+    private val shown = ArrayList<Int>()
+
+    /** Rows the list draws, including the ones still in their grace period. */
+    val size: Int get() = shown.size
+
+    fun keyAt(position: Int): String? {
+        val slot = shown.getOrNull(position) ?: return null
+        return slots.getOrNull(slot)
+    }
+
+    /**
+     * Whether the chip shows its servers (absent: the engine's default). LAN is
+     * the exception: off means every server, so it starts off; Empty, Full and
+     * Laggy start on, as the engine's own filters do.
+     */
+    fun include(chip: String): Boolean = chips[chip] ?: (chip != "lan")
+
+    /** Has the player flipped this chip since the screen opened? */
+    fun chosen(chip: String): Boolean = chip in chosen
+
+    /** A chip is narrowing the list, so its count is no longer the engine's. */
+    val filtering: Boolean get() = chosen.isNotEmpty()
+
+    /**
+     * Flips one chip and re-filters at once: the rows on screen change in the
+     * same frame, without waiting for the engine's next window. Returns the
+     * chip's new state. A chip flipped twice is back where it began; a value
+     * the engine sends meanwhile cannot flip it a second time.
+     */
+    fun toggle(chip: String): Boolean {
+        val on = !include(chip)
+        chosen.add(chip)
+        chips[chip] = on
+        rebuildShown()
+        return on
+    }
+
+    fun setInclude(chip: String, on: Boolean) {
+        chosen.add(chip)
+        if (include(chip) == on) return
+        chips[chip] = on
+        rebuildShown()
+    }
+
+    /** Chooses the row (or clears it with an empty key); false when it did not change. */
+    fun select(key: String): Boolean {
+        if (key == selectedKey) return false
+        selectedKey = key
+        return true
+    }
+
+    /**
+     * A row is drawn when it passes every chip. The engine's meanings, from
+     * touch_uib_src.c build_servers: LAN keeps LAN and VPN servers (drops the
+     * internet), Empty/Full include servers with free slots, Laggy includes
+     * pings at or above [laggyMs]. `players` counts bots, so humans are
+     * players minus bots, as there.
+     */
+    private fun matches(row: Map<String, Any?>): Boolean {
+        val cells = row["cells"].obj()
+        if (include("lan") && cells.str("net") == "internet") return false
+        val players = cells.num("players")
+        val humans = players - cells.num("bots")
+        if (!include("empty") && humans <= 0) return false
+        val max = cells.num("max")
+        if (!include("full") && max > 0 && max - players <= 0) return false
+        if (!include("laggy") && cells.num("ping") >= laggyMs) return false
+        return true
+    }
+
+    private fun rebuildShown() {
+        shown.clear()
+        for ((i, key) in slots.withIndex()) {
+            val item = key?.let { items[it] } ?: continue
+            if (matches(item.row)) shown.add(i)
+        }
+    }
 
     fun choose(column: String, descending: Boolean) {
         sort = column
         desc = descending
     }
 
-    /** The list node's props with the locally chosen sort (the engine keeps the rows). */
-    fun merge(props: Map<String, Any?>): Map<String, Any?> =
-        if (sort.isEmpty()) props else props + mapOf("sort" to sort, "desc" to desc)
+    /**
+     * The list node's props with the locally chosen sort and row selection. The
+     * engine keeps the rows; it does not keep what was just tapped, and its
+     * props arrive four times a second, so a selection that lived only there
+     * would be undone before the finger left the glass.
+     */
+    fun merge(props: Map<String, Any?>): Map<String, Any?> {
+        var out = if (sort.isEmpty()) props else props + mapOf("sort" to sort, "desc" to desc)
+        val sel = mergedSelection(props)
+        if (sel != props["selected"].list()) out = out + ("selected" to sel)
+        return out
+    }
 
     /**
      * The source has a new revision: `total` rows, no window yet. A refresh, a
@@ -97,6 +196,7 @@ internal class ServerListState(
         whole = false
         for (item in items.values) item.answered = false
         resize(total)
+        rebuildShown()
     }
 
     /**
@@ -128,6 +228,7 @@ internal class ServerListState(
             to = maxOf(to, offset + rows.size - 1)
         }
         if (!hold) sortWindow(offset, rows.size)
+        rebuildShown()
     }
 
     /**
@@ -181,11 +282,12 @@ internal class ServerListState(
         if (!gone) return
         // close the gaps the removed rows left: the rest keep their order
         slots.removeAll { it == null || !items.containsKey(it) }
+        rebuildShown()
     }
 
     /** A position's row, with `stale` and `fresh` for the renderer. */
     fun row(position: Int): Map<String, Any?>? {
-        val key = slots.getOrNull(position) ?: return null
+        val key = slots.getOrNull(shown.getOrNull(position) ?: return null) ?: return null
         val item = items[key] ?: return null
         var row = item.row
         if (item.lost) row = row + ("stale" to true)
@@ -198,7 +300,7 @@ internal class ServerListState(
         val out = ArrayList<Pair<Int, List<Map<String, Any?>>>>()
         var start = -1
         var batch: ArrayList<Map<String, Any?>>? = null
-        for (i in 0 until slots.size) {
+        for (i in 0 until shown.size) {
             val row = row(i)
             if (row == null) {
                 if (batch != null) out.add(start to batch)
@@ -269,8 +371,27 @@ internal class ServerListState(
     /** A ping of 0 is unknown: it sorts after every real one, whichever way the column runs. */
     private fun ping(cells: Map<String, Any?>): Double = cells.num("ping").let { if (it <= 0.0) Double.MAX_VALUE else it }
 
+    /** `merge` publishes the local selection over the engine's, so a refresh cannot drop it. */
+    private fun mergedSelection(props: Map<String, Any?>): List<Any?> =
+        if (selectedKey.isEmpty()) props["selected"].list() else listOf(selectedKey)
+
     companion object {
         fun showEmpty(state: String, total: Int) = state == "error" || (state == "ready" && total == 0)
+
+        /**
+         * The screen's "N servers · M players" with what this list actually
+         * draws: the engine's summary counts every server it holds, whatever
+         * the chips hide. Any text after the two numbers (" · refreshing…")
+         * is kept; a line without them is left alone.
+         */
+        fun summary(text: String, servers: Int, players: Int): String {
+            val m = Regex("^(\\d+) servers? · (\\d+) players?").find(text) ?: return text
+            return "$servers servers · $players players" + text.substring(m.range.last + 1)
+        }
+
+        /** The players a list of rows holds, for [summary]. */
+        fun players(rows: List<Map<String, Any?>>): Int =
+            rows.sumOf { it["cells"].obj().num("players").toInt() - maxOf(0, it["cells"].obj().num("bots").toInt()) }
 
         fun keyOf(row: Map<String, Any?>) = row.str("key").ifEmpty { row["cells"].obj().str("address") }
     }
