@@ -1200,6 +1200,7 @@ class ViewRenderer(
             "number" -> input.inputType = android.text.InputType.TYPE_CLASS_NUMBER
             "url", "address" -> input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
             "search" -> input.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                    or android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN
         }
         val line = Kit.row(ctx, 8f)
         line.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))

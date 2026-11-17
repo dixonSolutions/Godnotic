@@ -160,13 +160,15 @@ Config: `menu_mouse_absolute 1` in `touch/xonotic.cfg`.
 
 ## On-screen keyboard (GNOME / Wayland)
 
-When a menu **input box** is focused, or the **console / chat** is open:
+When a menu **input box** is focused, or the **console / chat** is open, the
+**system** keyboard is the one that types — on Android in landscape too:
 
 - Menu focus sets `vid_touchscreen_showkeyboard` to `1`; console/chat pulse `SDL_StartTextInput()` on enter and keep it active.
-- Console also draws an **in-engine keyboard** (letters/digits/SPACE/BKSP/ENTER) so typing works even when the compositor OSK is suppressed (common on GNOME when a virtual hardware keyboard such as `keyd` is present).
+- The engine's own keys (`touch_ui.c`) do not come up for text entry: the system keyboard always wins. **KEYBOARD** opens them for a device whose system keyboard will not appear.
+- Android: `XonoticActivity` reports the keyboard's height (`_touch_ime_height`), so the console and chat keep the line being typed above it; SDL's input connection asks for no fullscreen editor (`IME_FLAG_NO_EXTRACT_UI | IME_FLAG_NO_FULLSCREEN`), and the game's own text fields set the same flags.
 - Engine calls `SDL_SetTextInputRect()` for platform OSK placement (GNOME / Ubuntu Touch).
 
-**GNOME (Ultramarine):** Enable **Settings → Accessibility → Typing → Screen Keyboard**. Platform OSK may still stay hidden if a hardware/virtual keyboard is attached — use the in-engine console keyboard.
+**GNOME (Ultramarine):** Enable **Settings → Accessibility → Typing → Screen Keyboard**. Platform OSK may still stay hidden if a hardware/virtual keyboard is attached — **KEYBOARD** then opens the in-engine keys.
 
 **Ubuntu Touch:** lomiri-keyboard via Wayland text-input; in-engine keyboard is always available as fallback.
 
