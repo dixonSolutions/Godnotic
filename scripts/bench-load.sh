@@ -4,6 +4,8 @@
 # without simulated latency. Each scenario runs RUNS times; the summary gives
 # the median and the spread (min-max) of every LOADTIME figure the engine
 # prints (touch_loadtime 1, engine/darkplaces/touch_loadtime.c).
+# world_presented is measured after the video swap, with game input and the
+# console closed; an in-game overlay can still cover the rendered world.
 #
 #   scripts/bench-load.sh [-n RUNS] [-c warm|cold] [-o OUTDIR] [-e "extra +args"] SCENARIO...
 #
@@ -279,7 +281,7 @@ for path in logs:
         if "LOADTIME" not in line:
             continue
         line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-        m = re.match(r"LOADTIME (menu_ready|game_ready|after_ready|vote_ready)\s+(.*)", line)
+        m = re.match(r"LOADTIME (menu_ready|game_ready|world_presented|after_ready|vote_ready)\s+(.*)", line)
         if m:
             stage = m.group(1)
             for k, v in re.findall(r"(\w+)=([-0-9.]+)", m.group(2)):

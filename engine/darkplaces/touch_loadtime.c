@@ -8,6 +8,10 @@ game frame after a load:
 
   LOADTIME menu_ready proc=<ms since process start> init=<ms since Host_Init>
   LOADTIME game_ready load=<ms since the load began> proc=<ms> frames=<n>
+  LOADTIME world_presented load=<ms since the load began>
+
+world_presented is recorded after the video swap for a main-world render
+with game input and no console; in-game overlays can still cover the view.
 
 followed by the phase table of that stretch, the file system counters and the
 signon timeline. scripts/bench-load.sh parses these lines.
@@ -104,6 +108,7 @@ typedef struct tlt_state_s
 	double menu_time;
 
 	qbool loading;               // a load is being timed
+	qbool world_presented;       // first world frame with game input for this load
 	double load_start;
 	int load_frames;             // host frames since load_start
 	int last_signon;
@@ -238,6 +243,7 @@ static void TLT_StartLoad(double when)
 {
 	int i;
 	tlt.loading = true;
+	tlt.world_presented = false;
 	tlt.load_start = when;
 	tlt.load_frames = 0;
 	tlt.last_signon = -1;
@@ -283,7 +289,6 @@ void TouchLoadTime_Frame(void)
 	Andysu_DrawnFrame(now, host.state == host_active && !scr_loading && key_dest == key_menu && cls.state != ca_connected,
 		tlt_world_drawn);
 #endif
-	tlt_world_drawn = false;
 
 	// cl_screen calls this after drawing, with the render context current.
 	TP_Deferred();
@@ -330,6 +335,18 @@ void TouchLoadTime_Frame(void)
 		}
 		TLT_ResetStretch();
 	}
+}
+
+void TouchLoadTime_Presented(void)
+{
+	if (tlt_world_drawn && !tlt.world_presented && tlt.load_start > 0 &&
+	    key_dest == key_game && !key_consoleactive)
+	{
+		tlt.world_presented = true;
+		if (touch_loadtime.integer)
+			Con_Printf("LOADTIME world_presented load=%.1f\n", (Sys_DirtyTime() - tlt.load_start) * 1000.0);
+	}
+	tlt_world_drawn = false;
 }
 
 qbool TouchLoadTime_Restless(void)

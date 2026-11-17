@@ -2482,6 +2482,7 @@ void CL_UpdateScreen(void)
 	TouchWarm_Frame(); // Touch: menu-idle warm-up of the next game
 	qglFlush(); // ensure that the commands are submitted to the GPU before we do other things
 	VID_Finish();
+	TouchLoadTime_Presented(); // Touch: time the first presented world frame
 }
 
 void CL_Screen_NewMap(void)
