@@ -1112,7 +1112,13 @@ class StopgapActions(private val activity: Activity, private val client: UibClie
         if (snap.isEmpty()) return
         val nodes = snap["nodes"].list().map { n ->
             val m = n.obj()
-            if (name == "pause" && m.str("id") == "pause/match") {
+            if (name == "pause" && m.str("id") == "pause") {
+                m + ("props" to (m["props"].obj() + ("title" to if (app.bool("menu_paused")) "Pause" else "Menu")))
+            } else if (name == "pause" && m.str("id") == "pause/actions/resume") {
+                val label = if (app.bool("menu_paused")) "Resume" else "Back to game"
+                val props = m["props"].obj()
+                m + ("props" to (props + mapOf("label" to label, "action" to (props["action"].obj() + ("label" to label)))))
+            } else if (name == "pause" && m.str("id") == "pause/match") {
                 // the real match, not the description's example
                 val map = app.str("map")
                 m + ("props" to (m["props"].obj() + mapOf(

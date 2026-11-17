@@ -79,6 +79,12 @@ typedef struct touchmode_s
 	int join;
 } touchmode_t;
 
+// Only call a match paused when its local server is actually stopped.
+static inline int TouchMode_MenuPaused(int local_server, int host_paused, int server_paused)
+{
+	return local_server && (host_paused || server_paused);
+}
+
 static inline int TouchMode_IsSpectating(int mode)
 {
 	return mode == TOUCHMODE_OBSERVING || mode == TOUCHMODE_FOLLOWING;

@@ -233,6 +233,14 @@ static int run_dialog(touchjoindlg_t *d, int mode, int flags, int local, int cam
 	return opens;
 }
 
+static void check_menu_pause(void)
+{
+	CHECK_INT(0, TouchMode_MenuPaused(0, 1, 1), "remote server is not a local pause");
+	CHECK_INT(0, TouchMode_MenuPaused(1, 0, 0), "running listen server is not paused");
+	CHECK_INT(1, TouchMode_MenuPaused(1, 1, 0), "local host pause");
+	CHECK_INT(1, TouchMode_MenuPaused(1, 0, 1), "listen server pause");
+}
+
 static void check_join_dialog(void)
 {
 	touchjoindlg_t d;
@@ -343,6 +351,7 @@ int main(void)
 	check_controls();
 	check_actions();
 	check_spectator_menu_path();
+	check_menu_pause();
 	check_join_dialog();
 	if (failures)
 	{

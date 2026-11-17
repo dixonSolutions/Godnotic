@@ -29,7 +29,7 @@
     "id": "pause",
     "type": "screen",
     "props": {
-     "title": "Paused",
+     "title": "Menu",
      "kind": "game",
      "presentation": "fullscreen"
     },
@@ -77,10 +77,10 @@
     "id": "pause/actions/resume",
     "type": "button",
     "props": {
-     "label": "Resume",
+     "label": "Back to game",
      "action": {
       "id": "resume",
-      "label": "Resume",
+      "label": "Back to game",
       "icon": "resume",
       "style": "primary"
      },
