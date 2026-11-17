@@ -46,10 +46,11 @@ not match, is an error for that attempt.
 
 ## Order
 
-1. `first_play`, in list order. The game may start when every one of them is
-   installed. This is the only part the boot screen waits for.
-2. Everything else by `priority`, without asking: music, the other maps,
-   `detail`, `extras`.
+1. The music pack first, then `first_play` in list order. The game may start
+   when every `first_play` pack is installed; the music pack is fetched first
+   so the download screen can play the theme while the rest arrives.
+2. Everything else by `priority`, without asking: the other maps, `detail`,
+   `extras`.
 3. A *wanted* map (the player picked it, or a server runs it) jumps the queue:
    its `needs` that are missing go to the front, in order.
 

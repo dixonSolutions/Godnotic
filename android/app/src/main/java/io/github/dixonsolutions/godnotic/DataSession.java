@@ -243,7 +243,7 @@ final class DataSession {
         long left = 0;
         long resumed = 0;
         if (m != null && f != null) {
-            for (DataManifest.Pack p : m.firstPlay) {
+            for (DataManifest.Pack p : m.firstPlayWithMusic()) {
                 if (!install.installed(p)) {
                     long part = f.doneBytes(Collections.singletonList(p));
                     left += p.size - part;
@@ -260,7 +260,9 @@ final class DataSession {
         long sum = 0;
         if (m != null) {
             for (DataManifest.Pack p : m.packs) {
-                if (!m.firstPlay.contains(p) && !install.installed(p)) {
+                // Music is fetched with first_play (first, for the boot theme)
+                // even though it does not gate playability.
+                if (!m.firstPlay.contains(p) && !p.isMusic() && !install.installed(p)) {
                     sum += p.size;
                 }
             }
@@ -288,20 +290,23 @@ final class DataSession {
                 throw new IOException("No data manifest");
             }
             install.reconcile();
-            if (install.firstPlayInstalled()) {
+            DataManifest.Pack music = m.music();
+            if (install.firstPlayInstalled() && (music == null || install.installed(music))) {
                 return;
             }
-            // Retry on the boot screen is the player asking again.
-            f.forgive(m.firstPlay);
-            f.checkSpace(m.firstPlay);
+            // Music comes first, but first_play is what decides that the game
+            // may start. Retry on the boot screen is the player asking again.
+            List<DataManifest.Pack> scope = m.firstPlayWithMusic();
+            f.forgive(scope);
+            f.checkSpace(scope);
             long total = 0;
-            for (DataManifest.Pack p : m.firstPlay) {
+            for (DataManifest.Pack p : scope) {
                 total += p.size;
             }
             final long all = total;
             Thread ticker = new Thread(() -> {
                 while (!Thread.currentThread().isInterrupted()) {
-                    progress.progress(f.doneBytes(m.firstPlay), all, f.verifying());
+                    progress.progress(f.doneBytes(scope), all, f.verifying());
                     try {
                         Thread.sleep(250);
                     } catch (InterruptedException e) {

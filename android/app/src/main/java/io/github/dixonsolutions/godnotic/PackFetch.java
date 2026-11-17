@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -257,6 +258,9 @@ final class PackFetch {
                 out.add(e);
             }
         }
+        // The menu theme is in the music pack: fetch it first so the download
+        // screen can start it while the other packs are still arriving.
+        Collections.sort(out, (a, b) -> Boolean.compare(b.isMusic(), a.isMusic()));
         return out;
     }
 
