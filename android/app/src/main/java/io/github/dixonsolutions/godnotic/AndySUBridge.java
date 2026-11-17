@@ -4,6 +4,10 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.widget.Toast;
 
 import org.json.JSONObject;
 
@@ -64,6 +68,12 @@ final class AndySUBridge {
     private String lastStatusJson = "";
     private String noticeText = "";
     private String channel;
+    private String stagedForApply = "";
+    private String stateForApply = "idle";
+    private String applyPolicy;
+    private String announced = "";
+    private long announcedAt;
+    private final Handler main = new Handler(Looper.getMainLooper());
 
     /** The mode a player's own check runs in, until it settles; null when none is running. */
     private String manualMode;
@@ -105,6 +115,8 @@ final class AndySUBridge {
                 case REQUEST_DOWNLOAD: {
                     String manual = hasMode() ? AndySUState.manualMode(auto(), wifiOnly(), metered(),
                             REQUEST_DOWNLOAD.equals(request)) : null;
+                    if ("auto".equals(manual) && !"next_start".equals(applyPolicy))
+                        manual = "download_only";
                     if (manual != null) {
                         AndySUCompat.setMode(manual);
                         manualMode = manual;
@@ -115,7 +127,9 @@ final class AndySUBridge {
                     break;
                 }
                 case REQUEST_APPLY:
-                    AndySUCompat.applyNow();
+                    // applyNow can invoke a live swap; this build never registers a handler.
+                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                    else AndySUCompat.applyNow();
                     break;
                 case REQUEST_AUTO_ON:
                 case REQUEST_AUTO_OFF:
@@ -126,6 +140,8 @@ final class AndySUBridge {
                     prefs.edit().putBoolean(PREF_WIFI_ONLY, REQUEST_WIFI_ON.equals(request)).apply();
                     break;
                 case REQUEST_LIVE_ON:
+                    if (hasMode() && "auto".equals(AndySUCompat.mode()))
+                        AndySUCompat.setMode("download_only");
                     AndySUCompat.setApplyPolicy("live");
                     break;
                 case REQUEST_LIVE_OFF:
@@ -162,7 +178,7 @@ final class AndySUBridge {
             String release = status.optString("release", status.optString("id", ""));
             String pending = pendingRelease(r.installed);
             // The host's status keeps saying "staged" after that release has committed.
-            if ("staged".equals(state) && release.equals(r.installed)) state = "uptodate";
+            if ("staged".equals(state) && !release.isEmpty() && release.equals(r.installed)) state = "uptodate";
             // After a restart the status starts over at idle; the core still has the staged release.
             if ("idle".equals(state) && !pending.isEmpty()) {
                 state = "staged";
@@ -178,15 +194,22 @@ final class AndySUBridge {
             boolean auto = auto();
             boolean wifiOnly = wifiOnly();
             String mode = modeControl ? AndySUCompat.mode() : "";
-            if (modeControl) mode = steerMode(mode, state, auto, wifiOnly, metered, !staged.isEmpty());
             Boolean live = null;
+            String policy = null;
             if (AndySUCompat.has("applyPolicy")) {
                 try {
-                    live = "live".equals(AndySUCompat.applyPolicy());
+                    policy = AndySUCompat.applyPolicy();
+                    live = "live".equals(policy);
                 } catch (ReflectiveOperationException | RuntimeException e) {
                     live = null;
+                    policy = "unknown";
                 }
             }
+            if (modeControl) mode = steerMode(mode, state, auto, wifiOnly, metered,
+                    !staged.isEmpty(), policy);
+            stagedForApply = staged;
+            stateForApply = !staged.isEmpty() ? "staged" : state;
+            applyPolicy = policy;
 
             if ("downloading".equals(state)) {
                 Map<String, Long> parts = parts();
@@ -234,12 +257,45 @@ final class AndySUBridge {
             }
             notice("downloading".equals(state) ? release : null);
         } catch (Exception e) {
+            stagedForApply = "";
+            stateForApply = "idle";
             r.state = "incompatible";
             r.message = "This AndySU host does not expose the payload update API.";
             Log.i(TAG, r.message, e);
             notice(null);
         }
         write(r);
+    }
+
+    /** Called after publish on each poll, only while the player can see the notice. */
+    synchronized void autoApply(boolean inMatch, boolean visible) {
+        String version = stagedForApply;
+        if (!visible || !AndySUState.shouldAutoApply(stateForApply, inMatch, applyPolicy)) {
+            announced = "";
+            return;
+        }
+        if (version.isEmpty()) version = "?";
+        final String noticeVersion = version;
+        long now = SystemClock.elapsedRealtime();
+        if (!version.equals(announced)) {
+            announced = version;
+            announcedAt = now;
+            main.post(() -> Toast.makeText(context, "?".equals(noticeVersion) ? "Updating — restarting…"
+                    : "Updating to " + noticeVersion + " — restarting…",
+                    Toast.LENGTH_SHORT).show());
+        } else if (now - announcedAt >= 1000) {
+            // Do not repeatedly ask if the host rejects or returns from the relaunch.
+            announced = "";
+            stagedForApply = "";
+            stateForApply = "idle";
+            try {
+                if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                else AndySUCompat.applyNow();
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                requestError = "Could not restart to apply the update: " + AndySUState.oneLine(e.getMessage());
+                Log.w(TAG, requestError, e);
+            }
+        }
     }
 
     /**
@@ -249,7 +305,7 @@ final class AndySUBridge {
      * when the connection turns metered.
      */
     private String steerMode(String mode, String state, boolean auto, boolean wifiOnly, boolean metered,
-                             boolean staged) throws ReflectiveOperationException {
+                             boolean staged, String policy) throws ReflectiveOperationException {
         long now = System.currentTimeMillis();
         if (manualMode != null && !AndySUState.busy(state)
                 && (manualDone || now - manualAt > MANUAL_SETTLE_MS)) {
@@ -258,6 +314,9 @@ final class AndySUBridge {
         if (manualMode != null && now - manualAt > MANUAL_MAX_MS) manualMode = null;
         String want = manualMode != null ? manualMode
                 : AndySUState.targetMode(auto, wifiOnly, metered, staged, foreground());
+        // In auto mode the host may restart immediately on staging, even during a match.
+        // Download-only still stages automatically; restartNow explicitly promotes it.
+        if ("auto".equals(want) && !"next_start".equals(policy)) want = "download_only";
         if (want.equals(mode)) return mode;
         AndySUCompat.setMode(want);
         Log.i(TAG, "AndySU update mode " + mode + " -> " + want);
