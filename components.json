@@ -4,12 +4,12 @@
     "darkplaces": {
       "repository": "dixonSolutions/Godnotic-darkplaces",
       "path": "engine/darkplaces",
-      "revision": "a24302268af0b6206ce29899408958b325ae5ccb"
+      "revision": "aea06250a52e322fb3719c5d94bacd808d85322d"
     },
     "data": {
       "repository": "dixonSolutions/Godnotic-data",
       "path": "engine/data/xonotic-data.pk3dir",
-      "revision": "9c4ba0b3150354285b28505a2e1bbf6fce4edf89"
+      "revision": "aa3731d7361adb855d300aade5b493f55ee47db7"
     }
   }
 }
