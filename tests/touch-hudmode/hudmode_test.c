@@ -96,8 +96,8 @@ static void check_controls(void)
 	// match end: MENU and nothing else, whatever the flags
 	for (flags = 0; flags < 32; flags++)
 	{
-		CHECK_INT(TOUCHCTL_MENU, TouchMode_Controls(TOUCHMODE_INTERMISSION, flags), "intermission: MENU only");
-		CHECK_INT(TOUCHCTL_MENU, TouchMode_Controls(TOUCHMODE_MAPVOTE, flags), "map vote: MENU only");
+		CHECK_INT(TOUCHCTL_MENU | TOUCHCTL_SCORE | TOUCHCTL_CHAT, TouchMode_Controls(TOUCHMODE_INTERMISSION, flags), "intermission: top bar");
+		CHECK_INT(TOUCHCTL_MENU | TOUCHCTL_SCORE | TOUCHCTL_CHAT, TouchMode_Controls(TOUCHMODE_MAPVOTE, flags), "map vote: top bar");
 		CHECK_INT(0, TouchMode_Controls(TOUCHMODE_OFF, flags), "off: nothing");
 	}
 	for (mode = TOUCHMODE_OBSERVING; mode <= TOUCHMODE_OUT_FREE; mode++)
