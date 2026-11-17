@@ -139,6 +139,18 @@ def rects_case(path):
         pairs = [(a[1], b[1]) for i, a in enumerate(rects) for b in rects[i + 1:] if hit(a, b)]
         check(len(rects) >= 2 and not pairs, f"{name} {state}: {len(rects)} rects, intersections: {pairs or 'none'}")
 
+def mouse_keyboard_case(path):
+    log = samples(path)
+    for device, start in (("mouse", "base"), ("key", "mouse_alt_up")):
+        delta = turn(log, start, device + "_turn")
+        check(delta is not None and abs(delta) > 0.5, f"{device}: motion turns the view ({delta})")
+        for field, held, released in (("attack", "fire", "up"), ("attack2", "alt", "alt_up")):
+            a = at(log, device + "_" + held, "TOUCHFEEL")
+            b = at(log, device + "_" + released, "TOUCHFEEL")
+            check(a is not None and b is not None and a.get(field) == "1" and b.get(field) == "0",
+                  f"{device}: {field} press and release")
+    check("touch aim: active" in open(path, errors="replace").read(), "aim helpers active in keyboard and mouse mode")
+
 kind = sys.argv[1]
 if kind == "input":
     slows = [input_case(p) for p in sys.argv[2:]]
@@ -149,4 +161,6 @@ elif kind == "join":
     join_case(sys.argv[2], sys.argv[3])
 elif kind == "rects":
     rects_case(sys.argv[2])
+elif kind == "mouse_keyboard":
+    mouse_keyboard_case(sys.argv[2])
 sys.exit(1 if fails else 0)
