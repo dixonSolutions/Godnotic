@@ -1621,6 +1621,7 @@ class ViewRenderer(
         var lastSelected: List<Any?> = emptyList()
         e.bind = { x ->
             val p = x.props
+            if (id == "mp/servers") serverState(x.source).setSearch(p.str("filter"))
             // a new source (the map picker after a mode change): drop the old rows, window the new ones
             val src = p.str("source")
             if (moveSource(lists, vl, x.source, src)) { x.source = src; vl.reset(-1); if (isServerSource(src)) flushServers(src) }

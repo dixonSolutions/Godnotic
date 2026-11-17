@@ -80,6 +80,17 @@ internal class ServerListState(
     /** Chips the player has flipped: theirs beats any later value from the engine. */
     private val chosen = HashSet<String>()
     private var laggyMs = 150.0
+    private var search = ""
+    private var searchTotal: Int? = null
+
+    /** Apply the bridge's search to cached rows as well as newly fetched windows. */
+    fun setSearch(value: String) {
+        if (search == value) return
+        search = value
+        rebuildShown()
+        searchTotal = null
+        if (value.isNotEmpty()) want = size
+    }
 
     /** The row chosen in the list (its address), kept across refreshes. */
     private var selectedKey = ""
@@ -159,6 +170,7 @@ internal class ServerListState(
      */
     private fun matches(row: Map<String, Any?>): Boolean {
         val cells = row["cells"].obj()
+        if (search.isNotEmpty() && cells.values.none { it is String && it.contains(search, ignoreCase = true) }) return false
         if (include("lan") && cells.str("net") == "internet") return false
         val players = cells.num("players")
         val humans = players - cells.num("bots")
@@ -210,7 +222,7 @@ internal class ServerListState(
         to = -1
         whole = false
         for (item in items.values) item.answered = false
-        want = total
+        want = if (search.isNotEmpty()) searchTotal ?: total else total
         resize(total)
         rebuildShown()
     }
@@ -224,6 +236,7 @@ internal class ServerListState(
         if (!running) begin(total)
         resize(maxOf(total, offset + rows.size))
         want = maxOf(total, offset + rows.size)
+        if (search.isNotEmpty()) searchTotal = want
         for ((i, row) in rows.withIndex()) {
             val key = keyOf(row)
             if (key.isEmpty()) continue
