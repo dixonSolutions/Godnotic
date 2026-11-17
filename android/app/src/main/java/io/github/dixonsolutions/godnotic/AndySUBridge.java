@@ -127,15 +127,19 @@ final class AndySUBridge {
                     break;
                 }
                 case REQUEST_APPLY:
-                    // The host relaunches this process to apply the staged release: quiet it first,
-                    // exactly as before a package install (ReplaceGuard).
-                    ReplaceGuard.beforeReplace(context);
-                    // applyNow can invoke a live swap; this build never registers a handler.
-                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                    else AndySUCompat.applyNow();
-                    // The host is replacing the payload (and relaunching this process): from here
-                    // nothing of it starts again, and the screens end while their classes exist.
-                    ReplaceGuard.beginReplace(context);
+                    // Quiet this process and mark it replacing *before* the host is asked: the
+                    // relaunch does not return, so anything after the call may never run.
+                    ReplaceSequence.apply(
+                            () -> ReplaceGuard.beforeReplace(context),
+                            () -> ReplaceGuard.beginReplace(context),
+                            () -> {
+                                try {
+                                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                                    else AndySUCompat.applyNow();
+                                } catch (ReflectiveOperationException e) {
+                                    throw new IllegalStateException(e);
+                                }
+                            });
                     break;
                 case REQUEST_AUTO_ON:
                 case REQUEST_AUTO_OFF:
@@ -330,17 +334,21 @@ final class AndySUBridge {
             announced = "";
             stagedForApply = "";
             stateForApply = "idle";
-            ReplaceGuard.beforeReplace(context);
-            try {
-                if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                else AndySUCompat.applyNow();
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                requestError = "Could not restart to apply the update: " + AndySUState.oneLine(e.getMessage());
-                Log.w(TAG, requestError, e);
-            }
-            // The host is swapping the payload now: the old process stops everything and lets go
-            // before it does (services, screens, the notice's looper).
-            ReplaceGuard.beginReplace(context);
+            // Quiet this process and mark it replacing *before* the host is asked to relaunch:
+            // the relaunch does not return, so the work after the call may never run.
+            ReplaceSequence.apply(
+                    () -> ReplaceGuard.beforeReplace(context),
+                    () -> ReplaceGuard.beginReplace(context),
+                    () -> {
+                        try {
+                            if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
+                            else AndySUCompat.applyNow();
+                        } catch (ReflectiveOperationException | RuntimeException e) {
+                            requestError = "Could not restart to apply the update: "
+                                    + AndySUState.oneLine(e.getMessage());
+                            Log.w(TAG, requestError, e);
+                        }
+                    });
         }
     }
 
