@@ -224,7 +224,7 @@ static int run_dialog(touchjoindlg_t *d, int mode, int flags, int local, int cam
 	double t;
 	for (t = from; t < to; t += 0.05)
 	{
-		int r = TouchJoinDlg_Frame(d, mode, flags, local, campaign, free_screen, enabled, t);
+		int r = TouchJoinDlg_Frame(d, mode, flags, local, campaign, free_screen, enabled, 0, t);
 		if (r == TOUCHJOINDLG_OPEN)
 			opens++;
 		if (r == TOUCHJOINDLG_JOIN && joins)
@@ -237,6 +237,14 @@ static void check_join_dialog(void)
 {
 	touchjoindlg_t d;
 	int joins;
+	int team, campaign, autojoin;
+	for (team = 0; team <= 1; team++) for (campaign = 0; campaign <= 2; campaign++) for (autojoin = 0; autojoin <= 1; autojoin++)
+	{
+		int r;
+		memset(&d, 0, sizeof(d)); d.owed = 1; d.tries = TOUCHJOINDLG_TRIES; d.since = 1;
+		r = TouchJoinDlg_Frame(&d, TOUCHMODE_OBSERVING, team ? TOUCHMODE_F_TEAMS : 0, 1, campaign, 1, 1, autojoin, 3);
+		CHECK_INT((autojoin || (campaign && (!team || campaign == 2))) ? TOUCHJOINDLG_JOIN : TOUCHJOINDLG_OPEN, r, "autojoin, mode and campaign decision");
+	}
 	// a public server, Deathmatch: connecting, then an observer
 	memset(&d, 0, sizeof(d));
 	run_dialog(&d, TOUCHMODE_OFF, 0, 0, 0, 1, 1, 0, 1, NULL);

@@ -105,10 +105,12 @@ static void check_topbar_extremes(void)
 		in.w = screens[i].px_w; in.h = screens[i].px_h; in.u = u;
 		in.menu_h = 72 * k; in.score_h = 108 * k; in.chat_h = 54 * k;
 		in.menu_w = in.menu_h * 2; in.score_w = in.score_h * 3; in.chat_w = in.chat_h * 2.4f;
+		in.console = 48 * u;
 		in.aspect = 2.4f; in.menu = in.score = in.chat = 1; in.left_handed = hand;
 		TouchTopBar_Layout(&in, &b);
 		CHECK(b.menu.x >= -0.01f && b.chat.x + b.chat.w <= in.w + 0.01f, "extreme row off screen");
 		CHECK(!TouchTopBar_Intersect(&b.menu, &b.score) && !TouchTopBar_Intersect(&b.score, &b.chat), "extreme row overlaps");
+		CHECK(b.console.w > 0 && !TouchTopBar_Intersect(&b.console, &b.chat) && !TouchTopBar_Intersect(&b.console, &b.menu) && !TouchTopBar_Intersect(&b.console, &b.score), "console overlaps fitted pills");
 		CHECK(fabsf_(b.menu.h / in.menu_h - b.score.h / in.score_h) < 0.0001f && fabsf_(b.chat.h / in.chat_h - b.score.h / in.score_h) < 0.0001f, "scaling is not uniform");
 		CHECK(fabsf_(b.menu.w / b.menu.h - 2) < 0.0001f && fabsf_(b.score.w / b.score.h - 3) < 0.0001f, "saved aspect lost");
 		if (!hand) {

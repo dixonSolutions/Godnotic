@@ -379,7 +379,7 @@ typedef struct touchjoindlg_s
 // campaign: 0 outside a campaign, 1 with team choice, 2 with a fixed team.
 // local_game: the server is this process. screen_free: the game has the screen (no menu, console,
 // chat sheet or CSQC pointer UI). enabled: touch_join_dialog allows it here.
-static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int local_game, int campaign, int screen_free, int enabled, double now)
+static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int local_game, int campaign, int screen_free, int enabled, int autojoin, double now)
 {
 	if (mode == TOUCHMODE_OFF || TouchMode_IsMatchEnd(mode))
 	{
@@ -407,7 +407,7 @@ static inline int TouchJoinDlg_Frame(touchjoindlg_t *d, int mode, int flags, int
 		d->since = now;
 	if (now - d->since < TOUCHJOINDLG_SETTLE || now < d->next || !screen_free)
 		return TOUCHJOINDLG_NOTHING;
-	if (local_game && campaign && (!(flags & TOUCHMODE_F_TEAMS) || campaign == 2) && d->tries > 0)
+	if ((autojoin || (local_game && campaign && (!(flags & TOUCHMODE_F_TEAMS) || campaign == 2))) && d->tries > 0)
 	{
 		d->tries--;
 		d->next = now + TOUCHJOINDLG_RETRY;
