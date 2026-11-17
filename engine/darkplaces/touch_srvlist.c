@@ -75,6 +75,7 @@ static cvar_t slist_servers = {CF_CLIENT | CF_READONLY, "_slist_servers", "0", "
 static cvar_t slist_players = {CF_CLIENT | CF_READONLY, "_slist_players", "0", "Godnotic: human players on the servers in the list"};
 static cvar_t slist_refreshing = {CF_CLIENT | CF_READONLY, "_slist_refreshing", "0", "Godnotic: 1 while a server list refresh is running"};
 static cvar_t slist_saved = {CF_CLIENT | CF_READONLY, "_slist_saved", "0", "Godnotic: 1 while _slist_summary still counts rows of the saved list that have not answered yet"};
+static cvar_t slist_master_state = {CF_CLIENT | CF_READONLY, "_slist_master_state", "0", "Godnotic: master state: 0 pending or not used, 1 replied, 2 unreachable"};
 
 #define SF_STALE   1   // shown from the saved list, no answer yet this refresh
 #define SF_DONE    2   // given up on for this refresh
@@ -967,6 +968,9 @@ static void hold_frame(void)
 void TouchSrvList_Frame(void)
 {
 	double now = now_real();
+	int master_state = TouchSL_MasterState(sl.t0 != 0, masters_set(), TouchLAN_LanOnly(), now - sl.t0, masterreplycount);
+	if (slist_master_state.integer != master_state)
+		Cvar_SetValueQuick(&slist_master_state, master_state);
 	if (masterreplycount || !TouchSrvList_Fast() || TouchLAN_LanOnly() || !masters_set())
 		sl.master_retry_at = 0;
 	else if (sl.master_retry_at && now >= sl.master_retry_at && key_dest != key_game && !TouchJoinFail_Joining())
@@ -1001,6 +1005,7 @@ void TouchSrvList_Init(void)
 	Cvar_RegisterVariable(&slist_players);
 	Cvar_RegisterVariable(&slist_refreshing);
 	Cvar_RegisterVariable(&slist_saved);
+	Cvar_RegisterVariable(&slist_master_state);
 	Cmd_AddCommand(CF_CLIENT, "net_slist_open", TouchSrvList_Open_f, "Godnotic: refresh the server list from scratch as opening it in the menu does (no console output)");
 	Cmd_AddCommand(CF_CLIENT, "net_slist_stats", TouchSrvList_Stats_f, "Godnotic: timings of the last server list refresh (first row, 50%, 95%, settled)");
 }
