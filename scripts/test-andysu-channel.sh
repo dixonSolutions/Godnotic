@@ -171,20 +171,32 @@ ok "a $NEW host stages 1.3 from the repaired channel"
 sleep 1 # so the re-upload's place in the release is visible in the file times
 GITHUB_OUTPUT=/dev/null bash scripts/andysu-channel.sh gh-reassert live-arm64 > "$t/reassert.log" 2>&1 ||
   { cat "$t/reassert.log" >&2; fail "gh-reassert"; }
+# A non-stable channel moves only its manifest in channel-<name>; the blobs and deltas of each
+# release are assets of the release itself, andysu-<name>-<id> (the publish action's github
+# branch). So the ordering to check is between that release's blobs and the channel's manifest.
 python3 - "$GH_ROOT/$REPO/releases/download/channel-live-arm64" <<'PY'
-import os, sys
-root = sys.argv[1]
-manifest = os.path.join(root, "update.json")
-if not os.path.isfile(manifest):
-    raise SystemExit("no manifest in the release")
-m = os.stat(manifest).st_mtime_ns
-components = [os.path.join(d, f) for d, _, files in os.walk(root) for f in files
-              if f not in ("update.json", "update.json.sig")]
-if not components:
-    raise SystemExit("no blobs in the release")
-newer = [p for p in components if os.stat(p).st_mtime_ns > m]
+import json, os, sys
+channel_dir = sys.argv[1]
+manifest_path = os.path.join(channel_dir, "update.json")
+if not os.path.isfile(manifest_path):
+    raise SystemExit("no manifest in the channel release")
+with open(manifest_path) as f:
+    newest = json.load(f)["releases"][-1]["id"]
+channel = os.path.basename(channel_dir)
+assert channel.startswith("channel-"), channel
+blob_dir = os.path.join(os.path.dirname(channel_dir),
+                        "andysu-%s-%s" % (channel[len("channel-"):], newest))
+if not os.path.isdir(blob_dir):
+    raise SystemExit("no release of %s to hold its blobs: %s" % (newest, blob_dir))
+blobs = [f for f in os.listdir(blob_dir) if f not in ("update.json", "update.json.sig")]
+if not blobs:
+    raise SystemExit("no blobs in the release of %s" % newest)
+stray = sorted(set(os.listdir(channel_dir)) - {"update.json", "update.json.sig"})
+assert not stray, "the moving channel release carries blobs of its own: " + ", ".join(stray[:3])
+m = os.stat(manifest_path).st_mtime_ns
+newer = [f for f in blobs if os.stat(os.path.join(blob_dir, f)).st_mtime_ns > m]
 assert not newer, "still newer than the manifest: " + ", ".join(newer[:3])
-print(f"ok: {len(components)} blobs are all in place before update.json is published")
+print(f"ok: {len(blobs)} blobs of {newest} are all in place before update.json is published")
 PY
 ok "gh-reassert leaves the manifest newer than every blob of the release"
 GITHUB_OUTPUT=/dev/null bash scripts/andysu-channel.sh gh-repair live-arm64 | grep -q "already names $NEW" || fail "a second gh-repair changed something"
