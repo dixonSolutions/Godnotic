@@ -42,3 +42,13 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
     "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
     -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/limits_test"
 "$out/limits_test"
+
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
+    -Dclock_gettime=bridge_test_clock -I"$prefix/include" -I"$root/engine/darkplaces" \
+    -c "$root/engine/darkplaces/touch_bridge.c" -o "$out/idle_bridge.o"
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
+    -I"$prefix/include" -I"$root/engine/darkplaces" \
+    "$root/tests/bridge/idle_test.c" "$out/idle_bridge.o" \
+    "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
+    -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/idle_test"
+"$out/idle_test"

@@ -9,10 +9,16 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
+#include <stdio.h>
+#include <inttypes.h>
 
 static pthread_mutex_t bridge_peers_mutex = PTHREAD_MUTEX_INITIALIZER;
 static unsigned int bridge_peer_count, bridge_peer_max = 8;
 static int *bridge_peers;
+static pthread_mutex_t bridge_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t bridge_total_drops[TOUCH_BRIDGE_DROP_COUNT];
+static struct timespec bridge_last_log[TOUCH_BRIDGE_DROP_COUNT];
+static int bridge_logged[TOUCH_BRIDGE_DROP_COUNT];
 
 int Touch_BridgeSetMaxPeers(unsigned int maximum)
 {
@@ -162,7 +168,71 @@ struct touch_bridge_forwarder {
     unsigned int packet_rate, byte_rate;
     double packet_tokens, byte_tokens;
     struct timespec bucket_time;
+    struct timespec activity;
+    unsigned int idle_seconds;
+    int expired;
+    uint64_t drops[TOUCH_BRIDGE_DROP_COUNT];
 };
+
+static double bridge_elapsed(struct timespec now, struct timespec then)
+{
+    return (double)(now.tv_sec - then.tv_sec) + (double)(now.tv_nsec - then.tv_nsec) / 1000000000.0;
+}
+
+/* All drop accounting and logging is serialized by the forwarder's mutex. */
+static void bridge_drop(struct touch_bridge_forwarder *f, enum touch_bridge_drop_reason reason)
+{
+    static const char *names[] = {"invalid", "denied", "rate", "io", "idle"};
+    struct timespec now;
+    ++f->drops[reason];
+    pthread_mutex_lock(&bridge_log_mutex);
+    ++bridge_total_drops[reason];
+    if (!clock_gettime(CLOCK_MONOTONIC, &now) &&
+        (!bridge_logged[reason] || bridge_elapsed(now, bridge_last_log[reason]) >= 60)) {
+        fprintf(stderr, "bridge: %s drops=%" PRIu64 "\n", names[reason], bridge_total_drops[reason]);
+        bridge_logged[reason] = 1;
+        bridge_last_log[reason] = now;
+    }
+    pthread_mutex_unlock(&bridge_log_mutex);
+}
+
+/* Caller holds the mutex. Expiry is permanent. */
+static int bridge_expired(struct touch_bridge_forwarder *f)
+{
+    struct timespec now;
+    if (!f->expired && !clock_gettime(CLOCK_MONOTONIC, &now) &&
+        bridge_elapsed(now, f->activity) >= f->idle_seconds) {
+        f->expired = 1;
+        bridge_drop(f, TOUCH_BRIDGE_DROP_IDLE);
+    }
+    return f->expired;
+}
+
+static void bridge_activity(struct touch_bridge_forwarder *f)
+{
+    struct timespec now;
+    if (!clock_gettime(CLOCK_MONOTONIC, &now)) f->activity = now;
+}
+
+int Touch_BridgeSetIdleTimeout(struct touch_bridge_forwarder *f, unsigned int seconds)
+{
+    if (!f || !seconds) return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    if (bridge_expired(f)) { pthread_mutex_unlock(&f->mutex); return RTC_ERR_NOT_AVAIL; }
+    f->idle_seconds = seconds;
+    pthread_mutex_unlock(&f->mutex);
+    return 0;
+}
+
+uint64_t Touch_BridgeDropCount(struct touch_bridge_forwarder *f, enum touch_bridge_drop_reason reason)
+{
+    uint64_t count;
+    if (!f || reason < 0 || reason >= TOUCH_BRIDGE_DROP_COUNT) return 0;
+    pthread_mutex_lock(&f->mutex);
+    count = f->drops[reason];
+    pthread_mutex_unlock(&f->mutex);
+    return count;
+}
 
 int Touch_BridgeSetRates(struct touch_bridge_forwarder *f, unsigned int packets, unsigned int bytes)
 {
@@ -326,6 +396,10 @@ struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void)
         free(f);
         return NULL;
     }
+    f->idle_seconds = 120;
+    if (clock_gettime(CLOCK_MONOTONIC, &f->activity)) {
+        pthread_mutex_destroy(&f->mutex); free(f); return NULL;
+    }
     if (Touch_BridgeSetRates(f, 200, 1048576) < 0) {
         pthread_mutex_destroy(&f->mutex); free(f); return NULL;
     }
@@ -358,10 +432,19 @@ int Touch_BridgeForward(struct touch_bridge_forwarder *f, const void *packet, in
     int len, fd;
     struct sockaddr_storage storage;
     socklen_t addrlen;
-    if (!f || Touch_BridgeUnpack(packet, size, &address, &payload, &len) < 0)
-        return RTC_ERR_INVALID;
+    if (!f) return RTC_ERR_INVALID;
     pthread_mutex_lock(&f->mutex);
-    if (!bridge_allowed(f, &address) || !bridge_take_tokens(f, len)) {
+    if (bridge_expired(f)) { pthread_mutex_unlock(&f->mutex); return RTC_ERR_NOT_AVAIL; }
+    if (Touch_BridgeUnpack(packet, size, &address, &payload, &len) < 0) {
+        bridge_drop(f, TOUCH_BRIDGE_DROP_INVALID);
+        pthread_mutex_unlock(&f->mutex); return RTC_ERR_INVALID;
+    }
+    if (!bridge_allowed(f, &address)) {
+        bridge_drop(f, TOUCH_BRIDGE_DROP_DENIED);
+        pthread_mutex_unlock(&f->mutex); return RTC_ERR_FAILURE;
+    }
+    if (!bridge_take_tokens(f, len)) {
+        bridge_drop(f, TOUCH_BRIDGE_DROP_RATE);
         pthread_mutex_unlock(&f->mutex);
         return RTC_ERR_FAILURE;
     }
@@ -382,8 +465,13 @@ int Touch_BridgeForward(struct touch_bridge_forwarder *f, const void *packet, in
         addrlen = sizeof(*a);
         fd = f->ipv6;
     }
-    if (fd < 0 || sendto(fd, payload, (size_t)len, 0, (struct sockaddr *)&storage, addrlen) != len)
+    if (fd < 0 || sendto(fd, payload, (size_t)len, 0, (struct sockaddr *)&storage, addrlen) != len) {
+        pthread_mutex_lock(&f->mutex); bridge_drop(f, TOUCH_BRIDGE_DROP_IO); pthread_mutex_unlock(&f->mutex);
         return RTC_ERR_FAILURE;
+    }
+    pthread_mutex_lock(&f->mutex);
+    if (!f->expired) bridge_activity(f);
+    pthread_mutex_unlock(&f->mutex);
     return 0;
 }
 
@@ -405,7 +493,10 @@ static int bridge_poll_socket(struct touch_bridge_forwarder *f, int fd, touch_br
             if (errno == EINTR) continue;
             return RTC_ERR_FAILURE;
         }
-        if (len == 0 || len > TOUCH_BRIDGE_MAX_DATAGRAM) continue;
+        if (len == 0 || len > TOUCH_BRIDGE_MAX_DATAGRAM) {
+            pthread_mutex_lock(&f->mutex); bridge_drop(f, TOUCH_BRIDGE_DROP_INVALID); pthread_mutex_unlock(&f->mutex);
+            continue;
+        }
         memset(&address, 0, sizeof(address));
         if (storage.ss_family == AF_INET) {
             const struct sockaddr_in *a = (const struct sockaddr_in *)&storage;
@@ -417,9 +508,15 @@ static int bridge_poll_socket(struct touch_bridge_forwarder *f, int fd, touch_br
             address.family = 6;
             address.port = ntohs(a->sin6_port);
             memcpy(address.address, &a->sin6_addr, 16);
-        } else continue;
+        } else {
+            pthread_mutex_lock(&f->mutex); bridge_drop(f, TOUCH_BRIDGE_DROP_INVALID); pthread_mutex_unlock(&f->mutex);
+            continue;
+        }
         pthread_mutex_lock(&f->mutex);
-        size = bridge_allowed(f, &address) && bridge_take_tokens(f, (int)len);
+        if (bridge_expired(f)) { pthread_mutex_unlock(&f->mutex); return RTC_ERR_NOT_AVAIL; }
+        if (!bridge_allowed(f, &address)) { bridge_drop(f, TOUCH_BRIDGE_DROP_DENIED); size = 0; }
+        else if (!bridge_take_tokens(f, (int)len)) { bridge_drop(f, TOUCH_BRIDGE_DROP_RATE); size = 0; }
+        else { bridge_activity(f); size = 1; }
         pthread_mutex_unlock(&f->mutex);
         if (!size) continue;
         bridge_learn_servers(f, &address, payload, (size_t)len);
@@ -435,8 +532,14 @@ int Touch_BridgePoll(struct touch_bridge_forwarder *f, touch_bridge_reply_fn rep
 {
     int a, b;
     if (!f || !reply) return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    a = bridge_expired(f);
+    pthread_mutex_unlock(&f->mutex);
+    if (a) return RTC_ERR_NOT_AVAIL;
     a = bridge_poll_socket(f, f->ipv4, reply, context);
+    if (a == RTC_ERR_NOT_AVAIL) return a;
     b = bridge_poll_socket(f, f->ipv6, reply, context);
+    if (b == RTC_ERR_NOT_AVAIL) return b;
     return a < 0 || b < 0 ? RTC_ERR_FAILURE : a + b;
 }
 
@@ -456,4 +559,12 @@ static void bridge_send_reply(void *context, const void *packet, int size)
 int Touch_BridgePollChannel(struct touch_bridge_forwarder *f, int channel)
 {
     return Touch_BridgePoll(f, bridge_send_reply, &channel);
+}
+
+int Touch_BridgePollPeer(struct touch_bridge_forwarder *f, int peer, int channel)
+{
+    int result = Touch_BridgePollChannel(f, channel);
+    if (result == RTC_ERR_NOT_AVAIL && Touch_BridgeDeletePeer(peer) < 0)
+        return RTC_ERR_FAILURE;
+    return result;
 }

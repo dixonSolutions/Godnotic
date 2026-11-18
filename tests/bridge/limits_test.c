@@ -61,12 +61,14 @@ int main(void)
     assert(Touch_BridgeSetRates(f, 0, 100) < 0);
     assert(Touch_BridgeForward(f, packet, n) == 0);
     assert(Touch_BridgeForward(f, packet, n) < 0);
+    assert(Touch_BridgeDropCount(f, TOUCH_BRIDGE_DROP_RATE) == 1);
     assert(Touch_BridgeForward(other, packet, n) == 0); /* independent peer */
     assert(recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&client, &clen) == 6);
     assert(sendto(sock, "reply", 5, 0, (struct sockaddr *)&client, clen) == 5);
     nanosleep(&short_wait, NULL);
     assert(Touch_BridgePoll(f, reply, &received) == 0); /* shared bucket */
     assert(received == 0);
+    assert(Touch_BridgeDropCount(f, TOUCH_BRIDGE_DROP_RATE) == 2);
     nanosleep(&wait, NULL);
     assert(Touch_BridgeForward(f, packet, n) == 0); /* refill */
     assert(Touch_BridgeSetRates(f, 100, 10) == 0);

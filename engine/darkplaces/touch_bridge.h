@@ -2,6 +2,7 @@
 #define TOUCH_BRIDGE_H
 
 #include <rtc/rtc.h>
+#include <stdint.h>
 
 /* Callbacks execute on libdatachannel threads; the caller owns their context. */
 int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description,
@@ -34,6 +35,15 @@ int Touch_BridgeUnpack(const void *packet, int size, struct touch_bridge_address
 /* A forwarder belongs to one peer. Call Poll regularly from its owning thread;
  * the callback receives a complete framed reply, valid only during the call. */
 struct touch_bridge_forwarder;
+enum touch_bridge_drop_reason {
+    TOUCH_BRIDGE_DROP_INVALID, TOUCH_BRIDGE_DROP_DENIED, TOUCH_BRIDGE_DROP_RATE,
+    TOUCH_BRIDGE_DROP_IO, TOUCH_BRIDGE_DROP_IDLE, TOUCH_BRIDGE_DROP_COUNT
+};
+/* Defaults to 120 seconds. Accepted traffic in either direction resets the
+ * timer; rejected traffic cannot keep a peer alive. Zero is invalid. */
+int Touch_BridgeSetIdleTimeout(struct touch_bridge_forwarder *forwarder, unsigned int seconds);
+uint64_t Touch_BridgeDropCount(struct touch_bridge_forwarder *forwarder,
+                               enum touch_bridge_drop_reason reason);
 typedef void (*touch_bridge_reply_fn)(void *context, const void *packet, int size);
 struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void);
 /* Shared inbound/outbound token buckets, initially full. Rates are also burst
@@ -58,5 +68,9 @@ int Touch_BridgePoll(struct touch_bridge_forwarder *forwarder, touch_bridge_repl
  * Keep the forwarder alive until callbacks have stopped. */
 void Touch_BridgeForwardMessage(int channel, const char *message, int size, void *context);
 int Touch_BridgePollChannel(struct touch_bridge_forwarder *forwarder, int channel);
+/* Poll from the owner thread regularly, even without traffic. On idle expiry,
+ * deletes peer and returns RTC_ERR_NOT_AVAIL; the caller must then stop channel
+ * callbacks and destroy the forwarder. Other errors do not delete the peer. */
+int Touch_BridgePollPeer(struct touch_bridge_forwarder *forwarder, int peer, int channel);
 
 #endif
