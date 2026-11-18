@@ -31,7 +31,8 @@ class UiBridgeTest {
         override fun navigate(screen: String, transition: String) { ops.add("navigate $screen $transition") }
         override fun dialog(id: String?) { ops.add("dialog ${id ?: "-"}") }
         override fun toast(text: String, kind: String) { ops.add("toast $text") }
-        override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>) { ops.add("rows $source $offset ${rows.size}/$total"); this.rows[source] = total }
+        override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long) { ops.add("rows $source $offset ${rows.size}/$total/$rev"); this.rows[source] = total }
+        override fun sourceChanged(source: String, total: Int, rev: Long) { ops.add("source $source $total/$rev") }
         override fun imageReady(ref: String, path: String) { ops.add("image $ref") }
     }
 
@@ -41,6 +42,17 @@ class UiBridgeTest {
     }
 
     private fun load(f: File) = Json.parse(f.readText()).obj()
+
+    /** A filtered empty answer must not be read as a notice: only a notice re-windows. */
+    @Test fun emptyWindowAndSourceNoticeRemainDistinct() {
+        val rec = Recorder()
+        val client = UibClient(rec) {}
+        client.receive(mapOf("t" to "rows", "source" to "servers", "rev" to 11.0, "re" to 7.0, "offset" to 0.0, "total" to 0.0, "rows" to emptyList<Any>()))
+        val reply = rec.ops.last()
+        assertTrue("a window reply is not a source notice", reply.startsWith("rows "))
+        client.receive(mapOf("t" to "source", "source" to "servers", "rev" to 12.0, "total" to 3.0))
+        assertTrue("the notice is its own operation", rec.ops.last() != reply && rec.ops.last() == "source servers 3/12")
+    }
 
     @Test fun serverListStateSurvivesRefreshAndRebuild() {
         val state = ServerListState()

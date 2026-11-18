@@ -147,23 +147,35 @@ class ViewRenderer(
 
     override fun toast(text: String, kind: String) = host.toast(text, kind)
 
-    override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>) {
+    override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long) {
         // The server browser is merged, never replaced: a refresh keeps the rows on
         // screen (dimmed until they answer) and updates them by address.
         if (isServerSource(source)) {
-            val state = serverState(source)
-            val notice = rows.isEmpty() && offset == 0
-            if (notice) state.begin(total) else state.accept(offset, total, rows)
+            // A zero-row window is a legitimate answer ("this search matches nothing")
+            // and must not be confused with a source notice: re-asking on it loops.
+            serverState(source).accept(offset, total, rows, rev)
             flushServers(source)
-            // a source notice is a new revision: the rows on screen are cached, and
-            // publishing them alone never asked the engine for the new ones
-            if (notice) for (l in lists[source].orEmpty()) l.reask()
             return
         }
         for (l in lists[source].orEmpty()) {
             if (rows.isEmpty() && offset == 0) l.reset(total) else l.rows(offset, total, rows)
             nodes[l.id]?.let { bindEmpty(it) }
         }
+    }
+
+    /**
+     * The source has a new revision. Cached rows stay on screen; publishing them alone
+     * never asks the engine for the new ones, so every list re-reads its visible window.
+     */
+    override fun sourceChanged(source: String, total: Int, rev: Long) {
+        if (!isServerSource(source)) {
+            for (l in lists[source].orEmpty()) l.reset(total)
+            for (l in lists[source].orEmpty()) nodes[l.id]?.let { bindEmpty(it) }
+            return
+        }
+        serverState(source).begin(total, rev)
+        flushServers(source)
+        for (l in lists[source].orEmpty()) l.reask()
     }
 
     /**
@@ -1665,7 +1677,9 @@ class ViewRenderer(
             // a new sort or filter re-windows the visible range
             val query = "${p.str("sort")}|${p.bool("desc")}|${p.str("filter")}"
             if (lastQuery.isNotEmpty() && query != lastQuery) {
-                vl.reset(maxOf(0, vl.window.total))
+                // Same count, new query: clear the old query's rows in place instead of
+                // invalidating the list (the list blinked and lost its place).
+                vl.requery(maxOf(0, vl.window.total))
                 if (isServerSource(src)) flushServers(src)
             } else if (vl.window.total < 0 && p.containsKey("count")) vl.reset(p.int("count"))
             lastQuery = query

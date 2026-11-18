@@ -47,6 +47,8 @@ internal class ServerListState(
 
     /** Display position -> address; null is a row asked for but not here yet. */
     private val slots = ArrayList<String?>()
+    /** Address -> display position, so accepting 600 rows is not 600 linear scans. */
+    private val at = HashMap<String, Int>()
 
     /** The query running (or the one that ran last): 0 before anything was listed. */
     private var query = 0
@@ -82,6 +84,10 @@ internal class ServerListState(
     private var laggyMs = 150.0
     private var search = ""
     private var searchTotal: Int? = null
+    /** The unfiltered source count: a pending search must not turn the list into zero rows. */
+    private var sourceTotal = 0
+    /** The newest source revision seen; a window older than it is a stale reply. */
+    private var sourceRev = 0L
 
     /** Apply the bridge's search to cached rows as well as newly fetched windows. */
     fun setSearch(value: String) {
@@ -89,7 +95,10 @@ internal class ServerListState(
         search = value
         rebuildShown()
         searchTotal = null
-        if (value.isNotEmpty()) want = size
+        // Keep the source's count while the filtered window is in flight. A filtered
+        // cached page is not the source: using its size here made the list say "no
+        // servers" (and stop asking) whenever the first page had no match.
+        want = maxOf(size, sourceTotal)
     }
 
     /** The row chosen in the list (its address), kept across refreshes. */
@@ -214,7 +223,16 @@ internal class ServerListState(
      * ends. Two notices in a row (the engine sends one per change) change
      * nothing that is drawn.
      */
-    fun begin(total: Int) {
+    fun begin(total: Int, rev: Long = 0L) {
+        if (rev > 0) {
+            if (rev < sourceRev) return // an older notice cannot undo a newer one
+            sourceRev = rev
+        }
+        sourceTotal = total
+        // A previous search window legitimately had zero matches. A new source
+        // revision can match the same search, so ask for its window again instead
+        // of keeping that zero forever (the spinner ran with no request in flight).
+        if (search.isNotEmpty() && total > 0 && searchTotal == 0) searchTotal = null
         received = true
         query++
         running = true
@@ -231,10 +249,17 @@ internal class ServerListState(
      * A window of rows from the bridge: merged by address into the positions it
      * covers. Rows already on screen are never dropped here, whatever the total.
      */
-    fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
+    fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long = 0L) {
+        if (rev > 0) {
+            // The engine may answer a request made before a source notice: its rows
+            // (often an empty filtered page) must not replace the new revision.
+            if (rev < sourceRev) return
+            sourceRev = rev
+        }
         received = true
-        if (!running) begin(total)
+        if (!running) begin(total, rev)
         resize(maxOf(total, offset + rows.size))
+        if (search.isEmpty()) sourceTotal = maxOf(sourceTotal, total)
         want = maxOf(total, offset + rows.size)
         if (search.isNotEmpty()) searchTotal = want
         for ((i, row) in rows.withIndex()) {
@@ -246,7 +271,7 @@ internal class ServerListState(
                 put(offset + i, key) // a new row takes its window position when that is free
             } else {
                 if (item.row != row) item.row = row // same address, new ping/players: rebound in place
-                if (slots.indexOf(key) < 0) put(offset + i, key) // known but never drawn: put it in
+                if (key !in at) put(offset + i, key) // known but never drawn: put it in
             }
             items.getValue(key).also { it.answered = true; it.lost = false; it.missed = 0; it.lostAt = 0L }
         }
@@ -312,6 +337,8 @@ internal class ServerListState(
         if (!gone) return
         // close the gaps the removed rows left: the rest keep their order
         slots.removeAll { it == null || !items.containsKey(it) }
+        at.clear()
+        for ((i, key) in slots.withIndex()) if (key != null) at[key] = i
         rebuildShown()
     }
 
@@ -373,9 +400,9 @@ internal class ServerListState(
      * else the first free position, else the end.
      */
     private fun put(position: Int, key: String) {
-        if (key.isEmpty() || slots.indexOf(key) >= 0) return
+        if (key.isEmpty() || key in at) return
         val free = if (position >= 0 && position < slots.size && slots[position] == null) position else slots.indexOfFirst { it == null }
-        if (free >= 0) slots[free] = key else slots.add(key)
+        if (free >= 0) { slots[free] = key; at[key] = free } else { at[key] = slots.size; slots.add(key) }
     }
 
     /** Orders one window by the chosen column; ties by address, so it repeats exactly. */
@@ -387,7 +414,7 @@ internal class ServerListState(
         if (rows.size != keys.size) return
         val ordered = rows.sortedWith { a, b -> compare(a, b) }.map { keyOf(it) }
         if (ordered == keys) return
-        for ((i, key) in ordered.withIndex()) slots[offset + i] = key
+        for ((i, key) in ordered.withIndex()) { slots[offset + i] = key; at[key] = offset + i }
     }
 
     private fun compare(a: Map<String, Any?>, b: Map<String, Any?>): Int {

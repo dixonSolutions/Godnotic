@@ -463,6 +463,58 @@ class ServerListStateTest {
     }
 
     /**
+     * A window requested before a source notice can arrive after it. An empty filtered
+     * reply from the old revision must not erase the rows the new revision has.
+     */
+    @Test
+    fun anOldEmptyWindowCannotEraseANewerSource() {
+        state.accept(0, 2, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta")), rev = 1)
+        state.begin(4, rev = 2)
+        state.accept(0, 0, emptyList(), rev = 1) // the in-flight reply of revision 1
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+        assertEquals("the newer notice keeps the source count", 4, window.total)
+        assertFalse(ServerListState.showEmpty("ready", window.total, state.size))
+    }
+
+    /**
+     * A search with no matches is a real zero-row window, not an empty source. When
+     * the source then changes, its count must win again: otherwise the list stays at
+     * zero, asks for nothing and the spinner runs forever.
+     */
+    @Test
+    fun aZeroSearchResultRecoversWhenTheSourceRefills() {
+        val window = ListWindow("mp/servers", 50)
+        state.begin(100)
+        state.setSearch("beta")
+        state.accept(0, 0, emptyList())
+        screen(state, window)
+        assertEquals("the filtered window is empty", 0, window.total)
+
+        state.begin(101) // a new server can match the unchanged search
+        screen(state, window)
+        assertFalse("the source has rows", ServerListState.showEmpty("ready", window.total, state.size))
+        assertEquals("the list asks for the new window", 0..49, window.missing(0, 20))
+    }
+
+    /**
+     * While a filtered window is in flight the list keeps the source's count, so the
+     * empty message cannot flash and the list does not reset to a zero-height page.
+     */
+    @Test
+    fun aSearchKeepsTheSourceCountUntilItsWindowAnswers() {
+        state.accept(0, 3, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta"), row("c:3", name = "Alphabet")))
+        state.setSearch("Beta")
+        assertEquals("only the matching cached row is drawn", listOf<String?>("b:2"), keys())
+
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+        assertEquals("the source still holds three rows", 3, window.total)
+        assertFalse("a pending search is not an empty source", ServerListState.showEmpty("ready", window.total, state.size))
+        assertEquals("the filtered page can be requested", 0..2, window.missing(0, 20))
+    }
+
+    /**
      * The whole engine sequence: open the list (cache empty) -> query -> batches ->
      * refresh -> tap a chip -> tap a row -> Join has a target. The renderer turns a
      * tap into toggle()/select()/merge(); this is the model's side of it.
