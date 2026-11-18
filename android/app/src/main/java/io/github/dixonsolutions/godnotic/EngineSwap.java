@@ -77,6 +77,10 @@ final class EngineSwap {
             return null; // register() has not run yet
         }
         deviceKey = deviceKey();
+        if (!guard.canAccept()) {
+            // This process is in the middle of a swap: its marker is not an old failure.
+            return "a live swap is already running";
+        }
         File dir = trialDir(context);
         if (SwapTrial.trial(dir, deviceKey)) {
             // The process died between writing the trial marker and reporting healthy: count it
@@ -86,9 +90,6 @@ final class EngineSwap {
         }
         if (!liveEnabled(context)) {
             return "live apply is off in Settings";
-        }
-        if (!guard.canAccept()) {
-            return "a live swap is already running";
         }
         long wait = SwapTrial.retryAfter(dir, deviceKey, System.currentTimeMillis());
         if (wait > 0) {

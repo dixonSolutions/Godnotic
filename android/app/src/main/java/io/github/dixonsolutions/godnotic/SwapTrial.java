@@ -58,8 +58,8 @@ final class SwapTrial {
      */
     static void failed(File dir, String key, long nowMs, String version) {
         int attempts = attempts(dir, key) + 1;
-        write(file(dir, "fail-", key),
-                attempts + "\n" + nowMs + "\n" + (version == null ? "" : version));
+        String release = version == null ? "" : version.replace('\n', ' ').replace('\r', ' ').trim();
+        write(file(dir, "fail-", key), attempts + "\n" + nowMs + "\n" + release);
         delete(file(dir, "trial-", key));
     }
 
