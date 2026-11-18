@@ -199,6 +199,9 @@ while (!menu && Date.now() - t0 < 600000) {
 }
 check(menu && !pageError, `the game starts (${Math.round((Date.now() - t0) / 1000)} s after navigation)${pageError ? ': ' + pageError : ''}`);
 if (!menu) { console.log(JSON.stringify({ label, W, H, touch, fail: 1, errors: consoleErrors })); process.exit(1); }
+const touchDetected = await evaluate('window.xt && xt.cvar ? xt.cvar("vid_touchscreen_detected") : "?"');
+const touchMode = await evaluate('window.xt && xt.cvar ? xt.cvar("vid_touchscreen") : "?"');
+check(String(touchDetected) === '1', `the web build reports its touch screen to the engine (vid_touchscreen_detected=${touchDetected}, vid_touchscreen=${touchMode})`);
 await sleep(6000);
 await shot('01-home');
 
@@ -255,7 +258,7 @@ const visit = async (name, open, afterOpen) => {
 // does not reach the engine's menu on every build; a mouse press and, as a
 // last resort, the renderer's own scripted tap (uib_input tap, the same hit
 // test) are tried in turn, and the method that worked is reported.
-const tapNode = async (nid, expect) => {
+const tapNode = async (nid, expect, verify) => {
   const r = await rectOf(nid);
   if (!r) return null;
   const methods = [
@@ -274,7 +277,7 @@ const tapNode = async (nid, expect) => {
     await sleep(1400);
     const n = await snapshot();
     const st = JSON.stringify(stackOf(n));
-    if (!expect || st === expect) return { method: name, stack: st };
+    if (verify ? await verify() : (!expect || st === expect)) return { method: name, stack: st };
   }
   return { method: null, stack: JSON.stringify(stackOf(await snapshot())) };
 };
@@ -322,34 +325,43 @@ for (let i = 0; i < 1200 && !loaded; i++) {
 check(loaded, 'a local match loads on stormkeep');
 await sleep(5000);
 await shot('06-ingame');
+const hud = await ask('echo HUDSTATE $_touch_hud_mode $_touch_hud_controls', (x) => x.includes('HUDSTATE'));
+check(/HUDSTATE (playing|dead|spectating|following|out)\b/.test(hud), `the touch HUD is running in a web match (${hud.trim()})`);
+const hudRects = await ask('touch_hud_state rects', (x) => x.includes('TOUCHRECTS mode='));
+check(/TOUCHRECTS mode=(playing|dead|spectating|following|out)/.test(hudRects), `the touch HUD lays out its controls (${hudRects.trim().slice(0, 120)})`);
 await command('uib_input key ESCAPE');
 await sleep(2500);
 let nm = await snapshot();
-if (JSON.stringify(stackOf(nm)) !== '["pause"]') {
-  // A browser may take Escape for its own fullscreen/pointer-lock exit: open
-  // the menu the way the MENU pill does instead.
+let resumeRect = await rectOf('pause/actions/resume');
+if (!resumeRect) {
+  // A browser may take Escape for its own fullscreen/pointer-lock exit, or
+  // the menu was open already: open it the way the MENU pill does and check
+  // that our pause screen is actually drawn, not only described.
   await command('togglemenu 1');
   await sleep(2000);
   nm = await snapshot();
+  resumeRect = await rectOf('pause/actions/resume');
 }
 await shot('07-inmatch-menu');
 const gm = await ask('echo GMENU $_menu_gamemenu_dialog_available', (x) => x.includes('GMENU'));
 const paused = await ask('echo PAUSED $_touch_menu_paused', (x) => x.includes('PAUSED'));
 const mstack = JSON.stringify(stackOf(nm));
-check(/GMENU 0/.test(gm), `the old Xonotic game menu is not up (${gm.trim()})`);
+const classic = await ask('echo CLASSIC $_uib_classic_up', (x) => x.includes('CLASSIC'));
+check(/CLASSIC 0/.test(classic), `the stock Xonotic menu is not drawing (${classic.trim()}; ${gm.trim()})`);
 check(mstack === '["pause"]', `the in-match menu is our pause screen (stack ${mstack}, ${paused.trim()})`);
-check(!!nm['pause/actions/resume'], 'it has our Resume control');
+const layoutInfo = await evaluate('window.xt && xt.cvar ? [xt.cvar("_uib_region_h"), xt.cvar("_uib_screen_h")].join("x") : "?"');
+check(!!resumeRect, `our pause screen is drawn, Resume at ${resumeRect && Math.round(resumeRect.x)},${resumeRect && Math.round(resumeRect.y)} (layout ${layoutInfo})`);
 const lm = await layout(nm, Object.keys(nm).filter((k) => k.startsWith('pause/actions/')));
 check(lm.overlaps.length === 0, `in-match menu: no two controls overlap${lm.overlaps.length ? ': ' + lm.overlaps.join('; ') : ''}`);
 check(lm.outOfWindow.length === 0, `in-match menu: every control is inside the window${lm.outOfWindow.length ? ': ' + lm.outOfWindow.join('; ') : ''}`);
 screens.push({ name: 'in-match', stack: mstack, gmenu: gm.trim(), overlaps: lm.overlaps, outOfWindow: lm.outOfWindow });
 
 // Back to the game and out again: the pause screen closes.
-await tapNode('pause/actions/resume', null);
+await tapNode('pause/actions/resume', null, async () => !(await rectOf('pause/actions/resume')));
 await sleep(1200);
 await shot('08-back-ingame');
-const afterResume = await ask('echo PAUSED $_touch_menu_paused', (x) => x.includes('PAUSED'));
-check(/PAUSED 0/.test(afterResume), `Resume goes back to the game (${afterResume.trim()})`);
+const afterResume = await evaluate('window.xt && xt.cvar ? xt.cvar("_touch_menu_paused") : "?"');
+check(String(afterResume) === '0', `Resume goes back to the game (_touch_menu_paused=${afterResume})`);
 await command('disconnect');
 
 check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.slice(0, 5).join(' | ') : ''}`);

@@ -55,8 +55,14 @@ chrome_pid=$!
 for _ in $(seq 150); do curl -sf "http://127.0.0.1:$dbg/json/version" >/dev/null && break; sleep 0.1; done
 
 url="http://127.0.0.1:$port/"
-# Tablets the owner uses (landscape), and a phone.
-sizes=("1920 1200 tablet-1920x1200" "1280 800 tablet-1280x800" "844 390 phone-844x390")
+# Tablets the owner uses (landscape), and a phone. SIZES="844 390 phone-844x390"
+# runs just that one (one entry, a whole size per entry).
+if [ -n "${SIZES:-}" ]; then
+    # SIZES holds whole entries, separated by ';': "844 390 phone-844x390"
+    IFS=';' read -r -a sizes <<<"$SIZES"
+else
+    sizes=("1920 1200 tablet-1920x1200" "1280 800 tablet-1280x800" "844 390 phone-844x390")
+fi
 failed=0
 : >"$log"
 for spec in "${sizes[@]}"; do
