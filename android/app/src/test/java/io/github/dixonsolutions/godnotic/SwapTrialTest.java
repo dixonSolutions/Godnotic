@@ -1,5 +1,6 @@
 package io.github.dixonsolutions.godnotic;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -12,9 +13,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
-/** The trial marker has to be on disk before the swap and still there after a kill. */
+/** The trial marker has to be on disk before the swap, and a failure has to expire. */
 public class SwapTrialTest {
     private File dir;
+    private static final long MIN = 60_000L;
 
     @Before public void makeDir() throws IOException {
         dir = Files.createTempDirectory("swap-trial").toFile();
@@ -26,45 +28,63 @@ public class SwapTrialTest {
 
     @Test public void aFreshDeviceClassMayTry() {
         assertFalse(SwapTrial.trial(dir, "abc123"));
-        assertFalse(SwapTrial.bad(dir, "abc123"));
+        assertEquals(0, SwapTrial.attempts(dir, "abc123"));
+        assertEquals(0, SwapTrial.retryAfter(dir, "abc123", 1_000_000L));
     }
 
     @Test public void beginIsOnDiskBeforeTheNativeRequest() {
         assertTrue(SwapTrial.begin(dir, "abc123"));
         // A new look at the same directory (the next process) sees the trial.
         assertTrue(SwapTrial.trial(dir, "abc123"));
-        assertFalse(SwapTrial.bad(dir, "abc123"));
     }
 
-    @Test public void healthyClearsTheTrialAndLeavesTheDeviceUsable() {
+    @Test public void healthyClearsTheTrialAndTheFailureHistory() {
         assertTrue(SwapTrial.begin(dir, "abc123"));
+        SwapTrial.failed(dir, "abc123", 1_000L, "1.2.270");
         SwapTrial.healthy(dir, "abc123");
         assertFalse(SwapTrial.trial(dir, "abc123"));
-        assertFalse(SwapTrial.bad(dir, "abc123"));
+        assertEquals(0, SwapTrial.attempts(dir, "abc123"));
+        assertEquals(0, SwapTrial.retryAfter(dir, "abc123", 1_001L));
     }
 
-    @Test public void aFailureIsDurableAndKeepsTheDeviceOff() {
-        assertTrue(SwapTrial.begin(dir, "abc123"));
-        SwapTrial.failed(dir, "abc123");
-        assertFalse(SwapTrial.trial(dir, "abc123"));
-        assertTrue(SwapTrial.bad(dir, "abc123"));
-        // What the next start reads (no preference cache involved).
-        assertTrue(SwapTrial.bad(dir, "abc123"));
+    @Test public void oneFailureWaitsTenMinutesAndThenRetries() {
+        long t = 10 * MIN;
+        SwapTrial.failed(dir, "abc123", t, "1.2.271");
+        assertEquals(1, SwapTrial.attempts(dir, "abc123"));
+        assertEquals("1.2.271", SwapTrial.failedVersion(dir, "abc123"));
+        assertEquals(10 * MIN, SwapTrial.retryAfter(dir, "abc123", t));
+        assertEquals(1, SwapTrial.retryAfter(dir, "abc123", t + 10 * MIN - 1));
+        assertEquals(0, SwapTrial.retryAfter(dir, "abc123", t + 10 * MIN));
+    }
+
+    @Test public void repeatedFailuresBackOffFurtherAndCapAtSixHours() {
+        long t = 1_000_000L;
+        for (int i = 1; i <= 10; i++) SwapTrial.failed(dir, "abc123", t, "1.2.271");
+        assertEquals(10, SwapTrial.attempts(dir, "abc123"));
+        assertEquals(6 * 60 * MIN, SwapTrial.retryAfter(dir, "abc123", t));
+        // An old failure is retried again: the device is never banned forever.
+        assertEquals(0, SwapTrial.retryAfter(dir, "abc123", t + 7 * 60 * MIN));
+    }
+
+    @Test public void aClockThatWentBackwardsDoesNotWaitForever() {
+        SwapTrial.failed(dir, "abc123", 5_000_000L, "1.2.271");
+        long wait = SwapTrial.retryAfter(dir, "abc123", 4_000_000L);
+        assertEquals(SwapTrial.backoff(1), wait);
     }
 
     @Test public void aRefusedRequestLeavesNoTrial() {
         assertTrue(SwapTrial.begin(dir, "abc123"));
         SwapTrial.refused(dir, "abc123");
         assertFalse(SwapTrial.trial(dir, "abc123"));
-        assertFalse(SwapTrial.bad(dir, "abc123"));
+        assertEquals(0, SwapTrial.attempts(dir, "abc123"));
     }
 
-    @Test public void aKilledTrialIsSeenAsUnfinishedOnTheNextStart() {
+    @Test public void aKilledTrialIsStillVisibleOnTheNextStart() {
         assertTrue(SwapTrial.begin(dir, "abc123"));
         // No healthy() and no failed(): the process was killed inside the swap. The marker is the
-        // only evidence, and the next start must treat it as a failed class.
+        // evidence; EngineSwap records it as a failure and the backoff takes over from there.
         assertTrue(SwapTrial.trial(dir, "abc123"));
-        assertFalse(SwapTrial.bad(dir, "abc123"));
+        assertEquals(0, SwapTrial.attempts(dir, "abc123"));
     }
 
     @Test public void deviceKeysStayInsideTheDirectory() {

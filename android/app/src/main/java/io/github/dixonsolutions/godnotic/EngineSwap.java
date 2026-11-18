@@ -58,21 +58,51 @@ final class EngineSwap {
         return new File(context.getNoBackupFilesDir(), "engine-swap");
     }
 
-    /** The swap is attempted only on a device class whose last trial did not crash or time out. */
-    private static boolean liveSwapAllowed(Context context) {
+    /** Whether the player left live apply on (the default). */
+    static boolean liveEnabled(Context context) {
+        return prefs(context).getBoolean("live_swap", true);
+    }
+
+    /** Settings > Updates, Apply live: the same switch the bridge reads before offering a swap. */
+    static void setLiveEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("live_swap", enabled).apply();
+    }
+
+    /**
+     * Why a live swap cannot be offered now, or null when it can. Kept beside the decision so the
+     * Updates screen can say the reason instead of silently restarting instead.
+     */
+    static String liveBlockedReason(Context context) {
+        if (appContext == null) {
+            return null; // register() has not run yet
+        }
         deviceKey = deviceKey();
         File dir = trialDir(context);
-        boolean trial = SwapTrial.trial(dir, deviceKey);
-        boolean bad = SwapTrial.bad(dir, deviceKey);
-        if (trial && !bad) {
-            // The process died between writing the trial marker and reporting healthy: this is
-            // exactly the "Apply live" crash the tablet saw. Never try that class again. A
-            // preference write can be lost in that same kill, which is why the marker is a file.
-            SwapTrial.failed(dir, deviceKey);
-            bad = true;
-            Log.w(TAG, "Live swap disabled for this device class after an unfinished trial: " + deviceKey);
+        if (SwapTrial.trial(dir, deviceKey)) {
+            // The process died between writing the trial marker and reporting healthy: count it
+            // once, then let the backoff decide. Never leave the device class banned forever.
+            SwapTrial.failed(dir, deviceKey, System.currentTimeMillis(), toVersion == null ? "" : toVersion);
+            Log.w(TAG, "An unfinished live swap was recorded; live returns after the backoff");
         }
-        return LiveSwapGuard.allowed(true, prefs(context).getBoolean("live_swap", true), bad, trial);
+        if (!liveEnabled(context)) {
+            return "live apply is off in Settings";
+        }
+        if (!guard.canAccept()) {
+            return "a live swap is already running";
+        }
+        long wait = SwapTrial.retryAfter(dir, deviceKey, System.currentTimeMillis());
+        if (wait > 0) {
+            long minutes = (wait + 59_999) / 60_000;
+            String version = SwapTrial.failedVersion(dir, deviceKey);
+            return "the last live swap" + (version.isEmpty() ? "" : " to " + version)
+                    + " did not finish; retrying in " + minutes + " min";
+        }
+        return null;
+    }
+
+    /** The bridge asks before offering a release to the host: is a live swap possible now? */
+    static boolean liveReady(Context context) {
+        return liveBlockedReason(context) == null;
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -98,11 +128,13 @@ final class EngineSwap {
             if (level < 2) {
                 return; // an older host: no live native swaps, updates apply on the next start
             }
-            if (!liveSwapAllowed(context)) {
-                // An unfinished trial on this device class is the "Apply live" crash; the host
-                // then applies the staged release by relaunching, as it does for an older host.
-                Log.i(TAG, "Live engine swap off for this device class; updates apply by relaunching (API level " + level + ")");
-                return;
+            // Register even when the last trial failed or first use is still ahead: the host
+            // reports "this build never registers a handler" and falls back to a restart when we
+            // do not, which is what left the tablet applying every update on the next start. The
+            // per-swap check in onLiveSwap declines with a reason when live is off or backing off.
+            String blocked = liveBlockedReason(context);
+            if (blocked != null) {
+                Log.i(TAG, "Live engine swap handler registered, but live is waiting: " + blocked);
             }
             Class<?> handlerClass = Class.forName("com.andysu.api.LiveSwapHandler");
             InvocationHandler ih = (proxy, method, args) -> {
@@ -141,6 +173,11 @@ final class EngineSwap {
 
     /** Host thread: main. Returns true to accept (the loader then swaps and reports through callbacks). */
     private static boolean onLiveSwap(File slotDir, String version, Object cb) {
+        String blocked = liveBlockedReason(appContext);
+        if (blocked != null) {
+            Log.i(TAG, "Live swap to " + version + " declined: " + blocked);
+            return false;
+        }
         if (KeepAliveService.engineBusy) {
             // The host offers the swap when the app comes back to the front. A swap
             // restarts the engine, which would drop the player's server, join or
@@ -240,7 +277,7 @@ final class EngineSwap {
                 break;
             case EV_FAILED:
                 if (!guard.failed()) break;
-                markDeviceBad();
+                markDeviceBad(toVersion);
                 cancelWatchdog();
                 callback("failed", detail.isEmpty() ? "the new engine failed to start" : detail);
                 callback = null;
@@ -251,7 +288,9 @@ final class EngineSwap {
                 boolean trialHealthy = guard.healthy();
                 if (guard.state() == LiveSwapGuard.State.FAILED || guard.state() == LiveSwapGuard.State.EXPIRED) break;
                 main.removeCallbacks(watchdog);
-                if (trialHealthy && appContext != null && deviceKey != null) {
+                if (appContext != null && deviceKey != null) {
+                    // Healthy is healthy, including a cold start after a failed live trial: the
+                    // device can swap again, and the next failure starts its count from one.
                     SwapTrial.healthy(trialDir(appContext), deviceKey);
                 }
                 try {
@@ -306,7 +345,7 @@ final class EngineSwap {
             return 0;
         } catch (IOException | RuntimeException | InterruptedException e) {
             guard.failed();
-            markDeviceBad();
+            markDeviceBad(toVersion);
             cancelWatchdog();
             Log.e(TAG, "Preparing the game data failed (swapped=" + swapped + ")", e);
             Log.i("AndySU-Event", "{\"event\":\"game_data_failed\",\"pid\":" + Process.myPid() + ",\"swapped\":" + swapped + "}");
@@ -334,7 +373,7 @@ final class EngineSwap {
     private static void onWatchdog() {
         if (!guard.expire(SystemClock.elapsedRealtime())) return;
         Log.w(TAG, "Live swap watchdog expired; falling back to relaunch");
-        markDeviceBad();
+        markDeviceBad(toVersion);
         callback("failed", "the new engine did not report healthy in time");
         callback = null;
         main.postDelayed(() -> {
@@ -342,10 +381,11 @@ final class EngineSwap {
         }, 1_500);
     }
 
-    private static void markDeviceBad() {
+    private static void markDeviceBad(String version) {
         if (appContext != null && deviceKey != null) {
-            // fsynced: the kill that ends this trial must not also lose the fact that it failed.
-            SwapTrial.failed(trialDir(appContext), deviceKey);
+            // fsynced, with the release: the kill that ends this trial must not also lose the
+            // fact that it failed, and the next start retries after the backoff.
+            SwapTrial.failed(trialDir(appContext), deviceKey, System.currentTimeMillis(), version);
         }
     }
 

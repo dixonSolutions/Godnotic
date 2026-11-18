@@ -56,6 +56,15 @@ final class AndySUState {
                 && (policy == null || "live".equals(policy) || "restart".equals(policy));
     }
 
+    /**
+     * Whether a staged release can be swapped in without restarting: live apply is the policy, the
+     * process is not in a match, and the release changes only native code and content. Anything
+     * else has to wait for the player or restart, and Settings says why.
+     */
+    static boolean shouldApplyLive(String state, boolean inMatch, String policy, boolean nativeLive) {
+        return "staged".equals(state) && !inMatch && "live".equals(policy) && nativeLive;
+    }
+
 
     /**
      * Whether the boot screen may ask the host to restart into a staged release. Not while the
