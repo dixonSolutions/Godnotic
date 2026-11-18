@@ -25,7 +25,7 @@ struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void)
     if (!f) return NULL;
     Touch_BridgeSetAllowLoopback(f, bridge_allow_loopback.integer);
     for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-        const char *value = Cvar_VariableString(&cvars_all, names[i], 0);
+        const char *value = Cvar_VariableString(&cvars_all, names[i], CF_SERVER);
         lhnetaddress_t resolved;
         struct touch_bridge_address address;
         if (!value || !*value || !LHNETADDRESS_FromString(&resolved, value, 27950)) continue;

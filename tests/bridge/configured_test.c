@@ -30,7 +30,7 @@ static void receive_reply(void *context, const void *packet, int size)
 const char *Cvar_VariableString(cvar_state_t *state, const char *name, unsigned flags)
 {
     static const char *const names[] = { "sv_master1", "sv_master2", "sv_master3", "sv_master4", "sv_masterextra1", "sv_masterextra2", "sv_masterextra3" };
-    (void)flags;
+    assert(flags == CF_SERVER);
     assert(state == &cvars_all && lookups < 7 && !strcmp(name, names[lookups]));
     return ++lookups == 1 ? "test-master" : "";
 }
