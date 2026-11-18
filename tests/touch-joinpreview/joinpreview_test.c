@@ -58,6 +58,30 @@ int main(void)
 		CHECK_INT(0, depth, "an unmatched end never goes below zero");
 	}
 
+	/* a server join always has a picture, even with no map name yet */
+	CHECK_INT(1, TouchJoinPreview_ShowsPicture(1, 1, 0), "a join with no world: a picture, map name or not");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 1, 1), "a drawable world: no picture");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 0, 0), "not joining: no picture");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(0, 1, 0), "touch_join_preview 0: no picture");
+	/* own picture, else the list's, else a generic one, never the logo when any exists */
+	CHECK_INT(TJP_PIC_MAP, TouchJoinPreview_PictureChoice(1, 1, 1), "the map's own picture first");
+	CHECK_INT(TJP_PIC_LIST, TouchJoinPreview_PictureChoice(0, 1, 1), "then the server list's map");
+	CHECK_INT(TJP_PIC_GENERIC, TouchJoinPreview_PictureChoice(0, 0, 1), "then a generic picture");
+	CHECK_INT(TJP_PIC_NONE, TouchJoinPreview_PictureChoice(0, 0, 0), "nothing at all");
+	CHECK_INT(1, TouchJoinPreview_PictureBrightness(TJP_PIC_MAP) == 1.0f, "the map's picture is full brightness");
+	CHECK_INT(1, TouchJoinPreview_PictureBrightness(TJP_PIC_GENERIC) < 0.6f, "the generic picture is dimmed");
+	/* the map's pack arrives: ask again until the map's own picture is there */
+	CHECK_INT(0, TouchJoinPreview_RetryPicture(TJP_PIC_MAP, 10.0, 0.0), "a found map picture is final");
+	CHECK_INT(1, TouchJoinPreview_RetryPicture(TJP_PIC_GENERIC, 10.0, 9.0), "a generic picture is asked again");
+	CHECK_INT(0, TouchJoinPreview_RetryPicture(TJP_PIC_GENERIC, 10.0, 9.9), "but not every frame");
+	/* the precache step the card shows (the engine's own band is hidden) */
+	CHECK_INT(0, TouchJoinPreview_PrecacheKind(0, 0, 1, 40, 1, 30), "precache not begun");
+	CHECK_INT(1, TouchJoinPreview_PrecacheKind(1, 0, 5, 40, 1, 30), "models loading");
+	CHECK_INT(2, TouchJoinPreview_PrecacheKind(1, 0, 40, 40, 7, 30), "sounds loading");
+	CHECK_INT(0, TouchJoinPreview_PrecacheKind(1, 1, 40, 40, 30, 30), "precache finished");
+	CHECK_INT(0, TouchJoinPreview_DrawEngineBand(1, 1), "the native card is up: no engine band under it");
+	CHECK_INT(1, TouchJoinPreview_DrawEngineBand(0, 1), "no card: the engine's band stays");
+	CHECK_INT(0, TouchJoinPreview_DrawEngineBand(0, 0), "no loading stack: nothing to draw");
 	if (failures)
 	{
 		printf("%d check(s) failed\n", failures);
