@@ -996,8 +996,23 @@ static void test_targets(void)
 	CHECK(!TouchAim_AnimFrozen(0), "targets: idle is not frozen");
 }
 
+static void test_snap(void)
+{
+	float yaw, pitch;
+	TouchAim_Snap(0, 30, -12, &yaw, &pitch);
+	CHECK_NEAR(30, yaw, 1e-6, "snap: full yaw on first frame");
+	CHECK_NEAR(-12, pitch, 1e-6, "snap: full pitch on first frame");
+	TouchAim_Snap(179, -179, 100, &yaw, &pitch);
+	CHECK_NEAR(181, yaw, 1e-6, "snap: shortest path across yaw boundary");
+	CHECK_NEAR(89, pitch, 1e-6, "snap: pitch stays in view limits");
+	TouchAim_Snap(yaw, -170, -100, &yaw, &pitch);
+	CHECK_NEAR(190, yaw, 1e-6, "snap: moving target followed in one frame");
+	CHECK_NEAR(-89, pitch, 1e-6, "snap: lower pitch limit");
+}
+
 int main(void)
 {
+	test_snap();
 	test_intercept();
 	test_accel();
 	test_ballistic();

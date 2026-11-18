@@ -170,19 +170,8 @@ cvar_t cl_touch_hud_state = {CF_CLIENT, "_cl_touch_hud_state", "0",
 // Hard ceilings, whatever the cvars say: this runs on public servers.
 #define FRICTION_MAX   0.8f
 #define STRENGTH_MAX   1.0f
-#define MAXRATE_MAX    180.0f
 #define CONE_MAX       60.0f  // the whole view
 #define RADIUS_MAX     15.0f
-// Pull toward the target: the gap (degrees) closes at strength * SETTLE_GAIN
-// per second, 6/s at the default 0.6, so a 5 degree miss is mostly gone in a
-// fifth of a second; and strength * FOLLOW_SCALE of the target's own motion
-// across the view is followed (all of it from strength 0.5).
-#define SETTLE_GAIN    10.0f
-#define SETTLE_GAIN_ROCKET 25.0f
-#define FOLLOW_SCALE   2.0f
-// A target that jumps further than this in one frame (teleport, aim point
-// switching between chest and head) is not followed that frame.
-#define FOLLOW_SPIKE_DEG 5.0f
 // The player is aiming while turning faster than INPUT_MIN_RATE (deg/s) or
 // moving, and for INPUT_HOLD seconds after: long enough to settle a thumb that
 // has just stopped, too short to track anything for a finger left resting.
@@ -191,7 +180,6 @@ cvar_t cl_touch_hud_state = {CF_CLIENT, "_cl_touch_hud_state", "0",
 // The player's own turn counts as heading away from the target only above
 // this rate (deg/s), so the look filter's decaying tail does not cancel the pull.
 #define AWAY_MIN_RATE  5.0f
-#define AWAY_NOISE_RATE 15.0f // slower than this, or sideways, a turn does not stop the pull
 #define LEAVE_RATE     30.0f  // a drag leaving a target this fast is not slowed down
 #define FLICK_RATE     120.0f // a drag this fast is a new look: the old target loses its hold
 #define FLICK_KEEP     1.0f   // seconds after one in which the fight follows the new view
@@ -343,8 +331,7 @@ static struct
 	qbool hud_aim_touch;
 	int debug_target, debug_friend;
 	int said_target, said_weapon, said_mode, said_why;
-	int track_ent;               // target followed last frame, and its view angles
-	float track_yaw, track_pitch;
+	int track_ent;               // target followed last frame
 	track_t tracks[TRACK_MAX];   // per player slot: smoothed velocity
 	// auto-switch
 	int held_last, switch_to;
@@ -856,11 +843,6 @@ typedef struct aimtarget_s
 	qbool head_aim;     // aimed at the head (a headshot bonus pays there)
 	qbool hidden;       // behind a wall: only ever a target in offline practice
 } aimtarget_t;
-
-static float signf(float v)
-{
-	return v < 0 ? -1.0f : 1.0f;
-}
 
 // Degrees from the view to the body's edge, given the view's offset from the
 // aim point and the body's angular half-extents: 0 while the crosshair is on it.
@@ -3548,15 +3530,7 @@ static void aim_frame(void)
 	else if (friction > 0 && on_target)
 		ta.lookscale = 1.0f - friction;
 
-	// magnetism: with a finger on the aim control (the look area or FIRE)
-	// while the player aims -- turning, moving, or within INPUT_HOLD of
-	// either, so a finger resting on the screen never aims by itself -- and
-	// also while a guided rocket flies, or auto-shoot is firing at that
-	// target (cl_touch_aimassist_track). Never against a turn that is heading away from the target, and
-	// capped per second so it can never snap. Two parts: follow a share of
-	// the target's own motion across the view (it runs, or the player
-	// strafes), and close the remaining gap at a rate that grows with it, so
-	// a thumb that stops a few degrees short or long still lands on the body.
+	// Aim at the selected point immediately while the assist is active.
 	if (turn_mag / dt > INPUT_MIN_RATE || cl.cmd.forwardmove != 0 || cl.cmd.sidemove != 0)
 		ta.last_input = now;
 	// last seen: the enemy of the fight went out of sight and nobody else is
@@ -3628,63 +3602,8 @@ static void aim_frame(void)
 			|| ta.rk_state != RK_IDLE
 			|| (cl_touch_aimassist_track.integer && ta.lock_ent && ta.lock_ent == near.entnum && now < ta.lock_until)))
 	{
-		float ey = wrap180(near.yaw - cl.viewangles[YAW]);
-		float ep = near.pitch - cl.viewangles[PITCH];
-		float turn_rate = turn_mag / dt;
-		// heading away: clearly against the target (not a thumb drifting
-		// sideways, not a slow drift); the pull resumes the first frame the
-		// drag slows down or turns back
-		qbool away = turn_rate > AWAY_NOISE_RATE && (turn_yaw * ey + turn_pitch * ep) < -0.5f * turn_mag * sqrt(ey * ey + ep * ep);
-		if (!away)
-		{
-			float py = 0, pp = 0, len, cap;
-			if (ta.track_ent == near.entnum)
-			{
-				float dy = wrap180(near.yaw - ta.track_yaw), dp = near.pitch - ta.track_pitch;
-				if (fabs(dy) < FOLLOW_SPIKE_DEG && fabs(dp) < FOLLOW_SPIKE_DEG)
-				{
-					float follow = min(1.0f, strength * FOLLOW_SCALE);
-					py = follow * dy;
-					pp = follow * dp;
-				}
-			}
-			// the gap to the inner half of the body: a crosshair on the body's
-			// edge is still drawn in, one well inside it is left alone
-			{
-				float gy = signf(ey) * max(0.0f, fabs(ey) - 0.5f * near.rh);
-				float gp = signf(ep) * max(0.0f, fabs(ep) - 0.5f * near.rv);
-				float gap = sqrt(gy * gy + gp * gp);
-				if (gap > 0.01f)
-				{
-					// a guided rocket's view hold closes faster: the rocket
-					// turns toward the view at 90 deg/s and lags it anyway
-					float rate = strength * max(turn_rate, (ta.rk_state == RK_FLY ? SETTLE_GAIN_ROCKET : SETTLE_GAIN) * gap);
-					float step = min(rate * dt, gap);
-					py += gy / gap * step;
-					pp += gp / gap * step;
-				}
-			}
-			len = sqrt(py * py + pp * pp);
-			cap = bound(0.0f, cl_touch_aimassist_maxrate.value, MAXRATE_MAX) * dt;
-			if (practice.instant)
-			{
-				// offline practice: the whole way at once
-				py = ey;
-				pp = ep;
-				len = sqrt(py * py + pp * pp);
-				cap = len + 1;
-			}
-			if (len > cap)
-			{
-				py *= cap / len;
-				pp *= cap / len;
-			}
-			// never against the finger's own turn: closing the gap is help,
-			// pulling the view back is not
-			TouchWep_PullWithFinger(turn_yaw, turn_pitch, dt, &py, &pp);
-			cl.viewangles[YAW] += py;
-			cl.viewangles[PITCH] = bound(-89.0f, cl.viewangles[PITCH] + pp, 89.0f);
-		}
+		TouchAim_Snap(cl.viewangles[YAW], near.yaw, near.pitch,
+			&cl.viewangles[YAW], &cl.viewangles[PITCH]);
 	}
 	if (cl_touch_aim_debug.integer >= 3)
 	{
@@ -3694,8 +3613,6 @@ static void aim_frame(void)
 		debug_shots(eye, ta.fire_target ? ta.fire_target : ta.lock_ent ? ta.lock_ent : near.entnum);
 	}
 	ta.track_ent = near.entnum;
-	ta.track_yaw = near.yaw;
-	ta.track_pitch = near.pitch;
 
 	VectorCopy(cl.viewangles, ta.prev_angles);
 	ta.prev_valid = true;
