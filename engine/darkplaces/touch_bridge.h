@@ -55,6 +55,9 @@ int Touch_BridgeSetRates(struct touch_bridge_forwarder *forwarder,
                          unsigned int packets_per_second, unsigned int bytes_per_second);
 /* Engine peers must use this constructor after master cvars are loaded. */
 void Touch_BridgeInit(void);
+void Touch_BridgeSignalingInit(void);
+void Touch_BridgeSignalingFrame(void);
+void Touch_BridgeSignalingShutdown(void);
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void);
 void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);
 /* Destinations are denied by default. This primitive does not establish that

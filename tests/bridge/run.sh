@@ -52,3 +52,11 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
     "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
     -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/idle_test"
 "$out/idle_test"
+
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
+    -I"$prefix/include" -I"$root/engine/darkplaces" \
+    "$root/tests/bridge/signaling_test.c" "$root/engine/darkplaces/touch_bridge_signaling.c" \
+    "$root/engine/darkplaces/touch_bridge.c" \
+    "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
+    -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/signaling_test"
+"$out/signaling_test"

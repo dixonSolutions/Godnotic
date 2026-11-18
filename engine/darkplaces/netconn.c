@@ -4184,7 +4184,7 @@ void NetConn_Init(void)
 	lhnetaddress_t tempaddress;
 
 #ifdef TOUCH_BRIDGE_ENABLED // Touch:
-	extern void Touch_BridgeInit(void); Touch_BridgeInit(); // Touch:
+	extern void Touch_BridgeInit(void), Touch_BridgeSignalingInit(void); Touch_BridgeInit(); Touch_BridgeSignalingInit(); // Touch:
 #endif // Touch:
 	netconn_mempool = Mem_AllocPool("network connections", 0, NULL);
 	Cmd_AddCommand(CF_SHARED, "net_stats", Net_Stats_f, "print network statistics");

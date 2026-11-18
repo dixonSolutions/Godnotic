@@ -608,6 +608,9 @@ void Host_Shutdown(void)
 {
 	if (Sys_CheckParm("-profilegameonly"))
 		Sys_AllowProfiling(false);
+#ifdef TOUCH_BRIDGE_ENABLED // Touch:
+	{ extern void Touch_BridgeSignalingShutdown(void); Touch_BridgeSignalingShutdown(); } // Touch:
+#endif // Touch:
 	TouchUIB_Shutdown(); // Touch: UI bridge
 	TouchFrameTime_Shutdown(); // Touch: frame-time summary
 
@@ -689,6 +692,9 @@ double Host_Frame(double time)
 	Cbuf_Frame(host.cbuf);
 	TouchUIB_Frame(); // Touch: UI bridge
 	TouchData_Frame(); // Touch: progressive data download
+#ifdef TOUCH_BRIDGE_ENABLED // Touch:
+	{ extern void Touch_BridgeSignalingFrame(void); Touch_BridgeSignalingFrame(); } // Touch:
+#endif // Touch:
 
 	R_TimeReport("---");
 
