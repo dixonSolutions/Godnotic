@@ -9,6 +9,8 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/android-stability.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 bash scripts/test-touch-joinpreview.sh
+# skipped (exit 77) without BASEDIR game data and an engine build
+if [ -n "${BASEDIR:-}" ]; then bash scripts/test-touch-warm-spawn.sh || [ $? = 77 ]; fi
 
 cc -O1 -g -Wall -Wextra -Werror -pthread -Iengine/darkplaces \
 	tests/android-stability/exit_test.c -o "$tmp/exit_test"
