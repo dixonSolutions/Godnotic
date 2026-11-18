@@ -105,6 +105,18 @@ final class AndySUCompat {
         return updateApi().getMethod("restartToApply").invoke(client).toString();
     }
 
+    /** Commit the running release (HostApi.markHealthy); false when the host cannot. */
+    static boolean markHealthy() {
+        try {
+            Object h = host();
+            if (h == null) return false;
+            api().getMethod("markHealthy").invoke(h);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** The host's API level (1, 2, 3...), 0 without a host. */
     static int apiLevel() {
         Object h = host();

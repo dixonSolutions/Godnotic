@@ -30,6 +30,12 @@ public class AndySUStateTest {
         assertEquals("", AndySUState.applyProblem(true, true, "", "270"));
     }
 
+    @Test public void stableTrialConfirmsAfterAMinuteOfUptime() {
+        assertFalse(AndySUState.trialStable(true, 59_999));
+        assertTrue(AndySUState.trialStable(true, 60_000));
+        assertFalse("no trial, nothing to confirm", AndySUState.trialStable(false, 3_600_000));
+    }
+
     @Test public void stagedRestartRespectsMatchAndPolicy() {
         String[] states = { "idle", "checking", "downloading", "staged", "uptodate" };
         String[] policies = { null, "live", "restart", "next_start", "unknown" };

@@ -42,6 +42,18 @@ final class AndySUState {
         return since < 0 || since >= AUTO_RESTART_WINDOW_MS;
     }
 
+    /** A trial this process has run for this long without dying is a healthy release. */
+    static final long TRIAL_STABLE_MS = 60_000;
+
+    /**
+     * Whether an unconfirmed trial may be confirmed by the app itself: the process has been up
+     * long enough that a release which would crash at start has already done so. The engine
+     * normally reports healthy first; this keeps menu-only use from dead-ending updates.
+     */
+    static boolean trialStable(boolean trial, long uptimeMs) {
+        return trial && uptimeMs >= TRIAL_STABLE_MS;
+    }
+
     static String applyProblem(boolean stateKnown, boolean trial, String pending, String attempted) {
         if (!stateKnown) return "Could not read the AndySU update state.";
         if (pending == null || pending.isEmpty()) return "";

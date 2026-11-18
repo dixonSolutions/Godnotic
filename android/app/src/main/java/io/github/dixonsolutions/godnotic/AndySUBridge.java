@@ -227,7 +227,7 @@ final class AndySUBridge {
             JSONObject status = new JSONObject(statusJson);
             String state = AndySUState.normalize(status.optString("state", "idle"));
             String release = status.optString("release", status.optString("id", ""));
-            JSONObject core = coreState();
+            JSONObject core = confirmStableTrial(coreState());
             String pending = pendingRelease(core, r.installed);
             if (core != null) syncNextStartRequest(pending, auto());
             String problem = "apply_refused".equals(state) ? AndySUState.applyRefusedMessage()
@@ -623,6 +623,23 @@ final class AndySUBridge {
         prefs.edit().putString("next_start_request", pending).commit();
     }
 
+    /**
+     * An unconfirmed trial that this process has run stably is confirmed here, so a player who only
+     * uses menus (the engine's own gate never sees a world) is not stuck on "still confirming".
+     * A release that crashes dies before this long and is rolled back by the host as before.
+     */
+    private JSONObject confirmStableTrial(JSONObject core) {
+        if (core == null || core.isNull("trial")) return core;
+        long uptime = SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime();
+        if (!AndySUState.trialStable(true, uptime)) return core;
+        if (AndySUCompat.markHealthy()) {
+            Log.i(TAG, "Confirmed the stable trial after " + uptime / 1000 + "s");
+            JSONObject after = coreState();
+            if (after != null) return after;
+        }
+        return core;
+    }
+
     private String applyProblem(JSONObject core, String pending) {
         if (pending.isEmpty()) return "";
         SharedPreferences attempts = context.getSharedPreferences("andysu_apply", Context.MODE_PRIVATE);
@@ -636,7 +653,7 @@ final class AndySUBridge {
             requestError = "This AndySU host cannot restart to apply the update.";
             return false;
         }
-        JSONObject core = coreState();
+        JSONObject core = confirmStableTrial(coreState());
         String pending = pendingRelease(core, AndySUCompat.payloadVersion());
         String problem = AndySUState.applyProblem(core != null, core != null && !core.isNull("trial"), pending, "");
         if (problem.isEmpty() && pending.isEmpty()) problem = "AndySU has no staged update to apply.";
