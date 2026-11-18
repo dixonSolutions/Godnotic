@@ -1605,7 +1605,7 @@ void TouchMusic_Update(void)
         stage = TM_STAGE_DOWNLOAD;
     else
         stage = TM_STAGE_MENU;
-    if (stage != TM_STAGE_GAME && !theme_playing && bgmvolume.value > 0 && host.realtime >= next_check)
+    if (stage != TM_STAGE_GAME && stage != TM_STAGE_JOINING && !theme_playing && bgmvolume.value > 0 && host.realtime >= next_check)
     {
         next_check = TouchMusic_NextCheck(host.realtime, 0);
         // a theme pk3dir the launcher wrote, or a pk3 the app renamed into
