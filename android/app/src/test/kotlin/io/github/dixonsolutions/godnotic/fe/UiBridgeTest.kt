@@ -209,6 +209,19 @@ class UiBridgeTest {
         assertFalse(quit.overGame)
     }
 
+    /** The join card is the one join screen, also when a native screen launched the join. */
+    @Test fun joinCardIsNotDroppedForAVisibleNativeScreen() {
+        assertFalse(JoinFlow.settled(0, 299))
+        assertTrue(JoinFlow.settled(0, 300))
+        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true))
+        assertTrue(JoinFlow.card("preview", joinDialog = false, settled = true))
+        assertFalse(JoinFlow.card("preview", joinDialog = true, settled = true))
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true))
+        assertTrue(JoinFlow.transparent("preview"))
+        assertFalse(JoinFlow.transparent("loading"))
+    }
+
     @Test fun joinLinks() {
         assertEquals("192.168.1.5:26001", FrontendHost.parseJoin("godnotic://join/192.168.1.5:26001"))
         assertEquals("host.example:26000", FrontendHost.parseJoin("host.example"))

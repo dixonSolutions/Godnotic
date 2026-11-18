@@ -292,6 +292,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var loadingBanner: View? = null
     private var loadingCardView: View? = null
     private var previewStrip = false
+    private var joinStage = ""
+    private var joinStageAt = 0L
 
     /**
      * A join or a map load: the engine publishes its progress from inside the
@@ -313,15 +315,23 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // password prompt and the Could not join dialog that come after
         if (c.str("address").isNotEmpty()) { joinAddress = c.str("address"); joinLabel = c.str("label") }
         val stage = c.str("stage")
+        val now = SystemClock.elapsedRealtime()
+        if (stage != joinStage) { joinStage = stage; joinStageAt = now }
         // preview: the engine draws the join's world (touch_joinpreview.c); the
         // page below becomes a strip at the bottom instead of a full screen
-        val busy = stage in setOf("connecting", "downloading", "loading", "signon", "preview") && !failed
-        if (!busy || root.visibility == View.VISIBLE) {
+        val busy = JoinFlow.isBusy(stage) && !failed
+        // The join dialog is the one join screen; the card goes when it opens.
+        val joinDialog = client?.modal?.lastOrNull() == "join"
+        if (!busy || joinDialog || !JoinFlow.settled(joinStageAt, now)) {
             loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
             loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
             loadingBanner = null; loadingCardView = null; previewStrip = false
             return
         }
+        // A join starts from a native screen. That screen was left visible by
+        // the old code, which is why the engine's preview stayed behind an
+        // opaque page: the join card belongs over the engine's surface.
+        if (root.visibility == View.VISIBLE) setVisible(false)
         if (loadingStrip == null) {
             // one presentation of a join or a load: an opaque Android screen over
             // the engine's own loading screen and status text (they stay in the
@@ -364,7 +374,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         // the world is on screen now: the page becomes a strip at the bottom that
         // lets it show, and comes back opaque if the preview stops
-        previewStyle(stage == "preview")
+        previewStyle(JoinFlow.transparent(stage))
         val pct = when (stage) {
             "downloading" -> c.num("download_progress")
             "loading", "preview" -> c.num("load_progress")
