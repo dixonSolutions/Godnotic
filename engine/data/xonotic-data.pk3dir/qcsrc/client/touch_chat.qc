@@ -299,13 +299,14 @@ vector Touch_Chat_FieldHalf(void)
 		+ eY * (Touch_MMToUnits(TOUCH_MM_COMFORT) * 0.7);
 }
 
-// Bottom of the sheet, directly above the keyboard: the thing being typed sits
-// between the keys producing it and the backlog it answers.
+vector Touch_Chat_ButtonHalf(void);
+
+// The input belongs immediately below the header, away from the keyboard.
 vector Touch_Chat_FieldCenter(void)
 {
 	vector c = Touch_Chat_SheetCenter();
 	vector half = Touch_Chat_FieldHalf();
-	return eX * c.x + eY * (c.y + Touch_Chat_InnerHalf().y - half.y);
+	return eX * c.x + eY * (c.y - Touch_Chat_InnerHalf().y + Touch_Chat_ButtonHalf().y * 2 + Touch_Chat_Pad() + half.y);
 }
 
 vector Touch_Chat_ButtonHalf(void)
@@ -516,9 +517,9 @@ void Touch_Chat_DrawHistory(float alpha)
 	float left = c.x - inner.x;
 	// Between the header row and the field, both of which are already placed
 	// against the same inner box.
-	float top = c.y - inner.y + Touch_Chat_ButtonHalf().y * 2 + Touch_Chat_Pad();
-	float bottom = Touch_Chat_ColourCenter(0).y + Touch_Chat_ColourHalf().y
+	float top = Touch_Chat_ColourCenter(0).y + Touch_Chat_ColourHalf().y
 		+ TOUCH_SPACE_2 * Touch_UIScale();
+	float bottom = c.y + inner.y;
 
 	float fs = TOUCH_FONT_READOUT_SM * Touch_UIScale() * 1.15;
 	float pitch = fs * 1.55;

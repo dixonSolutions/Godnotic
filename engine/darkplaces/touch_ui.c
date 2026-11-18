@@ -72,10 +72,11 @@ static float TouchUI_ImeHeight(void);
 float TouchUI_ChatKeysTop(void)
 {
 	float ime = TouchUI_ImeHeight();
-	/* The system keyboard covers the bottom: the line being typed is drawn
-	 * above it, as it is above the engine's keys. */
+	/* Report an active chat sheet while the system keyboard is visible. */
 	if (ime > 0 && touchui_chat_keys_top <= 0)
 		return vid_conheight.value - ime;
+	if (vid_touchscreen.integer && touchui_chat_keys_top <= 0)
+		return 1; /* Keep the input visible while the system keyboard is opening. */
 	return touchui_chat_keys_top;
 }
 
@@ -129,6 +130,21 @@ float TouchUI_SheetHeaderHeight(float h)
 {
 	float hdr_h = bound(36.0f, h * 0.10f, 64.0f);
 	return min(max(hdr_h, 48.0f * TouchUI_ConPerDp()), h * 0.16f);
+}
+
+float TouchUI_ChatInputTop(float height)
+{
+	return TouchUI_SheetHeaderHeight(height) + 6.0f;
+}
+
+void TouchUI_PositionChatLog(float *x, float *y)
+{
+	if (vid_touchscreen.integer && key_dest == key_message && scr_numtouchscreenareas > 0)
+	{
+		float size = bound(14.0f, vid_conheight.value * 0.035f, 24.0f);
+		*x = 8.0f;
+		*y = TouchUI_ChatInputTop(vid_conheight.value) + size + 18.0f;
+	}
 }
 
 /*
