@@ -186,6 +186,12 @@ final class EngineSwap {
             Log.i(TAG, "Live swap to " + version + " declined: the game is connected, joining or downloading");
             return false;
         }
+        if (!AndySUBridge.applySafe) {
+            // A swap restarts the engine: only from the menu, idle for a few seconds. The bridge
+            // re-offers the release (applyNow) once that holds.
+            Log.i(TAG, "Live swap to " + version + " declined: a match may be running");
+            return false;
+        }
         File lib = findEngine(slotDir);
         if (lib == null) {
             Log.w(TAG, "Live swap to " + version + " declined: no libmain in " + slotDir);

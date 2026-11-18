@@ -82,6 +82,38 @@ final class AndySUState {
         return lastBusyAt != 0 && now - lastBusyAt < BUSY_HOLD_MS ? "next_start" : "live";
     }
 
+    /** The engine must have read safe for this long before an update may restart or swap it. */
+    static final long IDLE_BEFORE_APPLY_MS = 5_000;
+
+    /**
+     * Whether the app may replace, restart or swap the engine for an update right now. Only from
+     * the menu: never while a match is running or being joined or loaded (stage game/joining, the
+     * engine reports busy, or touch_update_game_state is not "safe"), never in the background (a
+     * match may be running there), and not until the engine has been idle for
+     * {@link #IDLE_BEFORE_APPLY_MS}. Anything else defers to the menu or the next start.
+     *
+     * @param stage     ProcessState stage: boot, game, joining, provider, none, ""
+     * @param engineBusy KeepAliveService.engineBusy (connected, joining or downloading)
+     * @param gameState contents of touch_update_game_state, null when unreadable
+     * @param idleMs    time since the engine last read busy
+     */
+    static boolean safeToApplyNow(String stage, boolean engineBusy, String gameState,
+                                  boolean foreground, long idleMs) {
+        if (!foreground || engineBusy || !"safe".equals(gameState)) return false;
+        if ("joining".equals(stage) || "loading".equals(stage)) return false;
+        return idleMs >= IDLE_BEFORE_APPLY_MS;
+    }
+
+    /**
+     * Whether a staged release may be applied without the player tapping Apply now: only when the
+     * player left automatic updates on. A host in check_only (automatic off, or Wi-Fi only on a
+     * metered connection) never applies by itself; a release staged earlier waits for the tap, or
+     * for the switch.
+     */
+    static boolean mayApplyUnasked(boolean autoSwitch, boolean userAsked) {
+        return autoSwitch || userAsked;
+    }
+
     /** False for the release whose automatic apply already failed or was refused. */
     static boolean mayAnnounce(String version, String blocked) {
         return blocked == null || blocked.isEmpty() || !blocked.equals(version);

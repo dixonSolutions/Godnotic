@@ -74,6 +74,10 @@ final class AndySUBridge {
     private String stateForApply = "idle";
     private String applyPolicy;
     private long lastBusyAt;
+    /** The last poll found the game safe to restart or swap (menu, idle); EngineSwap reads it. */
+    static volatile boolean applySafe;
+    /** The player tapped Apply now while a match ran: apply from the menu. */
+    private boolean applyWanted;
     /** The release whose automatic apply was refused or failed: not announced again. */
     private String autoBlocked = "";
     /** The staged release changes only native code and content: the host can swap it live. */
@@ -138,6 +142,14 @@ final class AndySUBridge {
                         AndySUCompat.applyNow();
                         break;
                     }
+                    if (!applySafe) {
+                        // A match is running or loading: replacing the process would kill it.
+                        applyWanted = true;
+                        requestError = "Update ready. It will apply when you are back in the menu.";
+                        publish();
+                        return;
+                    }
+                    applyWanted = true;
                     // Apply now is live whenever the release can be: no package replacement, no
                     // restart, the player stays in the menu. Restart is only the fallback.
                     if (AndySUState.shouldApplyLive("staged", false, applyPolicy, pendingNativeLive)
@@ -354,6 +366,10 @@ final class AndySUBridge {
         }
     }
 
+    private static boolean hasStagedVersion(String version) {
+        return version != null && !version.isEmpty();
+    }
+
     /** The reason live is waiting, for Settings > Updates; "" when live is available. */
     private String liveReason() {
         String blocked = EngineSwap.liveBlockedReason(context);
@@ -373,7 +389,22 @@ final class AndySUBridge {
     /** Called after publish on each poll, only while the player can see the notice. */
     synchronized void autoApply(boolean inMatch, boolean visible) {
         String version = stagedForApply;
-        if (!visible || !AndySUState.shouldAutoApply(stateForApply, inMatch, applyPolicy)) {
+        long nowMs = System.currentTimeMillis();
+        if (inMatch) {
+            lastBusyAt = nowMs;
+            onEngineBusy(true); // hold the host's policy at next_start so it cannot swap either
+        }
+        String stage = ProcessState.stage();
+        // The boot screen has no engine: its gate file does not exist and it is not a match.
+        boolean boot = "boot".equals(stage);
+        boolean safe = AndySUState.safeToApplyNow(stage, KeepAliveService.engineBusy,
+                boot || !inMatch ? "safe" : "busy", visible,
+                lastBusyAt == 0 ? Long.MAX_VALUE : nowMs - lastBusyAt);
+        applySafe = safe;
+        if (!hasStagedVersion(version)) applyWanted = false;
+        boolean asked = applyWanted;
+        if (!safe || !visible || !AndySUState.mayApplyUnasked(auto(), asked)
+                || !AndySUState.shouldAutoApply(stateForApply, inMatch, applyPolicy)) {
             announced = "";
             return;
         }

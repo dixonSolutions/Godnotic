@@ -249,4 +249,33 @@ public class AndySUStateTest {
         org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w - 1));
         org.junit.Assert.assertTrue(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w));
     }
+
+    private static final long IDLE = AndySUState.IDLE_BEFORE_APPLY_MS;
+
+    @Test public void noApplyDuringAMatchOrLoad() {
+        // The owner's crash: stage=game while a match ran.
+        assertFalse(AndySUState.safeToApplyNow("game", true, "busy", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", false, "busy", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", true, "safe", true, IDLE * 10));
+        // Joining and loading, and an unreadable gate, are busy too.
+        assertFalse(AndySUState.safeToApplyNow("joining", false, "safe", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("loading", false, "safe", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", false, null, true, IDLE * 10));
+    }
+
+    @Test public void applyFromTheMenuOnceIdle() {
+        assertTrue(AndySUState.safeToApplyNow("game", false, "safe", true, IDLE));
+        assertTrue(AndySUState.safeToApplyNow("boot", false, "safe", true, Long.MAX_VALUE));
+        assertFalse(AndySUState.safeToApplyNow("game", false, "safe", true, IDLE - 1));
+    }
+
+    @Test public void noApplyInTheBackground() {
+        assertFalse(AndySUState.safeToApplyNow("game", false, "safe", false, IDLE * 10));
+    }
+
+    @Test public void checkOnlyHostNeverAppliesUnasked() {
+        assertFalse(AndySUState.mayApplyUnasked(false, false));
+        assertTrue(AndySUState.mayApplyUnasked(false, true));
+        assertTrue(AndySUState.mayApplyUnasked(true, false));
+    }
 }
