@@ -378,6 +378,17 @@ final class CrashStore {
         return CrashReport.shouldBanner(reports.get(0).lastModified(), prefs(context).getLong(PREF_SEEN, 0));
     }
 
+    /** Whether the newest report is one the banner may show now ({@link CrashReport#shouldShowBanner}). */
+    static boolean bannerDue(Context context, boolean inMenu) {
+        List<File> reports = reports(context);
+        if (reports.isEmpty()) {
+            return false;
+        }
+        File newest = reports.get(0);
+        return CrashReport.shouldShowBanner(inMenu, newest.lastModified(),
+                prefs(context).getLong(PREF_SEEN, 0), text(newest), version(context), payload());
+    }
+
     /** What the banner says: the newest report's headline. */
     static String bannerText(Context context) {
         List<File> reports = reports(context);

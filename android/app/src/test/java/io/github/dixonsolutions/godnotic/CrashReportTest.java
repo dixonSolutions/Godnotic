@@ -215,4 +215,32 @@ public class CrashReportTest {
         assertEquals("", CrashReport.oneLine(null));
         assertTrue(CrashReport.oneLine(new String(new char[500]).replace('\0', 'y')).endsWith("…"));
     }
+
+    private static String report(String app, String payload, String diedApp) {
+        return "Godnotic crash report\nwhen: x (1)\nreason: crash (4)\napp: " + app + "\npayload: " + payload
+                + "\nstate: app=" + diedApp + " payload=" + diedApp + " phase=run\n--- trace ---\n(none)\n";
+    }
+
+    @Test public void bannerOnlyInTheMenuForANewCurrentVersionReport() {
+        String now = report("1.2.286", "1.2.286", "1.2.286");
+        assertTrue(CrashReport.shouldShowBanner(true, 500, 100, now, "1.2.286", "1.2.286"));
+        // in a match: never
+        assertFalse(CrashReport.shouldShowBanner(false, 500, 100, now, "1.2.286", "1.2.286"));
+        // already dismissed
+        assertFalse(CrashReport.shouldShowBanner(true, 500, 500, now, "1.2.286", "1.2.286"));
+        assertFalse(CrashReport.shouldShowBanner(true, 0, 0, now, "1.2.286", "1.2.286"));
+    }
+
+    @Test public void aCrashOfAnOlderVersionIsNotShown() {
+        String old = report("1.2.270", "1.2.270", "1.2.267");
+        assertFalse(CrashReport.shouldShowBanner(true, 500, 100, old, "1.2.286", "1.2.286"));
+        // died in the old version, read by the first start of the new one
+        String after = report("1.2.286", "1.2.286", "1.2.285");
+        assertTrue(CrashReport.currentVersion(after, "1.2.286", "1.2.286"));
+        assertFalse(CrashReport.currentVersion(old, "", ""));
+    }
+
+    @Test public void bannerLeavesAfterAboutEightSeconds() {
+        assertEquals(8000, CrashReport.BANNER_MS);
+    }
 }

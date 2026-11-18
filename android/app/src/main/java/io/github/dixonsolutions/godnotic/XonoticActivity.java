@@ -126,10 +126,8 @@ public final class XonoticActivity extends SDLActivity {
         modImport.start();
         watchNetState();
         DataService.start(this); // Touch: the rest of the split data set, behind the game (docs/DATA_FETCH.md)
-        // A crash report the player has not seen yet: one line over the main menu, which is what
-        // the game shows first. Reading the system's exit reasons happens on its own thread at
-        // start (CrashStore.start); this only shows what it found.
-        CrashBanner.showIfNeeded(this);
+        // A crash report the player has not seen yet is shown once from pollUpdates, when the
+        // engine says it is in the menu (never in a match), and leaves again by itself.
     }
 
     /**
@@ -509,6 +507,8 @@ public final class XonoticActivity extends SDLActivity {
         autoDownloadIfDue();
     }
 
+    private boolean bannerTried;
+
     /** One poll of the menu's requests, the payload bridge and the crash-report request. */
     private void pollUpdates(UpdateBridge bridge, AppUpdater updater, File crashRequest, boolean refresh) {
         if (refresh) {
@@ -525,6 +525,18 @@ public final class XonoticActivity extends SDLActivity {
             payloadBridge.publish();
             payloadBridge.autoApply(updateGameBusy(), inFront);
         }
+        final boolean inMenu = !updateGameBusy();
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            if (!inMenu) {
+                CrashBanner.hide();
+            } else if (!bannerTried) {
+                bannerTried = true; // once per start: the next one is the next start's
+                CrashBanner.showIfNeeded(this);
+            }
+        });
         final String crash = CrashStore.takeRequest(crashRequest);
         if (crash != null) {
             runOnUiThread(() -> {

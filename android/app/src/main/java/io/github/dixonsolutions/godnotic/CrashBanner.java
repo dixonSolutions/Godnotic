@@ -16,30 +16,56 @@ import android.widget.TextView;
  * <p>A plain view added over whatever the activity shows (the engine's surface or the native
  * interface), because the payload cannot add a screen to the AndySU host's manifest: a new
  * Activity class would not be launchable there. Tapping it opens the share sheet with the newest
- * report; the × puts it away until another report appears.
+ * report; the × puts it away until another report appears. It shows only in the main menu, for a report of
+ * this version, and leaves after eight seconds.
  */
 final class CrashBanner {
     private static final String TAG = "Godnotic";
 
     private CrashBanner() {}
 
-    /** Add the banner to [activity] when a report is newer than the one last seen. */
+    private static volatile View shown;
+
+    /**
+     * Add the banner when the rule allows it ({@link CrashReport#shouldShowBanner}); it puts itself
+     * away after {@link CrashReport#BANNER_MS}. Call on the UI thread, only while the game is in the
+     * menu.
+     */
     static void showIfNeeded(final Activity activity) {
-        boolean unseen;
+        if (shown != null) {
+            return;
+        }
+        boolean due;
         try {
-            unseen = CrashStore.hasUnseen(activity);
+            due = CrashStore.bannerDue(activity, true);
         } catch (RuntimeException | LinkageError e) {
             Log.w(TAG, "Could not look for crash reports", e);
             return;
         }
-        if (!unseen) {
+        if (!due) {
             return;
         }
         try {
-            activity.addContentView(build(activity), layout(activity));
+            final LinearLayout bar = build(activity);
+            activity.addContentView(bar, layout(activity));
+            shown = bar;
+            bar.postDelayed(() -> hide(), CrashReport.BANNER_MS);
         } catch (RuntimeException | LinkageError e) {
             Log.w(TAG, "Could not show the crash banner", e);
         }
+    }
+
+    /** Take the banner away (a match started, or its time is up). UI thread. */
+    static void hide() {
+        View view = shown;
+        shown = null;
+        if (view != null) {
+            dismiss(view);
+        }
+    }
+
+    static boolean isShown() {
+        return shown != null;
     }
 
     private static LinearLayout build(final Activity activity) {
@@ -108,6 +134,9 @@ final class CrashBanner {
     }
 
     private static void dismiss(View view) {
+        if (view == shown) {
+            shown = null;
+        }
         if (view.getParent() instanceof android.view.ViewGroup) {
             ((android.view.ViewGroup) view.getParent()).removeView(view);
         }

@@ -234,9 +234,73 @@ final class CrashReport {
         return ours.size() <= keep ? ours : new ArrayList<>(ours.subList(0, keep));
     }
 
+    /** How long the banner stays up before it puts itself away. */
+    static final long BANNER_MS = 8_000;
+
     /** Show the banner when a report is newer than the one the player last shared or dismissed. */
     static boolean shouldBanner(long newestReportMs, long seenMs) {
         return newestReportMs > 0 && newestReportMs > seenMs;
+    }
+
+    /** The value of a {@code key: value} header line of a report, "" when it has none. */
+    static String header(String report, String key) {
+        if (report == null) {
+            return "";
+        }
+        for (String line : report.split("\n", 40)) {
+            if (line.startsWith(key + ":")) {
+                return line.substring(key.length() + 1).trim();
+            }
+            if (line.startsWith("--- ")) {
+                break;
+            }
+        }
+        return "";
+    }
+
+    /** The {@code key=value} field of a process state summary, "" when it has none. */
+    static String stateField(String state, String key) {
+        if (state == null) {
+            return "";
+        }
+        for (String field : state.trim().split("\\s+")) {
+            if (field.startsWith(key + "=")) {
+                return field.substring(key.length() + 1);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Whether a report was recorded in the version running now or by the start right after the
+     * crash. The report's {@code app:}/{@code payload:} are the versions that read it, so they match
+     * the current ones when the crash happened and was read by this version, or by the first start
+     * after it; the {@code state:} line holds the versions the dead process ran. Crashes of older
+     * versions, read hours later by an update, match neither.
+     */
+    static boolean currentVersion(String report, String appNow, String payloadNow) {
+        if (appNow == null || appNow.isEmpty()) {
+            return false;
+        }
+        String state = header(report, "state");
+        String diedApp = stateField(state, "app");
+        String diedPayload = stateField(state, "payload");
+        boolean diedNow = appNow.equals(diedApp)
+                && (diedPayload.isEmpty() || payloadNow == null || diedPayload.equals(payloadNow));
+        boolean readNow = appNow.equals(header(report, "app"))
+                && (payloadNow == null || payloadNow.isEmpty()
+                    || payloadNow.equals(header(report, "payload")));
+        return diedNow || readNow;
+    }
+
+    /**
+     * The banner's whole rule: only in the main menu (never in or entering a match), only for a
+     * report newer than the last one dismissed, and only one of this app/payload version.
+     */
+    static boolean shouldShowBanner(boolean inMenu, long newestReportMs, long seenMs, String report,
+                                    String appNow, String payloadNow) {
+        return inMenu && shouldBanner(newestReportMs, seenMs)
+                && currentVersion(report, appNow, payloadNow);
     }
 
     /** A stack trace as text, for the handler's file. */
