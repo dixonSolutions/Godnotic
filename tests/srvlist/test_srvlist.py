@@ -174,6 +174,18 @@ try:
     check(int(sums.get("end", {}).get("servers", 0)) == alive,
           "retry: servers appear without another refresh", str(sums.get("end")))
 
+    # Quit while silent servers still keep the refresh open. Answers already
+    # received must be available at once in the next process.
+    write_state(A)
+    interrupted = os.path.join(a.work, "user-interrupted")
+    run_engine(interrupted, True, "0-interrupted", quit_at=2, early_open=True)
+    saved = os.path.join(interrupted, "data", "touch_serverlist_info.txt")
+    check(os.path.exists(saved) and len(open(saved).readlines()) > 1,
+          "interrupted: answers saved before the refresh settles")
+    stats, _, _, _ = run_engine(interrupted, True, "0-interrupted-reopen", quit_at=7, early_open=True)
+    check(bool(stats) and int(stats[-1]["rows_at_open"]) > 0 and f(stats[-1], "first_row") < 0.3,
+          "interrupted: next session shows saved rows immediately", stats[-1]["line"] if stats else "no stats")
+
     # ---- 1 a fresh user directory
     write_state(A)
     stats, sums, rows, log = run_engine(ud, True, "1-cold")
