@@ -13,6 +13,17 @@ static void drawable_size(SDL_Window *window, int *w, int *h)
 #define SDL_GL_GetDrawableSize drawable_size
 #include "touch_sdl_resize.h"
 
+typedef struct cvar_s { int integer; void (*callback)(struct cvar_s *); } cvar_t;
+static cvar_t vid_width, vid_height;
+static int modesets;
+static void modeset(cvar_t *var) { (void)var; ++modesets; }
+static void Cvar_SetValueQuick(cvar_t *var, float value)
+{
+	var->integer = (int)value;
+	if (var->callback) var->callback(var);
+}
+#include "touch_sdl_resize_cvars.h"
+
 int main(void)
 {
 	SDL_Window *window;
@@ -31,6 +42,12 @@ int main(void)
 	SDL_GL_GetDrawableSize(window, &actual_width, &actual_height);
 	Touch_SDLResizeAfter(SDL_WINDOWEVENT_SIZE_CHANGED, window, &width, &height);
 	assert(width == actual_width && height == actual_height && width < height);
+	vid_width.callback = vid_height.callback = modeset;
+	Touch_SDLResizeCvars(SDL_WINDOWEVENT_SIZE_CHANGED, width, height);
+	assert(vid_width.integer == width && vid_height.integer == height && modesets == 0);
+	assert(vid_width.callback == modeset && vid_height.callback == modeset);
+	Touch_SDLResizeCvars(SDL_WINDOWEVENT_SIZE_CHANGED, 0, 0);
+	assert(vid_width.integer == width && vid_height.integer == height);
 	Touch_SDLResizeBefore(SDL_WINDOWEVENT_RESIZED, width, height);
 	surface_missing = 1;
 	width = height = 0; /* upstream SDL event handler saw a lost surface */

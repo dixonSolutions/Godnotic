@@ -11,6 +11,7 @@
 //   T key SYM               SDL keycode, pressed and released
 //   T keydown SYM / T keyup SYM       hold/release a key
 //   T cmd TEXT...           console text (Cbuf_AddText)
+//   T resize W H            resize the SDL window
 // $XT_REL=1 reports the mouse as relative (grabbed).
 #define _GNU_SOURCE
 #include <SDL.h>
@@ -26,8 +27,17 @@ static ev_t evs[MAXEV];
 static int nev = -1, next;
 static double t0 = -1;
 static int mx, my, mb, rx, ry;
+static SDL_Window *test_window;
 
-enum { E_FDOWN = 1, E_FMOVE, E_FUP, E_MMOVE, E_MDOWN, E_MUP, E_KEYD, E_KEYU, E_CMD };
+SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint32 flags)
+{
+	static SDL_Window *(*real)(const char *, int, int, int, int, Uint32);
+	if (!real) real = dlsym(RTLD_NEXT, "SDL_CreateWindow");
+	test_window = real(title, x, y, w, h, flags);
+	return test_window;
+}
+
+enum { E_FDOWN = 1, E_FMOVE, E_FUP, E_MMOVE, E_MDOWN, E_MUP, E_KEYD, E_KEYU, E_CMD, E_RESIZE };
 
 static double now(void) { struct timeval tv; gettimeofday(&tv, 0); return tv.tv_sec + tv.tv_usec / 1e6; }
 
@@ -78,6 +88,7 @@ static void load(void)
 		else if (!strcmp(w, "keyup") && sscanf(p, "%d", &id) == 1) add(t, E_KEYU, id, 0, 0, 0);
 		else if (!strcmp(w, "key") && sscanf(p, "%d", &id) == 1) { add(t, E_KEYD, id, 0, 0, 0); add(t + 0.1, E_KEYU, id, 0, 0, 0); }
 		else if (!strcmp(w, "cmd")) { p[strcspn(p, "\n")] = 0; add(t, E_CMD, 0, 0, 0, p); }
+		else if (!strcmp(w, "resize") && sscanf(p, "%f %f", &x, &y) == 2) add(t, E_RESIZE, 0, x, y, 0);
 	}
 	fclose(fp);
 	qsort(evs, nev, sizeof(evs[0]), cmp);
@@ -143,6 +154,11 @@ int SDL_PollEvent(SDL_Event *ev)
 		case E_CMD:
 			console(e->text);
 			continue;
+		case E_RESIZE:
+		{
+			if (test_window) SDL_SetWindowSize(test_window, (int)e->x, (int)e->y);
+			continue;
+		}
 		}
 	}
 	return real(ev);
