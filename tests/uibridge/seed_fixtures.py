@@ -419,9 +419,7 @@ def pause_screen(hosting=False):
             N("pause/actions/team", "button", label="Change team", action=A("team", "Change team", "players"), style="secondary", hidden=True),
             N("pause/actions/spectate", "button", label="Spectate", action=A("spectate", "Spectate", "esp"), style="secondary"),
             N("pause/actions/disconnect", "button", label=("End the game" if hosting else "Leave match"),
-              action=A("disconnect", "End the game" if hosting else "Leave match", "disconnect", style="destructive",
-                       confirm={"title": "End the game for everyone?" if hosting else "Leave the match?",
-                                "ok": "End" if hosting else "Leave", "destructive": True}), style="destructive"),
+              action=A("disconnect", "End the game" if hosting else "Leave match", "disconnect", style="destructive"), style="destructive"),
         ], minItem=200),
     ], title="Paused", kind="game", presentation="fullscreen")
 

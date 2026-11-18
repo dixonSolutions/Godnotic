@@ -18,6 +18,7 @@ Updated by hand; if an item is not here, it is not being tracked.
 | CI caches keyed on sources, not every commit | workflows | - |
 | Settings rules and settings map (with search spec) | docs/SETTINGS_RULES.md, docs/SETTINGS_MAP.md | - |
 | Death prompt says tap the control, not a key | scoreboard.qc | next |
+| Leave match: one tap | touch_uib_screens.qc, pause.json | 1.2.256 |
 | AndySU verifies before staging; deltas off by default | AndySU work/update-verify | releasing |
 
 ## In progress
@@ -38,7 +39,6 @@ Updated by hand; if an item is not here, it is not being tracked.
 | Spectator controls | Play button with a real disabled state and a reason; next/prev always available while spectating; player-free toggle instead of the follow-only FREE; teammates-only scope, default in team games |
 | Scoreboard in native UI | port the table, sorting and menu interactions; conflicts with portrait, do one then the other |
 | Settings search | build against docs/SETTINGS_MAP.md section 4: index every setting with category path and help, jump to the section, close on outside tap or X |
-| Leave match: one tap | engine action is already single-step (TOUCHACT_LEAVE = ENABLED); the confirm is in the UI layer, needs the dialog wording |
 | OSK: system keyboard first, fall back to ours | needs SDL_IsScreenKeyboardShown for a real 'did it appear' answer, not a blind timer |
 | Map load, reconnect, vote responsiveness | one benchmark family: extend scripts/bench-load.sh to reconnect and vote before optimising |
 | Server filter glitches beyond the two in progress | needs a reproduction |
