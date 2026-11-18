@@ -436,7 +436,7 @@ OBJ_SV += touch_bridge.o# Touch:
 OBJ_SV += touch_bridge_engine.o# Touch:
 OBJ_SDL += touch_bridge.o# Touch:
 OBJ_SDL += touch_bridge_engine.o# Touch:
-CFLAGS_COMMON += -I$(TOUCH_BRIDGE_PREFIX)/include -DRTC_STATIC -DRTC_ENABLE_MEDIA=0# Touch:
+CFLAGS_COMMON += -I$(TOUCH_BRIDGE_PREFIX)/include -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 -DTOUCH_BRIDGE_ENABLED# Touch:
 LDFLAGS_LINUXSV += $(TOUCH_BRIDGE_PREFIX)/lib/libdatachannel.a $(TOUCH_BRIDGE_PREFIX)/lib/libjuice.a $(TOUCH_BRIDGE_PREFIX)/lib/libusrsctp.a -lstdc++ -lssl -lcrypto -lpthread# Touch:
 LDFLAGS_LINUXSDL += $(TOUCH_BRIDGE_PREFIX)/lib/libdatachannel.a $(TOUCH_BRIDGE_PREFIX)/lib/libjuice.a $(TOUCH_BRIDGE_PREFIX)/lib/libusrsctp.a -lstdc++ -lssl -lcrypto -lpthread# Touch:
 endif# Touch:

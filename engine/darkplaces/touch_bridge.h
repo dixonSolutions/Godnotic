@@ -46,12 +46,15 @@ uint64_t Touch_BridgeDropCount(struct touch_bridge_forwarder *forwarder,
                                enum touch_bridge_drop_reason reason);
 typedef void (*touch_bridge_reply_fn)(void *context, const void *packet, int size);
 struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void);
+/* Test-only exception for exactly IPv4 127.0.0.1, on any port. */
+int Touch_BridgeSetAllowLoopback(struct touch_bridge_forwarder *forwarder, int enabled);
 /* Shared inbound/outbound token buckets, initially full. Rates are also burst
  * capacities, in packets and UDP payload bytes per second. Defaults: 200 and
  * 1048576. Both rates must be positive; setting them resets the buckets. */
 int Touch_BridgeSetRates(struct touch_bridge_forwarder *forwarder,
                          unsigned int packets_per_second, unsigned int bytes_per_second);
 /* Engine peers must use this constructor after master cvars are loaded. */
+void Touch_BridgeInit(void);
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void);
 void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);
 /* Destinations are denied by default. This primitive does not establish that

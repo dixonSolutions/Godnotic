@@ -165,6 +165,7 @@ struct touch_bridge_forwarder {
     size_t allowed_count;
     struct touch_bridge_address *masters;
     size_t master_count;
+    int allow_loopback;
     unsigned int packet_rate, byte_rate;
     double packet_tokens, byte_tokens;
     struct timespec bucket_time;
@@ -265,8 +266,8 @@ static int bridge_take_tokens(struct touch_bridge_forwarder *f, int bytes)
     return 1;
 }
 
-static int bridge_allowed(const struct touch_bridge_forwarder *f,
-                          const struct touch_bridge_address *address)
+static int bridge_listed(const struct touch_bridge_forwarder *f,
+                         const struct touch_bridge_address *address)
 {
     size_t i, n = address->family == 4 ? 4 : 16;
     for (i = 0; i < f->allowed_count; ++i)
@@ -274,6 +275,23 @@ static int bridge_allowed(const struct touch_bridge_forwarder *f,
             f->allowed[i].port == address->port &&
             !memcmp(f->allowed[i].address, address->address, n))
             return 1;
+    return 0;
+}
+
+static int bridge_allowed(const struct touch_bridge_forwarder *f,
+                          const struct touch_bridge_address *address)
+{
+    static const unsigned char loopback[4] = {127, 0, 0, 1};
+    return (f->allow_loopback && address->family == 4 && !memcmp(address->address, loopback, 4)) ||
+           bridge_listed(f, address);
+}
+
+int Touch_BridgeSetAllowLoopback(struct touch_bridge_forwarder *f, int enabled)
+{
+    if (!f) return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    f->allow_loopback = !!enabled;
+    pthread_mutex_unlock(&f->mutex);
     return 0;
 }
 
@@ -286,7 +304,7 @@ int Touch_BridgeAllowAddress(struct touch_bridge_forwarder *f,
         (address->family != 4 && address->family != 6))
         return RTC_ERR_INVALID;
     pthread_mutex_lock(&f->mutex);
-    if (!bridge_allowed(f, address)) {
+    if (!bridge_listed(f, address)) {
         if (f->allowed_count >= 65536 ||
             !(addresses = (struct touch_bridge_address *)realloc(f->allowed, (f->allowed_count + 1) * sizeof(*addresses))))
             result = RTC_ERR_FAILURE;

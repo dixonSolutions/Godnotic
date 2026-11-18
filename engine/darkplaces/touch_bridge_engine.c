@@ -6,6 +6,14 @@
 #include <netinet/in.h>
 #include <string.h>
 
+static cvar_t bridge_allow_loopback = {.flags = CF_SERVER, .name = "bridge_allow_loopback", .string = "0",
+    .description = "Test only: allow the WebRTC bridge to send UDP to 127.0.0.1 on any port"};
+
+void Touch_BridgeInit(void)
+{
+    Cvar_RegisterVariable(&bridge_allow_loopback);
+}
+
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void)
 {
     static const char *const names[] = {
@@ -15,6 +23,7 @@ struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void)
     struct touch_bridge_forwarder *f = Touch_BridgeForwarderCreate();
     size_t i;
     if (!f) return NULL;
+    Touch_BridgeSetAllowLoopback(f, bridge_allow_loopback.integer);
     for (i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         const char *value = Cvar_VariableString(&cvars_all, names[i], 0);
         lhnetaddress_t resolved;
