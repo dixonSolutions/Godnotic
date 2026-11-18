@@ -28,6 +28,12 @@ int main(void)
 	CHECK_INT(0, TouchJoinPreview_Drawable(1, 1, 1, 1, 0), "surface data missing: not drawable");
 	CHECK_INT(1, TouchJoinPreview_Drawable(1, 1, 1, 1, 1), "a loaded world: drawable");
 
+	CHECK_INT(1, TouchJoinPreview_ShowsLevelshot(1, 1, 1, 0), "a join with a map name and no world: its levelshot");
+	CHECK_INT(0, TouchJoinPreview_ShowsLevelshot(1, 1, 1, 1), "a drawable world: no levelshot");
+	CHECK_INT(0, TouchJoinPreview_ShowsLevelshot(1, 1, 0, 0), "no map name yet: no levelshot");
+	CHECK_INT(0, TouchJoinPreview_ShowsLevelshot(1, 0, 1, 0), "not joining: no levelshot");
+	CHECK_INT(0, TouchJoinPreview_ShowsLevelshot(0, 1, 1, 0), "touch_join_preview 0: no levelshot");
+
 	CHECK_INT(7, TouchJoinPreview_SceneModel(7, 3), "the scene takes the current world");
 	CHECK_INT(7, TouchJoinPreview_SceneModel(7, 0), "also with no cached world");
 	CHECK_INT(0, TouchJoinPreview_SceneModel(0, 3), "a missing current world stays missing");
