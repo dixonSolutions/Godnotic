@@ -34,15 +34,23 @@ internal object JoinFlow {
      * the stages that follow instead of being rebuilt (each build is another
      * black page with the logo).
      */
-    fun card(stage: String, joinDialog: Boolean, settled: Boolean, hasCard: Boolean = false): Boolean =
-        isBusy(stage) && !joinDialog && (settled || hasCard)
+    fun card(stage: String, joinDialog: Boolean, settled: Boolean, hasCard: Boolean = false, shot: Boolean = false): Boolean =
+        isBusy(stage) && !joinDialog && (settled || hasCard || shot)
+
+    /**
+     * The map's picture (the engine's connect `levelshot`: a file once the map is known, a
+     * local game's pick before any server exists) is what the card shows until the world is
+     * drawable (`world`). The engine cannot draw it itself during a blocking local load, so
+     * the card does, from the first snapshot: no settle wait, no logo.
+     */
+    fun showShot(shot: String, world: Boolean): Boolean = shot.isNotEmpty() && !world
 
     /** The preview is the live world: the card lets it show through. */
     fun transparent(stage: String, previewSeen: Boolean = false): Boolean =
         stage == "preview" || previewSeen
 
     /** The world (or the levelshot before it) is what to show, from now on for this join. */
-    fun preview(stage: String, previewSeen: Boolean): Boolean = previewSeen || stage == "preview"
+    fun preview(stage: String, previewSeen: Boolean, shot: Boolean = false): Boolean = previewSeen || stage == "preview" || shot
 
     /** The logo belongs to the wait, once. */
     fun banner(stage: String, previewSeen: Boolean): Boolean = !preview(previewSeen = previewSeen, stage = stage)
