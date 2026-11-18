@@ -49,6 +49,12 @@ int main(void)
 	CHECK_INT(TOUCHSPEC_NONE, TouchSpec_StateFrom(-616, 3, 3, 16, 100), "the same for the out-of-round marker");
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 0, 16, -666), "a view entity that is no player counts as our own");
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 40, 16, -666), "nor one beyond the player slots");
+	// The scoreboard is freed with the level; a round end or map change leaves
+	// realplayerentity set for a moment. No reader may index it then.
+	CHECK_INT(-1, TouchSpec_ScoreIndex(0, 16, 1), "no local player: no scoreboard slot");
+	CHECK_INT(-1, TouchSpec_ScoreIndex(3, 16, 0), "no scores array: no scoreboard slot");
+	CHECK_INT(-1, TouchSpec_ScoreIndex(3, 0, 1), "no client slots: no scoreboard slot");
+	CHECK_INT(2, TouchSpec_ScoreIndex(3, 16, 1), "a valid local player: its slot");
 
 	touchspec_join_t j;
 	int state, part, jumped;
