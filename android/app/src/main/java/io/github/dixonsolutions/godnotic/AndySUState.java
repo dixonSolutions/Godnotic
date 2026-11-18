@@ -55,6 +55,26 @@ final class AndySUState {
         return "Still confirming the current version; try again after the game starts.";
     }
 
+    /** How long the engine must stay idle before the apply policy goes back to the player's choice. */
+    static final long BUSY_HOLD_MS = 30_000;
+
+    /**
+     * The apply policy the host should have. The player's switch ({@code liveEnabled}) is the one
+     * source; a busy engine (match, join, download) only holds it at next_start, and for
+     * {@link #BUSY_HOLD_MS} after the last busy reading, because the net state file reads idle for
+     * a poll between map changes and used to flip the policy every two seconds.
+     */
+    static String desiredPolicy(boolean liveEnabled, boolean busy, long now, long lastBusyAt) {
+        if (!liveEnabled) return "next_start";
+        if (busy) return "next_start";
+        return lastBusyAt != 0 && now - lastBusyAt < BUSY_HOLD_MS ? "next_start" : "live";
+    }
+
+    /** False for the release whose automatic apply already failed or was refused. */
+    static boolean mayAnnounce(String version, String blocked) {
+        return blocked == null || blocked.isEmpty() || !blocked.equals(version);
+    }
+
     /** Unknown policy is held; null means the host has no policy API. */
     static boolean shouldAutoApply(String state, boolean inMatch, String policy) {
         return "staged".equals(state) && !inMatch
@@ -144,13 +164,15 @@ final class AndySUState {
      */
     static String targetMode(boolean auto, boolean wifiOnly, boolean metered, boolean staged,
                              boolean foreground, boolean downloading) {
+        // One rule, whether or not the app is on screen: the host's mode follows only the
+        // player's switches and the connection. Leaving the app used to drop it to check_only
+        // (and the return took it back), a silent change nobody asked for.
         if (!auto) return MODE_CHECK_ONLY;
         if (!wifiOnly) return MODE_AUTO;
-        if (foreground) return metered ? MODE_CHECK_ONLY : MODE_AUTO;
-        // In the background a staged release still applies at the next start, which the host only
-        // does in auto mode; a download in flight keeps going, but only on an unmetered connection.
-        if (staged) return MODE_AUTO;
-        return (!metered && downloading) ? MODE_AUTO : MODE_CHECK_ONLY;
+        if (!metered) return MODE_AUTO;
+        // Metered: Wi-Fi only stops it, except that in the background a staged release stays
+        // promotable at the next start (the host only does that in auto mode).
+        return (!foreground && staged) ? MODE_AUTO : MODE_CHECK_ONLY;
     }
 
     /**

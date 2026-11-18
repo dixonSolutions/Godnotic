@@ -83,12 +83,41 @@ public class AndySUStateTest {
     }
 
     @Test
-    public void wifiOnlyInTheBackgroundKeepsAStagedReleaseApplying() {
-        // the host promotes a staged release at the next start only in auto mode
-        assertEquals("auto", AndySUState.targetMode(true, true, true, true, false));
-        assertEquals("auto", AndySUState.targetMode(true, true, false, true, false));
-        // nothing staged: the host's periodic job runs on any network, so only check
-        assertEquals("check_only", AndySUState.targetMode(true, true, false, false, false));
+    public void backgroundDoesNotChangeTheMode() {
+        // the 20:18:15 auto -> check_only: leaving the app must not move the host
+        for (boolean staged : new boolean[] { false, true })
+            for (boolean downloading : new boolean[] { false, true }) {
+                assertEquals("auto", AndySUState.targetMode(true, true, false, staged, false, downloading));
+                assertEquals("auto", AndySUState.targetMode(true, true, false, staged, true, downloading));
+                assertEquals("auto", AndySUState.targetMode(true, false, true, staged, false, downloading));
+            }
+        assertEquals("check_only", AndySUState.targetMode(true, true, true, false, false, false));
+    }
+
+    @Test
+    public void backgroundMeteredStagedStaysAuto() {
+        assertEquals("auto", AndySUState.targetMode(true, true, true, true, false, false));
+    }
+
+    @Test
+    public void aRefusedReleaseIsNotAnnouncedAgain() {
+        assertTrue(AndySUState.mayAnnounce("1.2.282", ""));
+        assertTrue(AndySUState.mayAnnounce("1.2.282", null));
+        assertFalse(AndySUState.mayAnnounce("1.2.282", "1.2.282"));
+        assertTrue("a newer release is", AndySUState.mayAnnounce("1.2.283", "1.2.282"));
+    }
+
+    @Test
+    public void applyPolicyHasOneSourceAndDoesNotFlap() {
+        long t = 1_000_000;
+        assertEquals("live", AndySUState.desiredPolicy(true, false, t, 0));
+        assertEquals("next_start", AndySUState.desiredPolicy(true, true, t, t));
+        // a one-poll idle between busy readings holds
+        assertEquals("next_start", AndySUState.desiredPolicy(true, false, t + 2_000, t));
+        assertEquals("next_start", AndySUState.desiredPolicy(true, false, t + AndySUState.BUSY_HOLD_MS - 1, t));
+        assertEquals("live", AndySUState.desiredPolicy(true, false, t + AndySUState.BUSY_HOLD_MS, t));
+        // the player's switch off wins always
+        assertEquals("next_start", AndySUState.desiredPolicy(false, false, t, 0));
     }
 
     @Test

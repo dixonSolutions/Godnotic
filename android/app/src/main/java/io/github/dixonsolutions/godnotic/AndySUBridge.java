@@ -73,6 +73,9 @@ final class AndySUBridge {
     private String stagedForApply = "";
     private String stateForApply = "idle";
     private String applyPolicy;
+    private long lastBusyAt;
+    /** The release whose automatic apply was refused or failed: not announced again. */
+    private String autoBlocked = "";
     /** The staged release changes only native code and content: the host can swap it live. */
     private boolean pendingNativeLive;
     private String announced = "";
@@ -336,9 +339,11 @@ final class AndySUBridge {
     void onEngineBusy(boolean busy) {
         if (!AndySUCompat.present() || !AndySUCompat.has("applyPolicy")) return;
         try {
-            String want = busy ? "next_start"
-                    : (EngineSwap.liveEnabled(context) ? "live" : "next_start");
-            String current = AndySUCompat.applyPolicy();
+            long now = System.currentTimeMillis();
+            if (busy) lastBusyAt = now;
+            String want = AndySUState.desiredPolicy(EngineSwap.liveEnabled(context), busy, now, lastBusyAt);
+            String current = applyPolicy != null && !"unknown".equals(applyPolicy)
+                    ? applyPolicy : AndySUCompat.applyPolicy();
             if (!want.equals(current)) {
                 AndySUCompat.setApplyPolicy(want);
                 applyPolicy = want;
@@ -381,6 +386,9 @@ final class AndySUBridge {
             announced = "";
             return;
         }
+        // A release whose automatic apply was refused or failed is not announced again (the toast
+        // used to repeat every poll); the Updates screen carries the reason and Apply now remains.
+        if (!AndySUState.mayAnnounce(version, autoBlocked)) return;
         final String noticeVersion = version;
         long now = SystemClock.elapsedRealtime();
         // Live first: a native/content release is swapped in the running process, and only a
@@ -396,6 +404,7 @@ final class AndySUBridge {
                 AndySUCompat.applyNow();
             } catch (ReflectiveOperationException | RuntimeException e) {
                 announced = "";
+                autoBlocked = noticeVersion;
                 requestError = "Could not apply the update live: " + AndySUState.oneLine(e.getMessage());
                 Log.w(TAG, requestError, e);
             }
@@ -415,6 +424,7 @@ final class AndySUBridge {
                     prefs.getLong("at", 0L), wall)) {
                 // Avoid a restart loop; publish the failure from the persisted attempt.
                 announced = "";
+                autoBlocked = noticeVersion;
                 stagedForApply = "";
                 stateForApply = "idle";
                 Log.w(TAG, "Not restarting again for " + noticeVersion);
@@ -422,6 +432,7 @@ final class AndySUBridge {
             }
             // Do not repeatedly ask if the host rejects or returns from the relaunch.
             announced = "";
+            autoBlocked = noticeVersion;
             stagedForApply = "";
             stateForApply = "idle";
             if (!prepareRestart()) {
@@ -472,7 +483,7 @@ final class AndySUBridge {
         }
         if (manualMode != null && now - manualAt > MANUAL_MAX_MS) manualMode = null;
         String want = manualMode != null ? manualMode
-                : AndySUState.targetMode(auto, wifiOnly, metered, staged, foreground(), downloading);
+                : AndySUState.targetMode(auto, wifiOnly, metered, staged, true, downloading);
         // Auto stays auto. Steering to download_only stopped the host's onStaged() from ever
         // offering the release, which is why every update waited for the next start; the busy
         // match case is handled by the apply policy (onEngineBusy), not by disabling staging.
