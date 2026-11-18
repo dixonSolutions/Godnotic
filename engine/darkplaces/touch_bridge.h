@@ -6,6 +6,10 @@
 /* Callbacks execute on libdatachannel threads; the caller owns their context. */
 int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description,
                            rtcCandidateCallbackFunc candidate, rtcDataChannelCallbackFunc channel);
+/* Every successfully created peer must be released through this function. */
+int Touch_BridgeDeletePeer(int peer);
+/* A limit change cannot be smaller than the current number of peers. */
+int Touch_BridgeSetMaxPeers(unsigned int maximum);
 int Touch_BridgeOpenChannel(int peer, const char *label, void *context,
                             rtcOpenCallbackFunc open, rtcMessageCallbackFunc message);
 int Touch_BridgeAcceptChannel(int channel, void *context, rtcOpenCallbackFunc open,
@@ -32,6 +36,11 @@ int Touch_BridgeUnpack(const void *packet, int size, struct touch_bridge_address
 struct touch_bridge_forwarder;
 typedef void (*touch_bridge_reply_fn)(void *context, const void *packet, int size);
 struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void);
+/* Shared inbound/outbound token buckets, initially full. Rates are also burst
+ * capacities, in packets and UDP payload bytes per second. Defaults: 200 and
+ * 1048576. Both rates must be positive; setting them resets the buckets. */
+int Touch_BridgeSetRates(struct touch_bridge_forwarder *forwarder,
+                         unsigned int packets_per_second, unsigned int bytes_per_second);
 /* Engine peers must use this constructor after master cvars are loaded. */
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void);
 void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);

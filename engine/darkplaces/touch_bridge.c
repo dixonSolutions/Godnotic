@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "touch_bridge.h"
 #include <string.h>
 #include <stdlib.h>
@@ -7,6 +8,21 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <time.h>
+
+static pthread_mutex_t bridge_peers_mutex = PTHREAD_MUTEX_INITIALIZER;
+static unsigned int bridge_peer_count, bridge_peer_max = 8;
+static int *bridge_peers;
+
+int Touch_BridgeSetMaxPeers(unsigned int maximum)
+{
+    int result = 0;
+    pthread_mutex_lock(&bridge_peers_mutex);
+    if (!maximum || maximum < bridge_peer_count) result = RTC_ERR_INVALID;
+    else bridge_peer_max = maximum;
+    pthread_mutex_unlock(&bridge_peers_mutex);
+    return result;
+}
 
 int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description,
                            rtcCandidateCallbackFunc candidate, rtcDataChannelCallbackFunc channel)
@@ -15,17 +31,48 @@ int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description
     int peer;
     memset(&config, 0, sizeof(config));
     config.disableAutoNegotiation = true;
+    pthread_mutex_lock(&bridge_peers_mutex);
+    if (bridge_peer_count >= bridge_peer_max) {
+        pthread_mutex_unlock(&bridge_peers_mutex);
+        return RTC_ERR_FAILURE;
+    }
+    {
+        int *peers = (int *)realloc(bridge_peers, (bridge_peer_count + 1) * sizeof(*peers));
+        if (!peers) { pthread_mutex_unlock(&bridge_peers_mutex); return RTC_ERR_FAILURE; }
+        bridge_peers = peers;
+    }
     peer = rtcCreatePeerConnection(&config);
-    if (peer < 0)
-        return peer;
+    if (peer < 0) { pthread_mutex_unlock(&bridge_peers_mutex); return peer; }
+    bridge_peers[bridge_peer_count++] = peer;
+    pthread_mutex_unlock(&bridge_peers_mutex);
     rtcSetUserPointer(peer, context);
     if (rtcSetLocalDescriptionCallback(peer, description) < 0 ||
         rtcSetLocalCandidateCallback(peer, candidate) < 0 ||
         rtcSetDataChannelCallback(peer, channel) < 0) {
-        rtcDeletePeerConnection(peer);
+        Touch_BridgeDeletePeer(peer);
         return RTC_ERR_FAILURE;
     }
     return peer;
+}
+
+int Touch_BridgeDeletePeer(int peer)
+{
+    unsigned int i;
+    int result;
+    pthread_mutex_lock(&bridge_peers_mutex);
+    for (i = 0; i < bridge_peer_count && bridge_peers[i] != peer; ++i) {}
+    if (i == bridge_peer_count) { pthread_mutex_unlock(&bridge_peers_mutex); return RTC_ERR_INVALID; }
+    /* Reserve the slot during deletion without holding a lock across callbacks. */
+    bridge_peers[i] = -1;
+    pthread_mutex_unlock(&bridge_peers_mutex);
+    result = rtcDeletePeerConnection(peer);
+    pthread_mutex_lock(&bridge_peers_mutex);
+    for (i = 0; i < bridge_peer_count && bridge_peers[i] != -1; ++i) {}
+    if (result >= 0) bridge_peers[i] = bridge_peers[--bridge_peer_count];
+    else bridge_peers[i] = peer;
+    if (!bridge_peer_count) { free(bridge_peers); bridge_peers = NULL; }
+    pthread_mutex_unlock(&bridge_peers_mutex);
+    return result;
 }
 
 int Touch_BridgeAcceptChannel(int channel, void *context, rtcOpenCallbackFunc open,
@@ -112,7 +159,41 @@ struct touch_bridge_forwarder {
     size_t allowed_count;
     struct touch_bridge_address *masters;
     size_t master_count;
+    unsigned int packet_rate, byte_rate;
+    double packet_tokens, byte_tokens;
+    struct timespec bucket_time;
 };
+
+int Touch_BridgeSetRates(struct touch_bridge_forwarder *f, unsigned int packets, unsigned int bytes)
+{
+    struct timespec now;
+    if (!f || !packets || !bytes || clock_gettime(CLOCK_MONOTONIC, &now)) return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    f->packet_rate = packets; f->byte_rate = bytes;
+    f->packet_tokens = packets; f->byte_tokens = bytes; f->bucket_time = now;
+    pthread_mutex_unlock(&f->mutex);
+    return 0;
+}
+
+/* Caller holds the mutex. Failed attempts consume neither bucket. */
+static int bridge_take_tokens(struct touch_bridge_forwarder *f, int bytes)
+{
+    struct timespec now;
+    double elapsed;
+    if (clock_gettime(CLOCK_MONOTONIC, &now)) return 0;
+    elapsed = (double)(now.tv_sec - f->bucket_time.tv_sec) +
+              (double)(now.tv_nsec - f->bucket_time.tv_nsec) / 1000000000.0;
+    if (elapsed > 0) {
+        f->packet_tokens += elapsed * f->packet_rate;
+        f->byte_tokens += elapsed * f->byte_rate;
+        if (f->packet_tokens > f->packet_rate) f->packet_tokens = f->packet_rate;
+        if (f->byte_tokens > f->byte_rate) f->byte_tokens = f->byte_rate;
+        f->bucket_time = now;
+    }
+    if (f->packet_tokens < 1 || f->byte_tokens < bytes) return 0;
+    f->packet_tokens -= 1; f->byte_tokens -= bytes;
+    return 1;
+}
 
 static int bridge_allowed(const struct touch_bridge_forwarder *f,
                           const struct touch_bridge_address *address)
@@ -245,6 +326,9 @@ struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void)
         free(f);
         return NULL;
     }
+    if (Touch_BridgeSetRates(f, 200, 1048576) < 0) {
+        pthread_mutex_destroy(&f->mutex); free(f); return NULL;
+    }
     f->ipv4 = bridge_socket(AF_INET);
     f->ipv6 = bridge_socket(AF_INET6);
     if (f->ipv4 < 0 && f->ipv6 < 0) {
@@ -277,7 +361,7 @@ int Touch_BridgeForward(struct touch_bridge_forwarder *f, const void *packet, in
     if (!f || Touch_BridgeUnpack(packet, size, &address, &payload, &len) < 0)
         return RTC_ERR_INVALID;
     pthread_mutex_lock(&f->mutex);
-    if (!bridge_allowed(f, &address)) {
+    if (!bridge_allowed(f, &address) || !bridge_take_tokens(f, len)) {
         pthread_mutex_unlock(&f->mutex);
         return RTC_ERR_FAILURE;
     }
@@ -335,7 +419,7 @@ static int bridge_poll_socket(struct touch_bridge_forwarder *f, int fd, touch_br
             memcpy(address.address, &a->sin6_addr, 16);
         } else continue;
         pthread_mutex_lock(&f->mutex);
-        size = bridge_allowed(f, &address);
+        size = bridge_allowed(f, &address) && bridge_take_tokens(f, (int)len);
         pthread_mutex_unlock(&f->mutex);
         if (!size) continue;
         bridge_learn_servers(f, &address, payload, (size_t)len);

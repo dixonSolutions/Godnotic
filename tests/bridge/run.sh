@@ -35,3 +35,10 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
     "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
     -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/configured_test"
 "$out/configured_test"
+
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
+    -I"$prefix/include" -I"$root/engine/darkplaces" \
+    "$root/tests/bridge/limits_test.c" "$root/engine/darkplaces/touch_bridge.c" \
+    "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
+    -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/limits_test"
+"$out/limits_test"

@@ -146,7 +146,7 @@ int main(void)
         }
     }
 done:
-    rtcDeletePeerConnection(a.id); rtcDeletePeerConnection(b.id);
+    Touch_BridgeDeletePeer(a.id); Touch_BridgeDeletePeer(b.id);
     Touch_BridgeForwarderDestroy(forwarder); rtcCleanup();
     return result;
 }
