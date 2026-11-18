@@ -965,6 +965,8 @@ void UIB_ServerParams()
 	uib_param("servers", "search", UIB_VM("mp.search"));
 }
 
+bool UIB_FindServerIn(string source, string address);
+
 void UIB_BuildServers()
 {
 	UIB_ServerParams();
@@ -1035,6 +1037,34 @@ void UIB_BuildServers()
 			uib_j("empty", sprintf("{\"title\":%s,\"text\":%s,\"icon\":\"server\",\"action\":%s}", uib_q(_("No servers available")),
 				uib_q(_("Try refreshing the list.")), UIB_A("refresh", _("Refresh"), "refresh")));
 	UIB_Close();
+	// The map ref is known with the selected server row, so render its picture in
+	// the same snapshot as the selection instead of waiting for a later lookup.
+	string rowSource = cvar_string("_uib_debug_servers");
+	if (rowSource == "") rowSource = "servers.all";
+	if (sel != "" && UIB_FindServerIn(rowSource, sel))
+	{
+		string name = uib_wcell(0, "name");
+		string map = uib_wcell(0, "map");
+		string mode = uib_wcell(0, "mode");
+		string players = uib_wcell(0, "players");
+		string maxplayers = uib_wcell(0, "max");
+		string ping = uib_wcell(0, "ping");
+		UIB_Open("details", "preview");
+			uib_s("title", name != "" ? name : sel);
+			uib_s("subtitle", map != "" ? sprintf(_("%s · %s"), map, mode != "" ? UIB_ModeName(mode) : _("Unknown game type")) : (mode != "" ? UIB_ModeName(mode) : _("Server details")));
+			if (map != "")
+			{
+				uib_s("image", strcat("pk3:maps/", map));
+				uib_s("aspect", "16:9");
+			}
+			if (mode != "") uib_push("attrs", UIB_Attr(_("Game type"), UIB_ModeName(mode), "mode"));
+			if (map != "") uib_push("attrs", UIB_Attr(_("Map"), map, "map"));
+			if (players != "") uib_push("attrs", UIB_Attr(_("Players"), (maxplayers != "" ? sprintf("%s / %s", players, maxplayers) : players), "players"));
+			if (ping != "" && stof(ping) > 0) uib_push("attrs", UIB_Attr(_("Ping"), sprintf(_("%s ms"), ping), "ping"));
+			uib_push("attrs", UIB_Attr(_("Address"), sel, "server"));
+			uib_j("primary", UIB_AS("server.join", _("Join"), "play", "primary"));
+		UIB_Close();
+	}
 	UIB_Open("join", "actionbar");
 		uib_s("align", "spread");
 		UIB_Open("address", "field");
@@ -1058,17 +1088,22 @@ void UIB_BuildServers()
 }
 
 // one server's row (cells read with uib_wcell(0, ...)), "" if not known
-bool UIB_FindServer(string address)
+bool UIB_FindServerIn(string source, string address)
 {
-	int n = uib_window("servers.all", 0, 16, "", 0, address);
+	int n = uib_window(source, 0, 16, "", 0, address);
 	for (int i = 0; i < n; ++i)
 		if (uib_wkey(i) == address)
 		{
 			if (i)
-				uib_window("servers.all", i, 1, "", 0, address);
+				uib_window(source, i, 1, "", 0, address);
 			return true;
 		}
 	return false;
+}
+
+bool UIB_FindServer(string address)
+{
+	return UIB_FindServerIn("servers.all", address);
 }
 
 // How every screen of a join names a server: "<name> (<address>)", the address alone

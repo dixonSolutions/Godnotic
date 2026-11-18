@@ -163,7 +163,8 @@ def modes_and_match():
     ud = tempfile.mkdtemp(prefix="uibt-modes-", dir=os.environ.get("TMPDIR"))
     sock = os.path.join(ud, "run", "uib.sock")
     pre = ("set touch_lan_bots 15\nset touch_lan_gametype duel\nset touch_lan_map afterslime\n"
-           "set g_warmup 0\nset touch_profile_done 1\nset net_slist_lan_only 1\nset cl_curl_enabled 0\n")
+           "set g_warmup 0\nset touch_profile_done 1\nset net_slist_lan_only 1\nset cl_curl_enabled 0\n"
+           "uib_testrows test.servers 1 servers 42\nset _uib_debug_servers test.servers\n")
     p, log = spawn(["-uibridge", "listen:" + sock], ud, pre)
     try:
         c = Conn(connect(sock))
@@ -172,12 +173,23 @@ def modes_and_match():
         c.send({"t": "ev", "ev": "action", "node": "home/tiles/mp", "action": "mp"})
         wait_for(c, lambda: "mp/servers" in c.nodes, 15)
         c.settle()
-        address = "203.0.113.7:26000"
+        address = "203.0.0.0:26000"
         c.send({"t": "ev", "ev": "row", "node": "mp/servers", "row": address, "kind": "select"})
         c.settle()
+        server_rows = c.request({"t": "window", "source": "test.servers", "offset": 0, "limit": 4})
+        check(server_rows is not None and any(row.get("key") == address for row in server_rows.get("rows", [])),
+              "the bridge exposes the synthetic server row")
         field = c.nodes.get("mp/join/address", {}).get("props", {}).get("value")
         selected = c.nodes.get("mp/servers", {}).get("props", {}).get("selected")
         check(field == address and selected == [address], f"selecting a server fills the address and selects the row ({field!r}, {selected!r})")
+        details = c.nodes.get("mp/details", {}).get("props", {})
+        attrs = details.get("attrs", [])
+        check(details.get("image") == "pk3:maps/afterslime" and details.get("title") == "Test server 00000",
+              f"the selected row immediately emits its map picture and server name ({details.get('image')!r}, {details.get('title')!r})")
+        check(any(a.get("label") == "Game type" and a.get("value") == "Deathmatch" for a in attrs) and
+              any(a.get("label") == "Players" and a.get("value", "").endswith(" / 16") for a in attrs) and
+              any(a.get("label") == "Address" and a.get("value") == address for a in attrs),
+              f"the selected server preview includes game type, player count and address ({attrs!r})")
         for chip in ("empty", "full", "laggy"):
             c.send({"t": "ev", "ev": "value", "node": "mp/bar/filters/" + chip, "value": False})
             c.settle()
