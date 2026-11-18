@@ -414,7 +414,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         val what = JoinFlow.detail(
             stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
-            c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(),
+            c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(), c.str("join_map"),
         )
         loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
         // a real bar: the engine's own progress band is not drawn under the card
