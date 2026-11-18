@@ -23,22 +23,34 @@ code = '''#include <assert.h>
 typedef int qbool;
 typedef struct { qbool touch, keyboard, mouse; } vid_presence_t;
 static vid_presence_t presence;
+static qbool vid_mouse_confirmed;
 static const vid_presence_t *vid_presence_get(void) { return &presence; }
 void ''' + function('VID_DetectTouchHardware') + '\nstatic int ' + function('vid_dynamic_want') + '''
-static int decide(int touch, int keyboard, int mouse, int mode) {
+static int decide(int touch, int keyboard, int mouse, int used, int mode) {
     qbool has_touch, touch_only;
     presence = (vid_presence_t){touch, keyboard, mouse};
+    vid_mouse_confirmed = used;
     VID_DetectTouchHardware(&has_touch, &touch_only);
     return vid_dynamic_want(has_touch, touch_only, keyboard, mode, 1);
 }
 int main(void) {
-    assert(decide(1, 1, 0, 1));
-    assert(!decide(1, 1, 1, 1));
-    assert(decide(1, 0, 0, 1));
-    assert(!decide(0, 0, 0, 1));
-    assert(!decide(1, 1, 0, 3));
-    assert(decide(1, 0, 0, 3));
-    assert(!decide(0, 0, 0, 3));
+    /* touchscreen, keyboard only: nothing else can aim, so the controls stay */
+    assert(decide(1, 1, 0, 0, 1));
+    /* a listed mouse nobody has used is a tablet's phantom pad, not a pointer */
+    assert(decide(1, 1, 1, 0, 1));
+    /* a mouse that has moved is the desktop */
+    assert(!decide(1, 1, 1, 1, 1));
+    /* a mouse without a keyboard cannot aim and fire together: controls stay */
+    assert(decide(1, 0, 1, 1, 1));
+    /* no hardware to aim with at all */
+    assert(decide(1, 0, 0, 0, 1));
+    assert(!decide(0, 0, 0, 0, 1));
+    /* hot-plug: the same keyboard with the used mouse unplugged */
+    assert(decide(1, 1, 0, 1, 1));
+    /* legacy mode 3 keeps its keyboard-only rule */
+    assert(!decide(1, 1, 0, 0, 3));
+    assert(decide(1, 0, 0, 0, 3));
+    assert(!decide(0, 0, 0, 0, 3));
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
