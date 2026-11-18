@@ -103,6 +103,14 @@ except Exception: print(""); raise SystemExit
 print(" ".join(str(x) for x in (d.get("bad") or [])))
 '
 }
+state_trial() {
+    python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("trial"); raise SystemExit
+print("trial" if d.get("trial") else "committed")
+'
+}
 wait_for() { # $1 = current|pending, $2 = seconds
     local i
     for i in $(seq 1 "$(($2 / 2))"); do
@@ -127,7 +135,16 @@ fi
 STATE="$(adb shell "cat /data/data/$PKG/no_backup/andysu/state.json 2>/dev/null" || true)"
 [ "$(printf '%s' "$STATE" | state_id current)" = "$TARGET" ] || fail "$TARGET is not current; state: $STATE"
 printf '%s' "$STATE" | state_bad | grep -qw "$TARGET" && fail "$TARGET is marked bad"
-echo "== $TARGET is current"
+echo "== $TARGET is current; waiting for the trial to commit"
+for i in $(seq 1 60); do
+    STATE="$(adb shell "cat /data/data/$PKG/no_backup/andysu/state.json 2>/dev/null" || true)"
+    [ "$(printf '%s' "$STATE" | state_trial)" = committed ] && break
+    sleep 1
+done
+[ "$(printf '%s' "$STATE" | state_trial)" = committed ] || fail "$TARGET stayed in trial; a restart would roll it back"
+[ "$(printf '%s' "$STATE" | state_id current)" = "$TARGET" ] || fail "$TARGET left current during trial; state: $STATE"
+printf '%s' "$STATE" | state_bad | grep -qw "$TARGET" && fail "$TARGET was marked bad"
+echo "== $TARGET committed"
 adb logcat -d > "$WORK/logcat.txt"
 if grep -qE 'FATAL EXCEPTION|Process: .*:andysu_phoenix.*ClassNotFoundException|Unable to instantiate application' "$WORK/logcat.txt"; then
     grep -nE 'FATAL EXCEPTION|ClassNotFoundException|Unable to instantiate application|Process: .*andysu_phoenix' "$WORK/logcat.txt" | tail -20 >&2
