@@ -34,3 +34,21 @@ if grep -nE "(^|[^A-Za-z])registerReceiver\\(" "$dir"/*.java | grep -v "RECEIVER
     grep -nE "(^|[^A-Za-z])registerReceiver\\(" "$dir"/*.java | grep -v "RECEIVER_EXPORTED\|RECEIVER_NOT_EXPORTED" >&2
     exit 1
 fi
+
+# SDLActivity.setOrientationBis picks SENSOR_PORTRAIT or SENSOR_LANDSCAPE from the
+# size of a fixed window (hint with all four orientations + w<h = portrait only),
+# and runs again on every window (re)creation. Godnotic follows the device in all
+# four directions at any time, so the request is always FULL_SENSOR.
+a="$dir/SDLActivity.java"
+test -f "$a" || { echo "android-patch-sdl-java: no $a" >&2; exit 1; }
+if ! grep -qF "Godnotic: always follow the device" "$a"; then
+    plain="mSingleton.setRequestedOrientation(req);"
+    fixed="mSingleton.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR); // Godnotic: always follow the device"
+    grep -qF "$plain" "$a" || { echo "android-patch-sdl-java: '$plain' not found in $a" >&2; exit 1; }
+    python3 - "$a" "$plain" "$fixed" <<'PY'
+import sys
+p, a, b = sys.argv[1:]
+s = open(p).read()
+open(p, "w").write(s.replace(a, b))
+PY
+fi

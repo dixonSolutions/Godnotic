@@ -18,6 +18,7 @@ cc -O1 -g -Wall -Wextra -Werror -pthread -Iengine/darkplaces \
 # from the SDL tarball at build time) and on a file that no longer has them.
 mkdir -p "$tmp/sdl"
 cp tests/android-stability/HIDDeviceManager.fixture.java "$tmp/sdl/HIDDeviceManager.java"
+cp tests/android-stability/SDLActivity.fixture.java "$tmp/sdl/SDLActivity.java"
 bash scripts/android-patch-sdl-java.sh "$tmp/sdl"
 bash scripts/android-patch-sdl-java.sh "$tmp/sdl" # idempotent
 test "$(grep -c 'Context.RECEIVER_EXPORTED' "$tmp/sdl/HIDDeviceManager.java")" = 2 \
@@ -29,4 +30,10 @@ printf 'class HIDDeviceManager {}\n' > "$tmp/sdl/HIDDeviceManager.java"
 if bash scripts/android-patch-sdl-java.sh "$tmp/sdl" 2>/dev/null; then
 	echo "FAIL sdl glue: a changed SDL file must stop the build, not pass silently" >&2; exit 1
 fi
-echo "sdl hidapi receivers: all checks passed"
+# Rotation: SDL must never lock the activity to the window's aspect.
+test "$(grep -c 'setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR)' "$tmp/sdl/SDLActivity.java")" = 1 \
+	|| { echo "FAIL sdl glue: setOrientationBis must request FULL_SENSOR" >&2; exit 1; }
+if grep -n 'setRequestedOrientation(req)' "$tmp/sdl/SDLActivity.java" | grep -q .; then
+	echo "FAIL sdl glue: SDL still requests its own orientation" >&2; exit 1
+fi
+echo "sdl glue (hidapi receivers, full-sensor orientation): all checks passed"
