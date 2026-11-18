@@ -156,8 +156,16 @@ final class AndySUBridge {
                             () -> ReplaceGuard.beginReplace(context),
                             () -> {
                                 try {
-                                    if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                                    else AndySUCompat.applyNow();
+                                    if (AndySUCompat.has("restartToApply")) {
+                                        String result = AndySUCompat.restartToApply();
+                                        if (!"restarting".equals(result)) {
+                                            throw new IllegalStateException(AndySUState.applyRefusedMessage());
+                                        }
+                                    } else if (AndySUCompat.has("restartNow")) {
+                                        AndySUCompat.restartNow();
+                                    } else {
+                                        AndySUCompat.applyNow();
+                                    }
                                 } catch (ReflectiveOperationException e) {
                                     throw new IllegalStateException(e);
                                 }
@@ -219,7 +227,8 @@ final class AndySUBridge {
             JSONObject core = coreState();
             String pending = pendingRelease(core, r.installed);
             if (core != null) syncNextStartRequest(pending, auto());
-            String problem = applyProblem(core, pending);
+            String problem = "apply_refused".equals(state) ? AndySUState.applyRefusedMessage()
+                    : applyProblem(core, pending);
             if (requestError.startsWith("Still confirming the current version")) requestError = "";
             r.message = requestError;
             if (!problem.isEmpty()) r.message = problem;
@@ -426,8 +435,16 @@ final class AndySUBridge {
                     () -> ReplaceGuard.beginReplace(context),
                     () -> {
                         try {
-                            if (AndySUCompat.has("restartNow")) AndySUCompat.restartNow();
-                            else AndySUCompat.applyNow();
+                            if (AndySUCompat.has("restartToApply")) {
+                                String result = AndySUCompat.restartToApply();
+                                if (!"restarting".equals(result)) {
+                                    throw new IllegalStateException(AndySUState.applyRefusedMessage());
+                                }
+                            } else if (AndySUCompat.has("restartNow")) {
+                                AndySUCompat.restartNow();
+                            } else {
+                                AndySUCompat.applyNow();
+                            }
                         } catch (ReflectiveOperationException | RuntimeException e) {
                             requestError = "Could not restart to apply the update: "
                                     + AndySUState.oneLine(e.getMessage());
@@ -549,17 +566,39 @@ final class AndySUBridge {
         return id.equals(installed) ? "" : id;
     }
 
-    /** AndySU consumes this id only in the main process, at the next cold launch. */
+    /** Host API 4 queues this; the API 3 fallback is the private file the host reads at launch. */
     private void syncNextStartRequest(String pending, boolean auto) throws IOException {
         File request = new File(hostRoot, "apply_pending");
+        boolean hostQueue = AndySUCompat.has("requestApplyAtNextStart");
         if (!auto || pending.isEmpty()) {
             // Do not remove another request: only remove the one Godnotic wrote.
             String ours = prefs.getString("next_start_request", "");
-            if (!ours.isEmpty() && request.isFile()
+            if (hostQueue) {
+                if (!ours.isEmpty()) {
+                    try {
+                        AndySUCompat.cancelApplyAtNextStart();
+                    } catch (ReflectiveOperationException e) {
+                        throw new IOException("Could not cancel the update request", e);
+                    }
+                }
+            } else if (!ours.isEmpty() && request.isFile()
                     && new String(Files.readAllBytes(request.toPath()), StandardCharsets.UTF_8).trim().equals(ours)) {
                 if (!request.delete()) throw new IOException("Could not clear the update request");
             }
             prefs.edit().remove("next_start_request").apply();
+            return;
+        }
+        if (pending.equals(prefs.getString("next_start_request", ""))) return;
+        if (hostQueue) {
+            try {
+                String result = AndySUCompat.requestApplyAtNextStart();
+                if (!"queued".equals(result) && !"no_pending".equals(result)) {
+                    throw new IOException("Could not request the update at next start: " + result);
+                }
+            } catch (ReflectiveOperationException e) {
+                throw new IOException("Could not request the update at next start", e);
+            }
+            prefs.edit().putString("next_start_request", pending).commit();
             return;
         }
         if (request.isFile() && new String(Files.readAllBytes(request.toPath()), StandardCharsets.UTF_8)
@@ -582,7 +621,7 @@ final class AndySUBridge {
 
     /** Refuse a restart that cannot promote the core's actual pending slot. */
     private boolean prepareRestart() {
-        if (!AndySUCompat.has("restartNow")) {
+        if (!AndySUCompat.has("restartToApply") && !AndySUCompat.has("restartNow")) {
             requestError = "This AndySU host cannot restart to apply the update.";
             return false;
         }

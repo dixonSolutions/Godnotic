@@ -84,6 +84,27 @@ final class AndySUCompat {
         updateApi().getMethod("restartNow").invoke(client);
     }
 
+    /** Host API 4: queue the staged release for the next cold start. */
+    static String requestApplyAtNextStart() throws ReflectiveOperationException {
+        Object client = updateClient();
+        if (client == null) throw new IllegalStateException("AndySU host is unavailable");
+        return updateApi().getMethod("requestApplyAtNextStart").invoke(client).toString();
+    }
+
+    /** Host API 4: withdraw a request made by this app. */
+    static void cancelApplyAtNextStart() throws ReflectiveOperationException {
+        Object client = updateClient();
+        if (client == null) throw new IllegalStateException("AndySU host is unavailable");
+        updateApi().getMethod("cancelApplyAtNextStart").invoke(client);
+    }
+
+    /** Host API 4: queue and relaunch; returns restarting, trial_in_progress or apply_refused. */
+    static String restartToApply() throws ReflectiveOperationException {
+        Object client = updateClient();
+        if (client == null) throw new IllegalStateException("AndySU host is unavailable");
+        return updateApi().getMethod("restartToApply").invoke(client).toString();
+    }
+
     /** The host's API level (1, 2, 3...), 0 without a host. */
     static int apiLevel() {
         Object h = host();

@@ -45,9 +45,14 @@ final class AndySUState {
     static String applyProblem(boolean stateKnown, boolean trial, String pending, String attempted) {
         if (!stateKnown) return "Could not read the AndySU update state.";
         if (pending == null || pending.isEmpty()) return "";
-        if (trial) return "Still confirming the current version; try again after the game starts.";
+        if (trial) return applyRefusedMessage();
         if (pending.equals(attempted)) return "AndySU did not apply the update; try Apply now again.";
         return "";
+    }
+
+    /** Host API 4 refused to restart because the running release is still a trial. */
+    static String applyRefusedMessage() {
+        return "Still confirming the current version; try again after the game starts.";
     }
 
     /** Unknown policy is held; null means the host has no policy API. */
@@ -104,7 +109,7 @@ final class AndySUState {
     static boolean endsCheck(String state) {
         switch (state) {
             case "uptodate": case "available": case "staged": case "shell-update":
-            case "deferred": case "error":
+            case "deferred": case "error": case "apply_refused":
                 return true;
             default:
                 return false;
