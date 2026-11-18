@@ -38,6 +38,26 @@ int main(void)
 	CHECK_INT(7, TouchJoinPreview_SceneModel(7, 0), "also with no cached world");
 	CHECK_INT(0, TouchJoinPreview_SceneModel(0, 3), "a missing current world stays missing");
 
+	/* The 0x233 SIGSEGV: a loading-screen redraw inside R_Modules_NewMap
+	 * (R_SetSkyBox -> image load -> CL_KeepaliveMonitor) drew a preview frame
+	 * through the half-reset renderer. */
+	CHECK_INT(1, TouchJoinPreview_Allowed(1, 0), "a drawable world, no newmap running: allowed");
+	CHECK_INT(0, TouchJoinPreview_Allowed(1, 1), "inside R_Modules_NewMap: no preview frame (the 0x233 crash)");
+	CHECK_INT(0, TouchJoinPreview_Allowed(1, 2), "nested newmap: no preview frame");
+	CHECK_INT(0, TouchJoinPreview_Allowed(0, 0), "not drawable stays not allowed");
+	{
+		int depth = 0;
+		depth = TouchJoinPreview_NewMapDepth(depth, 1);
+		CHECK_INT(0, TouchJoinPreview_Allowed(1, depth), "newmap begun: blocked");
+		depth = TouchJoinPreview_NewMapDepth(depth, 1);
+		depth = TouchJoinPreview_NewMapDepth(depth, 0);
+		CHECK_INT(0, TouchJoinPreview_Allowed(1, depth), "inner newmap ended, outer still running: blocked");
+		depth = TouchJoinPreview_NewMapDepth(depth, 0);
+		CHECK_INT(1, TouchJoinPreview_Allowed(1, depth), "both ended: allowed again");
+		depth = TouchJoinPreview_NewMapDepth(depth, 0);
+		CHECK_INT(0, depth, "an unmatched end never goes below zero");
+	}
+
 	if (failures)
 	{
 		printf("%d check(s) failed\n", failures);

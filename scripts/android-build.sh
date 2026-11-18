@@ -79,6 +79,8 @@ test -d "$SDL_JAVA_SRC" || { echo "Missing SDL Java sources at $SDL_JAVA_SRC" >&
 rm -rf "$SDL_JAVA_DST"
 mkdir -p "$SDL_JAVA_DST"
 cp -f "$SDL_JAVA_SRC"/*.java "$SDL_JAVA_DST/"
+# hidapi's receivers need an export flag on Android 14+ (see the script).
+bash "$ROOT/scripts/android-patch-sdl-java.sh" "$SDL_JAVA_DST"
 
 ##### Shared libraries the APK carries ########################################
 

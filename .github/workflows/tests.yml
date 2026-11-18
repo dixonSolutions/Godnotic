@@ -164,6 +164,14 @@ jobs:
       - name: Pick file and drop-a-zip handshake
         run: bash scripts/test-web-mods.sh
 
+  android-stability:
+    name: Android crash and exit signatures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Join preview in a newmap, exit without destructors, SIGPIPE, SDL hidapi receivers
+        run: bash scripts/test-android-stability.sh
+
   old-name:
     name: The project's earlier name stays out
     runs-on: ubuntu-latest
