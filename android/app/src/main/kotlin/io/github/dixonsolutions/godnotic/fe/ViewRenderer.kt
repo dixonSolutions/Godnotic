@@ -222,7 +222,7 @@ class ViewRenderer(
     private fun build(id: String, type: String, props: Map<String, Any?>): Entry = when (type) {
         "screen" -> screen(id, props)
         "section" -> section(id, props)
-        "toolbar" -> group(id, type, props, Kit.row(ctx, 10f).apply { setPadding(0, dp(4f), 0, dp(4f)) })
+        "toolbar" -> group(id, type, props, AdaptiveBar(ctx, dp(10f), dp(360f)).apply { setPadding(0, dp(4f), 0, dp(4f)) })
         "actionbar" -> group(id, type, props, Kit.row(ctx, 12f).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL })
         "row" -> if (props.bool("wrap")) group(id, type, props, FlowGrid(ctx, 0, dp(10f), wrap = true)) else labelledRow(id, props, Kit.row(ctx, 12f).apply {
             gravity = when (props.str("align")) { "center" -> Gravity.CENTER; "end" -> Gravity.END or Gravity.CENTER_VERTICAL; else -> Gravity.START or Gravity.CENTER_VERTICAL }
@@ -253,8 +253,10 @@ class ViewRenderer(
     private fun layoutFor(g: ViewGroup, child: Entry, fill: Boolean): ViewGroup.LayoutParams {
         if (fill && g is LinearLayout) return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         if (child.type == "divider") return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, max(1, dp(1f)))
+        if (g is AdaptiveBar) return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        // a field in a bar takes what the buttons beside it leave (it used to be 380 dp wide, which squeezed Join to a sliver)
         if (g is LinearLayout && g.orientation == LinearLayout.HORIZONTAL && child.type == "field")
-            return LinearLayout.LayoutParams(dp(380f), ViewGroup.LayoutParams.WRAP_CONTENT)
+            return LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         if (g is LinearLayout && g.orientation == LinearLayout.HORIZONTAL) {
             val grow = child.type == "card" || child.type == "hero" || child.type == "row" || child.type == "tab" || child.props.str("width") == "fill"
             return LinearLayout.LayoutParams(if (grow) 0 else ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, if (grow) 1f else 0f)
@@ -299,8 +301,8 @@ class ViewRenderer(
         val pad = dp(24f)
         // the header: back, title, the screen's actions; sticky (outside the scroller)
         val bar = Kit.row(ctx, 12f)
-        bar.setPadding(pad, dp(10f), pad, dp(6f))
-        bar.minimumHeight = dp(64f)
+        bar.setPadding(pad, dp(14f), pad, dp(10f))
+        bar.minimumHeight = dp(76f)
         val back = Kit.button(ctx, "‹") { events.back() }
         back.textSize = Theme.SP_HEADLINE
         back.minimumWidth = dp(56f)
@@ -309,6 +311,7 @@ class ViewRenderer(
         titleV.typeface = Theme.display
         val sub = Kit.text(ctx, "", Theme.SP_CAPTION, Theme.TEXT_MUTED, lines = 1)
         val titles = Kit.column(ctx)
+        titles.gravity = Gravity.CENTER_VERTICAL
         titles.addView(titleV)
         titles.addView(sub)
         val trailing = Kit.row(ctx, 8f)
@@ -320,7 +323,7 @@ class ViewRenderer(
         top.setPadding(pad, 0, pad, dp(8f))
         top.visibility = View.GONE
         root.addView(top)
-        val body = Kit.column(ctx, 18f)
+        val body = FitBody(ctx, dp(18f))
         body.setPadding(pad, dp(8f), pad, dp(28f))
         val stickyHost = FrameLayout(ctx)
         val sv = PageScroll(ctx)
@@ -374,7 +377,10 @@ class ViewRenderer(
             if (modal) { bar.setPadding(dp(8f), 0, dp(8f), dp(4f)); body.setPadding(dp(8f), dp(4f), dp(8f), dp(8f)); bottom.setPadding(dp(8f), dp(8f), dp(8f), dp(4f)) }
             // the pause menu sits on a scrim over the frozen game frame: the player sees the match
             root.setBackgroundColor(if (p.str("kind") == "game") 0xB3000000.toInt() else if (modal) Color.TRANSPARENT else Theme.BG)
-            bar.visibility = if (p["header"].obj().bool("hidden")) View.GONE else View.VISIBLE
+            // Home has no header (the banner is its title): the space goes to the banner and cards
+            bar.visibility = if (p["header"].obj().bool("hidden") || (kindHome && p["actions"].list().isEmpty())) View.GONE else View.VISIBLE
+            body.fit = kindHome && !modal
+            body.requestLayout()
             titleV.visibility = if (kindHome) View.INVISIBLE else View.VISIBLE // Home shows the banner instead
             back.visibility = if (host.canBack() && !kindHome && !modal) View.VISIBLE else View.GONE
             if (p["header"].obj().bool("compact")) titleV.textSize = Theme.SP_TITLE
@@ -680,7 +686,6 @@ class ViewRenderer(
         if (hero) return heroCard(id, props)
         val c = Kit.card(ctx, clickable = true, radiusDp = 16f)
         // photo cards: the picture on top; section cards: an icon slot beside the text
-        val col = Kit.column(ctx)
         val img = RoundImage(ctx, 0f)
         val bar = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(Theme.EMBER); visibility = View.GONE
@@ -708,6 +713,7 @@ class ViewRenderer(
         val chevron = View(ctx)
         chevron.background = Icons.drawable("chevron", dp(24f), Theme.TEXT_DIM)
         row.addView(chevron, LinearLayout.LayoutParams(dp(24f), dp(24f)))
+        val col = CardColumn(ctx, img, bar, row)
         col.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         col.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4f)))
         col.addView(row)
@@ -1889,6 +1895,9 @@ class CarouselRow(ctx: Context, private val item: Int, private val gap: Int) : V
 class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, private val wrap: Boolean = false) : ViewGroup(ctx) {
     /** Every child in one row (Home's cards), however narrow. */
     var singleRow = false
+    /** Home, fitted: the cells share the exact height given (see FitBody); [stack]: one column. */
+    var fill = false
+    var stack = false
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val width = MeasureSpec.getSize(wSpec)
         if (wrap) {
@@ -1905,8 +1914,19 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             return
         }
         val visible = (0 until childCount).count { getChildAt(it).visibility != GONE }
-        val cols = if (singleRow) max(1, visible) else max(1, (width + gap) / (max(1, minChild) + gap))
+        val exactH = fill && MeasureSpec.getMode(hSpec) == MeasureSpec.EXACTLY
+        val cols = if (exactH && stack) 1 else if (singleRow) max(1, visible) else max(1, (width + gap) / (max(1, minChild) + gap))
         val cw = (width - gap * (cols - 1)) / cols
+        if (exactH) {
+            val rows = max(1, (visible + cols - 1) / cols)
+            val ch = max(0, (MeasureSpec.getSize(hSpec) - gap * (rows - 1)) / rows)
+            for (i in 0 until childCount) {
+                val c = getChildAt(i)
+                if (c.visibility != GONE) c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
+            }
+            setMeasuredDimension(width, MeasureSpec.getSize(hSpec))
+            return
+        }
         var y = 0; var rowH = 0; var col = 0
         for (i in 0 until childCount) {
             val c = getChildAt(i)
@@ -1935,7 +1955,7 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             return
         }
         val visible = (0 until childCount).map { getChildAt(it) }.filter { it.visibility != GONE }
-        val cols = if (singleRow) max(1, visible.size) else max(1, (width + gap) / (max(1, minChild) + gap))
+        val cols = if (fill && stack) 1 else if (singleRow) max(1, visible.size) else max(1, (width + gap) / (max(1, minChild) + gap))
         val cw = (width - gap * (cols - 1)) / cols
         var y = 0
         var i = 0
