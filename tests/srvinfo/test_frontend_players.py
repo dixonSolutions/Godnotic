@@ -29,7 +29,8 @@ def respond():
                 b"\\sv_maxclients\\16\\clients\\2\\bots\\0\\mapname\\stormkeep"
                 b"\\hostname\\Player test\\protocol\\3\\qcstatus\\dm\\challenge\\" + challenge)
         sock.sendto(b'\xff\xff\xff\xffstatusResponse\n' + info +
-                    b'\n12 40 "Alpha"\n-3 60 "Beta"\n', addr)
+                    b'\n12 40 2 "Alpha"\n-3 60 1 "Beta"\n20 30 2 "Gamma"\n'
+                    b'5 80 "Charlie"\nnot a player\n', addr)
 
 
 thread = threading.Thread(target=respond, daemon=True)
@@ -59,8 +60,11 @@ try:
         rows = [row for snapshot in snapshots for row in snapshot["rows"]
                 if row["a"] == "127.0.0.1:%d" % port]
         assert rows, "fake server missing from FE servers output"
-        assert rows[-1]["player_status"] == '12 40 "Alpha"\n-3 60 "Beta"\n', rows[-1]
-        print("ok   native server row preserves scores, ping, names and newlines from getstatus")
+        assert rows[-1]["player_status"] == ('12 40 2 "Alpha"\n-3 60 1 "Beta"\n'
+                                             '20 30 2 "Gamma"\n5 80 "Charlie"\nnot a player\n'), rows[-1]
+        assert rows[-1]["player_details"] == ('Red  -3  Beta\nBlue  20  Gamma\n'
+                                              'Blue  12  Alpha\n5  Charlie\n'), rows[-1]
+        print("ok   server details sort team scores, retain partial score rows and skip malformed lines")
 finally:
     stop.set()
     thread.join()

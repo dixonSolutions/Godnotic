@@ -1442,6 +1442,11 @@ class ViewRenderer(
             line.addView(Kit.text(ctx, value, Theme.SP_BODY, Theme.TEXT, bold = true))
             content.addView(line)
         }
+        val playerDetails = cells.str("player_details").trim()
+        if (playerDetails.isNotEmpty()) {
+            content.addView(Kit.text(ctx, "Players · score · team", Theme.SP_CAPTION, Theme.TEXT_MUTED, bold = true))
+            content.addView(Kit.text(ctx, playerDetails, Theme.SP_BODY, Theme.TEXT, bold = true))
+        }
         val actions = Kit.row(ctx, 10f)
         actions.addView(Kit.button(ctx, "Join") {
             host.showDialog(null)

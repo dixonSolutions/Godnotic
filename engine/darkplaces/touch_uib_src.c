@@ -250,10 +250,121 @@ static unsigned server_sig(void)
 		h = (h ^ (unsigned)serverlist_cache[i].responded) * 16777619u;
 		for (const char *p = in->map; *p; p++)
 			h = (h ^ (unsigned char)*p) * 16777619u;
+		for (const char *p = in->players; *p; p++)
+			h = (h ^ (unsigned char)*p) * 16777619u;
 	}
 	return h ? h : 1;
 }
+#endif
 
+typedef struct
+{
+	int score, team;
+	qbool has_score, has_team;
+	char name[128];
+} server_player_t;
+
+static int server_player_cmp(const void *av, const void *bv)
+{
+	const server_player_t *a = (const server_player_t *)av;
+	const server_player_t *b = (const server_player_t *)bv;
+	if (a->has_team != b->has_team)
+		return a->has_team ? -1 : 1;
+	if (a->has_team && a->team != b->team)
+		return a->team - b->team;
+	if (a->has_score != b->has_score)
+		return a->has_score ? -1 : 1;
+	if (a->score != b->score)
+		return b->score - a->score;
+	return strcasecmp(a->name, b->name);
+}
+
+static qbool server_int_token(const char *s, int *value)
+{
+	char *end;
+	long n;
+	if (!s || !*s)
+		return false;
+	n = strtol(s, &end, 10);
+	if (*end || n < -999999 || n > 999999)
+		return false;
+	*value = (int)n;
+	return true;
+}
+
+// Status lines are score ping [team] "name". Servers that cannot provide the
+// optional team field still get a score-sorted list; malformed or absent lines
+// are skipped instead of turning into empty player rows.
+size_t TouchSrvInfo_PlayerDetails(const char *status, char *out, size_t outsize)
+{
+	server_player_t players[128];
+	int count = 0;
+	const char *line;
+	if (!out || !outsize)
+		return 0;
+	line = status ? status : "";
+	out[0] = 0;
+	while (*line && count < (int)(sizeof(players) / sizeof(players[0])))
+	{
+		const char *end = strchr(line, '\n');
+		const char *quote = strchr(line, '"');
+		const char *close = quote ? strchr(quote + 1, '"') : NULL;
+		char tokens[3][32] = {{0}};
+		int token_count = 0, score = 0, team = 0;
+		const char *p = line;
+		if (!end) end = line + strlen(line);
+		if (quote && close && quote < end && close < end)
+		{
+			while (p < quote && token_count < 3)
+			{
+				while (p < quote && isspace((unsigned char)*p)) p++;
+				if (p >= quote) break;
+				const char *start = p;
+				while (p < quote && !isspace((unsigned char)*p)) p++;
+				size_t n = min((size_t)(p - start), sizeof(tokens[0]) - 1);
+				memcpy(tokens[token_count], start, n);
+				tokens[token_count++][n] = 0;
+			}
+			if (token_count >= 2)
+			{
+				server_player_t *pl = &players[count];
+				memset(pl, 0, sizeof(*pl));
+				pl->has_score = server_int_token(tokens[0], &score);
+				pl->score = score;
+				if (token_count >= 3 && server_int_token(tokens[2], &team) && team >= 0 && team <= 4)
+				{
+					pl->has_team = true;
+					pl->team = team;
+				}
+				dp_strlcpy(pl->name, quote + 1, sizeof(pl->name));
+				char *name_end = strchr(pl->name, '"');
+				if (name_end) *name_end = 0;
+				if (pl->name[0]) count++;
+			}
+		}
+		line = *end ? end + 1 : end;
+	}
+	qsort(players, count, sizeof(players[0]), server_player_cmp);
+	for (int i = 0; i < count && strlen(out) + 8 < outsize; i++)
+	{
+		const char *team = players[i].team == 1 ? "Red" : players[i].team == 2 ? "Blue" :
+			players[i].team == 3 ? "Yellow" : players[i].team == 4 ? "Pink" : "Spectators";
+		char row[192];
+		if (players[i].has_team && players[i].has_score)
+			dpsnprintf(row, sizeof(row), "%s  %d  %s\n", team, players[i].score, players[i].name);
+		else if (players[i].has_team)
+			dpsnprintf(row, sizeof(row), "%s  —  %s\n", team, players[i].name);
+		else if (players[i].has_score)
+			dpsnprintf(row, sizeof(row), "%d  %s\n", players[i].score, players[i].name);
+		else
+			dpsnprintf(row, sizeof(row), "—  %s\n", players[i].name);
+		if (strlen(out) + strlen(row) >= outsize) break;
+		dp_strlcat(out, row, outsize);
+	}
+	return strlen(out);
+}
+
+#ifdef CONFIG_MENU
 static void build_servers(source_t *s)
 {
 	freerows(s);
@@ -294,6 +405,8 @@ static void build_servers(source_t *s)
 		cell_n(r, "max", in->maxplayers);
 		cell_n(r, "bots", in->numbots);
 		cell_n(r, "ping", in->ping);
+		char player_details[2800];
+		cell_s(r, "player_details", player_details, TouchSrvInfo_PlayerDetails(in->players, player_details, sizeof(player_details)));
 		cell_b(r, "lock", strstr(in->qcstatus, TOUCHLAN_QCSTATUS_LOCK) != NULL);
 		cell_b(r, "fav", in->isfavorite);
 		cell_s(r, "address", in->cname, in->cname_len);

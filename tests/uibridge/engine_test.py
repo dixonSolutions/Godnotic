@@ -190,6 +190,8 @@ def modes_and_match():
               any(a.get("label") == "Players" and a.get("value", "").endswith(" / 16") for a in attrs) and
               any(a.get("label") == "Address" and a.get("value") == address for a in attrs),
               f"the selected server preview includes game type, player count and address ({attrs!r})")
+        check(not any(a.get("label") == "Scores and teams" for a in attrs),
+              "the selected server preview omits scores and teams when status data is missing")
         for chip in ("empty", "full", "laggy"):
             c.send({"t": "ev", "ev": "value", "node": "mp/bar/filters/" + chip, "value": False})
             c.settle()

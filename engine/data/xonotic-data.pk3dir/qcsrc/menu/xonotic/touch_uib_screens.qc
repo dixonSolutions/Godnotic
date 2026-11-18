@@ -1047,6 +1047,7 @@ void UIB_BuildServers()
 		string map = uib_wcell(0, "map");
 		string mode = uib_wcell(0, "mode");
 		string players = uib_wcell(0, "players");
+		string playerDetails = uib_wcell(0, "player_details");
 		string maxplayers = uib_wcell(0, "max");
 		string ping = uib_wcell(0, "ping");
 		UIB_Open("details", "preview");
@@ -1060,6 +1061,7 @@ void UIB_BuildServers()
 			if (mode != "") uib_push("attrs", UIB_Attr(_("Game type"), UIB_ModeName(mode), "mode"));
 			if (map != "") uib_push("attrs", UIB_Attr(_("Map"), map, "map"));
 			if (players != "") uib_push("attrs", UIB_Attr(_("Players"), (maxplayers != "" ? sprintf("%s / %s", players, maxplayers) : players), "players"));
+			if (playerDetails != "") uib_push("attrs", UIB_Attr(_("Scores and teams"), playerDetails, "players"));
 			if (ping != "" && stof(ping) > 0) uib_push("attrs", UIB_Attr(_("Ping"), sprintf(_("%s ms"), ping), "ping"));
 			uib_push("attrs", UIB_Attr(_("Address"), sel, "server"));
 			uib_j("primary", UIB_AS("server.join", _("Join"), "play", "primary"));
