@@ -86,23 +86,48 @@ adb shell "rm -rf /data/data/$PKG/no_backup/andysu; mkdir -p /data/data/$PKG/no_
 APPUID="$(adb shell stat -c %u "/data/data/$PKG" | tr -d '\r')"
 adb shell "chown -R $APPUID:$APPUID /data/data/$PKG/no_backup/andysu"
 
+state_id() { # $1 = current or pending
+    python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print(""); raise SystemExit
+x=d.get(sys.argv[1]) or {}
+print(x.get("id") or "")
+' "$1"
+}
+state_bad() {
+    python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print(""); raise SystemExit
+print(" ".join(str(x) for x in (d.get("bad") or [])))
+'
+}
+wait_for() { # $1 = current|pending, $2 = seconds
+    local i
+    for i in $(seq 1 "$(($2 / 2))"); do
+        STATE="$(adb shell "cat /data/data/$PKG/no_backup/andysu/state.json 2>/dev/null" || true)"
+        [ "$(printf '%s' "$STATE" | state_id "$1")" = "$TARGET" ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
 adb logcat -c
 adb shell am start -n "$PKG/.GodnoticBootActivity" >/dev/null
 echo "== waiting for $TARGET"
-for i in $(seq 1 90); do
+if ! wait_for current 120; then
     STATE="$(adb shell "cat /data/data/$PKG/no_backup/andysu/state.json 2>/dev/null" || true)"
-    if printf '%s' "$STATE" | grep -q "\"id\": \"$TARGET\""; then
-        echo "== $TARGET is current after $((i * 2))s"
-        break
-    fi
-    if printf '%s' "$STATE" | grep -q '"bad"'; then
-        printf '%s' "$STATE" | grep -A4 '"bad"' | grep -q "$TARGET" && fail "$TARGET rolled back"
-    fi
-    sleep 2
-done
+    echo "== staged but not promoted; requesting the next start"
+    [ "$(printf '%s' "$STATE" | state_id pending)" = "$TARGET" ] || fail "$TARGET was neither current nor pending; state: $STATE"
+    adb shell am force-stop "$PKG" >/dev/null
+    adb shell am start -n "$PKG/.GodnoticBootActivity" >/dev/null
+    wait_for current 120 || fail "$TARGET did not become current after the next start"
+fi
 STATE="$(adb shell "cat /data/data/$PKG/no_backup/andysu/state.json 2>/dev/null" || true)"
-printf '%s' "$STATE" | grep -q "\"id\": \"$TARGET\"" || fail "$TARGET did not become current; state: $STATE"
-printf '%s' "$STATE" | grep -q "\"bad\": \[[^]]*\"$TARGET\"" && fail "$TARGET is marked bad"
+[ "$(printf '%s' "$STATE" | state_id current)" = "$TARGET" ] || fail "$TARGET is not current; state: $STATE"
+printf '%s' "$STATE" | state_bad | grep -qw "$TARGET" && fail "$TARGET is marked bad"
+echo "== $TARGET is current"
 adb logcat -d > "$WORK/logcat.txt"
 if grep -qE 'FATAL EXCEPTION|Process: .*:andysu_phoenix.*ClassNotFoundException|Unable to instantiate application' "$WORK/logcat.txt"; then
     grep -nE 'FATAL EXCEPTION|ClassNotFoundException|Unable to instantiate application|Process: .*andysu_phoenix' "$WORK/logcat.txt" | tail -20 >&2
