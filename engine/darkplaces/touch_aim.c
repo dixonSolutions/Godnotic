@@ -109,28 +109,27 @@ cvar_t cl_touch_practice_seethrough = {CF_CLIENT | CF_ARCHIVE, "cl_touch_practic
 cvar_t cl_touch_practice_360 = {CF_CLIENT | CF_ARCHIVE, "cl_touch_practice_360", "1",
 	"Offline practice (as above): with Targets set to Full 360 (cl_touch_aim_mode 2), enemies all around may be the target, with a marker at the screen edge. Anywhere else Full 360 works as Field of view"};
 cvar_t cl_touch_practice_instant = {CF_CLIENT | CF_ARCHIVE, "cl_touch_practice_instant", "0",
-	"Offline practice (as above): the aim pull moves onto the target at once instead of at cl_touch_aimassist_maxrate. Never anywhere else"};
+	"Legacy setting; aim assist now snaps immediately in all modes, regardless of this value"};
 cvar_t cl_touch_practice_burst = {CF_CLIENT | CF_ARCHIVE, "cl_touch_practice_burst", "0",
 	"Offline practice (as above): a splash shot at an enemy behind cover aims where its simulated flight bursts next to the enemy (over the cover, round it, on the floor by it), "
 	"and fires only while the shot from the view as it is now would burst there (0, the default: the straight line to the enemy must end near it). Never anywhere else"};
 cvar_t cl_touch_aimassist_lastseen = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_lastseen", "1",
-	"Aim pull, during a fight: when the enemy goes out of sight, keep the crosshair where it was last seen, moving on its last seen course for a second, for up to 3 seconds, while that point is in clear view -- never where it really is behind cover, and never on a wall it went behind"};
+	"Aim assist, during a fight: while the enemy is alive and present, when it goes out of sight, keep the crosshair where it was last seen, moving on its last seen course for a second, for up to 3 seconds, while that point is in clear view -- never where it really is behind cover, and never on a wall it went behind"};
 cvar_t cl_touch_autoshoot_combo = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_combo", "1",
 	"Auto-shoot uses two-step fire sequences that do more damage: Electro orbs lobbed at an enemy standing or coming at you, then the bolt that sets them off (with cl_touch_autoshoot_alt)"};
 cvar_t cl_touch_autoshoot_teamsafe = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_teamsafe", "1",
 	"Team games: auto-shoot holds fire while a teammate is on the line of the shot or would be inside its blast, and a rocket is not set off next to one"};
 cvar_t cl_touch_aimassist = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist", "1",
-	"Touch controls: aim helpers -- the look drag slows down over an enemy (cl_touch_aimassist_friction) and the view is pulled gently toward one while a finger is on the aim control (cl_touch_aimassist_strength). "
-	"Only in touch mode; never active with a keyboard attached"};
+	"Touch controls: aim helpers -- the look drag slows down over an enemy (cl_touch_aimassist_friction) and the view snaps to the selected living enemy while aiming when snapping is enabled (cl_touch_aimassist_strength). "
+	"Also available with mouse and keyboard when the helpers are enabled"};
 cvar_t cl_touch_aimassist_friction = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_friction", "0.45",
 	"Aim slowdown: fraction of look speed removed while the crosshair is on an enemy, fading out to the edge of cl_touch_aimassist_cone (0 = off, at most 0.8)"};
 cvar_t cl_touch_aimassist_strength = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_strength", "0.6",
-	"Aim pull toward the nearest visible enemy inside the cone (where a projectile will meet it) while a finger is on the aim control, while auto-shoot fires at it and while a Devastator rocket flies: "
-	"follows strength x 2 of its motion across the view and closes the gap at strength x 10 per second, or strength x your own turn speed, whichever is faster (0 = off, at most 1)"};
+	"Aim snap: 0 disables snapping; any positive value snaps immediately to the selected aim point while assist is active"};
 cvar_t cl_touch_aimassist_track = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_track", "1",
 	"Aim pull: follow a fight with the thumb at rest -- keep pulling toward the enemy auto-shoot fired at for a moment after each shot, and let a projectile's lead slide rather than jump when the enemy reverses (0 = pull only while a finger is on the aim control and aiming)"};
 cvar_t cl_touch_aimassist_maxrate = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_maxrate", "90",
-	"Aim pull: hard cap on the pull, degrees per second (at most 180); it never snaps"};
+	"Legacy setting; aim assist snaps immediately regardless of this value"};
 cvar_t cl_touch_aimassist_cone = {CF_CLIENT | CF_ARCHIVE, "cl_touch_aimassist_cone", "8",
 	"Aim helpers: half-angle in degrees around the crosshair within which an enemy counts as near (1 - 60: up to the whole view)"};
 cvar_t cl_touch_autoshoot_weapons = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_weapons", "0",
