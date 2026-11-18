@@ -171,6 +171,10 @@ try:
     stats, sums, rows, log = run_engine(os.path.join(a.work, "user-retry"), True, "0-retry", quit_at=7, early_open=True)
     r = report()
     check(r["master_queries"] >= 2, "retry: silent master is asked again", str(r["master_queries"]))
+    answered = [s for s in stats if int(s.get("answers", 0)) > 0]
+    check(bool(answered) and 0 < f(answered[-1], "first_row") < 0.8,
+          "retry: first rows arrive quickly after a lost master request",
+          answered[-1]["line"] if answered else "no answered refresh")
     check(int(sums.get("end", {}).get("servers", 0)) == alive,
           "retry: servers appear without another refresh", str(sums.get("end")))
 
