@@ -645,6 +645,8 @@ static void publish_servers(qbool force)
 		jb_kint(&b, "x", in->maxplayers);
 		jb_kint(&b, "pr", in->protocol);
 		jb_kstr(&b, "q", in->qcstatus);
+		// The getstatus player block is empty when the server only sent getinfo.
+		jb_kstr(&b, "player_status", in->players);
 		jb_kbool(&b, "l", strstr(va(clean, sizeof(clean), "%s:", in->qcstatus), ":L1:") != NULL);
 		jb_kbool(&b, "f", in->isfavorite);
 		jb_kbool(&b, "lan", private_address(in->cname));
