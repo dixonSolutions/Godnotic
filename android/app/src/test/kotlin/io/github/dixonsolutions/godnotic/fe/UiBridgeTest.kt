@@ -222,6 +222,39 @@ class UiBridgeTest {
         assertFalse(JoinFlow.transparent("loading"))
     }
 
+    /**
+     * The owner's "too many flashing logos": the join card is built once and
+     * kept for the whole join (every rebuild painted the black page and the
+     * banner again), and the banner is up only until the preview.
+     */
+    @Test fun joinLogoAppearsOnceAndOnlyUntilThePreview() {
+        // built once, once it has settled...
+        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true, hasCard = false))
+        // ...then kept through the stages that follow, settled or not
+        for (stage in listOf("downloading", "loading", "signon", "preview")) {
+            assertTrue(JoinFlow.card(stage, joinDialog = false, settled = false, hasCard = true))
+        }
+        // the join is over, or the dialog is the join screen: the card goes
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true, hasCard = true))
+        assertFalse(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
+
+        // the logo is for the wait before the preview, once
+        assertTrue(JoinFlow.banner("connecting", previewSeen = false))
+        assertTrue(JoinFlow.banner("signon", previewSeen = false))
+        assertFalse(JoinFlow.banner("preview", previewSeen = false))
+        assertFalse(JoinFlow.banner("signon", previewSeen = true))
+        assertFalse(JoinFlow.banner("loading", previewSeen = true))
+
+        // and the preview, once seen, stays the background
+        assertTrue(JoinFlow.preview("preview", previewSeen = false))
+        assertTrue(JoinFlow.preview("signon", previewSeen = true))
+        assertFalse(JoinFlow.preview("signon", previewSeen = false))
+        assertTrue(JoinFlow.transparent("preview", previewSeen = false))
+        assertTrue(JoinFlow.transparent("signon", previewSeen = true))
+        assertFalse(JoinFlow.transparent("signon", previewSeen = false))
+    }
+
     @Test fun joinLinks() {
         assertEquals("192.168.1.5:26001", FrontendHost.parseJoin("godnotic://join/192.168.1.5:26001"))
         assertEquals("host.example:26000", FrontendHost.parseJoin("host.example"))

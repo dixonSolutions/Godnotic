@@ -236,7 +236,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
         showReconnect(a.str("reconnect"))
-        if (state != "loading" && state != "connecting" && loadingStrip != null) onConnect(mapOf("stage" to "idle"))
+        // No synthesized `idle` here: the engine publishes the connect stage
+        // itself, and a card torn down by this guess was rebuilt by the next
+        // stage 300 ms later, logo and all (the flashing screens during a join).
         onJoinFail(a)
         val note = a.str("reconnect_note")
         if (note != lastReconnectNote) { lastReconnectNote = note; if (note.isNotEmpty() && note.startsWith("Disconnected")) toast(note, "warning") }
@@ -292,6 +294,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var loadingBanner: View? = null
     private var loadingCardView: View? = null
     private var previewStrip = false
+    /** The preview (or the levelshot before it) showed on this join: the logo stays away. */
+    private var previewSeen = false
     private var joinStage = ""
     private var joinStageAt = 0L
 
@@ -320,12 +324,16 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // preview: the engine draws the join's world (touch_joinpreview.c); the
         // page below becomes a strip at the bottom instead of a full screen
         val busy = JoinFlow.isBusy(stage) && !failed
+        // The preview is for the rest of this join: a stage that reports back as
+        // a load does not put the logo (or the black page) back over the world.
+        previewSeen = JoinFlow.preview(stage, previewSeen)
         // The join dialog is the one join screen; the card goes when it opens.
         val joinDialog = client?.modal?.lastOrNull() == "join"
-        if (!busy || joinDialog || !JoinFlow.settled(joinStageAt, now)) {
+        if (!JoinFlow.card(stage, joinDialog, JoinFlow.settled(joinStageAt, now), loadingStrip != null)) {
             loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
             loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
             loadingBanner = null; loadingCardView = null; previewStrip = false
+            previewSeen = false
             return
         }
         // A join starts from a native screen. That screen was left visible by
@@ -373,8 +381,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadingCardView = card
         }
         // the world is on screen now: the page becomes a strip at the bottom that
-        // lets it show, and comes back opaque if the preview stops
-        previewStyle(JoinFlow.transparent(stage))
+        // lets it show. Once it is, it stays: no stage after the preview may put
+        // the black page and the logo back over the live world.
+        previewStyle(JoinFlow.transparent(stage, previewSeen))
         val pct = when (stage) {
             "downloading" -> c.num("download_progress")
             "loading", "preview" -> c.num("load_progress")
@@ -416,7 +425,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val screen = loadingStrip ?: return
         if (previewStrip == on) return
         previewStrip = on
-        loadingBanner?.visibility = if (on) View.GONE else View.VISIBLE
+        // the logo only while there is nothing to look at (JoinFlow.banner)
+        loadingBanner?.visibility = if (previewSeen) View.GONE else View.VISIBLE
         screen.setBackgroundColor(if (on) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK)
         screen.isClickable = !on
         screen.gravity = if (on) Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM else Gravity.CENTER_HORIZONTAL
