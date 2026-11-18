@@ -4,7 +4,7 @@
 #
 # It installs the published 1.2.273 live-x64 host with the current AndySU host
 # template patched into it, keeps the app's downloaded data, lets the public
-# live-x64 channel stage 1.2.275, and fails if the Phoenix relaunch crashes or
+# live-x64 channel stage the target release (1.2.276), and fails if the Phoenix relaunch crashes or
 # the update rolls back. The game data download is not required: the host update
 # is independent of the boot screen.
 #
@@ -15,7 +15,7 @@
 #   ANDYSU_HOST_TEMPLATE    andysu-host-template.zip (default the cx-andysu build output)
 #   ANDYSU_E2E_WORK         work directory for the patched host and logs
 #   ANDROID_SDK_ROOT / ADB / ANDYSU_E2E_SERIAL
-#   ANDYSU_E2E_TARGET       expected release (default 1.2.275)
+#   ANDYSU_E2E_TARGET       expected release (default 1.2.276)
 #
 # The host template must be built from the tree that contains the Phoenix fix:
 #   cd android && ./gradlew :host-template:andysuHostTemplate -Pandysu.abis=x86_64
@@ -32,7 +32,7 @@ BASE_APK="${ANDYSU_E2E_BASE_APK:-/tmp/andysu-e2e-assets/Godnotic-live-1.2.273-x6
 TEMPLATE="${ANDYSU_HOST_TEMPLATE:-$HOME/.cache/godnotic-work/cx-andysu/android/host-template/build/andysu/andysu-host-template.zip}"
 WORK="${ANDYSU_E2E_WORK:-/tmp/andysu-e2e-run}"
 PKG=io.github.dixonsolutions.godnotic
-TARGET="${ANDYSU_E2E_TARGET:-1.2.275}"
+TARGET="${ANDYSU_E2E_TARGET:-1.2.276}"
 SERIAL="${ANDYSU_E2E_SERIAL:-}"
 
 adb() { if [ -n "$SERIAL" ]; then "$ADB" -s "$SERIAL" "$@"; else "$ADB" "$@"; fi; }
@@ -157,3 +157,56 @@ fi
 echo "== Phoenix stayed up; no rollback"
 printf '%s\n' "$STATE" | sed -n '1,30p'
 echo "== log: $WORK/logcat.txt"
+
+##### Live engine swap regression #############################################
+# A content-only release reaches the same request_swap()/second-engine path.
+# The old engine shuts the shared libd0_blind_id down; without the Android d0
+# fix its freed static bignums are initialized again and SIGSEGV in memcpy.
+# Install the fixed x86_64 d0 into the current slot, start once so it is the
+# loaded copy, then use the loader's offline swap hook (no host promotion) to
+# exercise two engine instances in one process.
+LIVE_D0="${ANDYSU_E2E_FIXED_D0:-$ROOT/tests/andysu/libd0_blind_id.x86_64.so}"
+[ -f "$LIVE_D0" ] || fail "fixed d0 fixture not found: $LIVE_D0"
+ABI="$(adb shell getprop ro.product.cpu.abi | tr -d '\r')"
+[ "$ABI" = x86_64 ] || fail "live-swap regression fixture is x86_64, device is $ABI"
+SLOT="/data/user/0/$PKG/no_backup/andysu/slots/$TARGET/lib/x86_64"
+EXT="/storage/emulated/0/Android/data/$PKG/files"
+adb root >/dev/null 2>&1 || true
+OWNER="$(adb shell stat -c %u:%g "$SLOT/libd0_blind_id.so" | tr -d '\r')"
+[ -n "$OWNER" ] || fail "current slot has no libd0_blind_id.so: $SLOT"
+LIVE_OLD_D0="$WORK/libd0_blind_id.before-live-test.so"
+adb shell "cp $SLOT/libd0_blind_id.so /data/local/tmp/libd0.before-live-test.so"
+adb pull /data/local/tmp/libd0.before-live-test.so "$LIVE_OLD_D0" >/dev/null
+adb push "$LIVE_D0" /data/local/tmp/libd0.fixed.so >/dev/null
+adb shell "cp /data/local/tmp/libd0.fixed.so $SLOT/libd0_blind_id.so; chown $OWNER $SLOT/libd0_blind_id.so; chmod 400 $SLOT/libd0_blind_id.so"
+adb shell "mkdir -p $EXT; touch $EXT/andysu-swap-hook; rm -f $EXT/andysu-swap-to"
+adb shell am force-stop "$PKG" >/dev/null
+adb logcat -c
+adb shell am start -n "$PKG/.GodnoticBootActivity" >/dev/null
+LIVE_PID=""
+for i in $(seq 1 40); do
+    LIVE_PID="$(adb shell pidof "$PKG" | tr -d '\r')"
+    [ -n "$LIVE_PID" ] && break
+    sleep 0.25
+done
+[ -n "$LIVE_PID" ] || fail "live-swap app did not start"
+sleep 3
+adb shell "printf '%s\n' '$SLOT/libmain.so' > $EXT/andysu-swap-to"
+for i in $(seq 1 40); do
+    adb logcat -d | grep -q 'engine_entry.*"swapped":1' && break
+    sleep 1
+done
+sleep 3
+adb logcat -d > "$WORK/live-swap.txt"
+LIVE_PID_AFTER="$(adb shell pidof "$PKG" | tr -d '\r')"
+grep -q 'engine_swap_begin' "$WORK/live-swap.txt" || fail "live swap never began (log: $WORK/live-swap.txt)"
+grep -q 'engine_entry.*"swapped":1' "$WORK/live-swap.txt" || fail "second engine did not start (log: $WORK/live-swap.txt)"
+grep -q 'engine_state_restored' "$WORK/live-swap.txt" || fail "second engine did not restore state (log: $WORK/live-swap.txt)"
+grep -q 'engine_frames' "$WORK/live-swap.txt" || fail "second engine did not reach the frame loop (log: $WORK/live-swap.txt)"
+if grep -qE 'native_crash|Fatal signal|SIGSEGV|rolled_back' "$WORK/live-swap.txt"; then
+    fail "live swap crashed or rolled back (log: $WORK/live-swap.txt)"
+fi
+[ "$LIVE_PID" = "$LIVE_PID_AFTER" ] || fail "live swap restarted the process ($LIVE_PID -> $LIVE_PID_AFTER)"
+adb shell "rm -f $EXT/andysu-swap-to $EXT/andysu-swap-hook"
+echo "== live engine swap stayed in pid $LIVE_PID; no crash, rollback or restart"
+echo "== live log: $WORK/live-swap.txt"
