@@ -17,6 +17,12 @@ import java.io.File
  * them (-Puib.fixtures=<dir>), and from the json files of the app assets directory fe.
  */
 class UiBridgeTest {
+    @Test fun serverDetailMapPictureFitsPortraitAndLandscape() {
+        assertEquals(640, ServerDetails.imageMaxHeightPx(1200, 1920))
+        assertEquals(400, ServerDetails.imageMaxHeightPx(1920, 1200))
+        assertEquals(0, ServerDetails.imageMaxHeightPx(100, 0))
+    }
+
     /** Records renderer operations as lines. */
     class Recorder : UiRenderer {
         val ops = ArrayList<String>()

@@ -1411,6 +1411,49 @@ class ViewRenderer(
         return frame
     }
 
+    /** The native server selection panel: ask for its map picture as soon as the row is tapped. */
+    private fun showServerDetails(row: Map<String, Any?>) {
+        val cells = row["cells"].obj()
+        val map = cells.str("map")
+        val address = cells.str("address").ifEmpty { VirtualList.keyOf(row) }
+        val content = Kit.column(ctx, 12f)
+        val img = RoundImage(ctx, 16f).apply {
+            aspect = 16f / 9f
+            maxHeight = ServerDetails.imageMaxHeightPx(
+                ctx.resources.displayMetrics.widthPixels,
+                ctx.resources.displayMetrics.heightPixels,
+            )
+        }
+        if (map.isNotEmpty()) {
+            content.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            picture(img, "pk3:maps/$map")
+        }
+        content.addView(Kit.text(ctx, cells.str("name").ifEmpty { address }, Theme.SP_TITLE, Theme.TEXT, bold = true))
+        val facts = listOf(
+            "Game type" to cells.str("mode"),
+            "Map" to map,
+            "Players" to if (cells.num("max") > 0) "${cells.num("players")} / ${cells.num("max")}" else cells.str("players"),
+            "Ping" to if (cells.num("ping") > 0) "${cells.num("ping")} ms" else "",
+            "Address" to address,
+        ).filter { it.second.isNotEmpty() }
+        for ((label, value) in facts) {
+            val line = Kit.row(ctx, 12f)
+            line.addView(Kit.text(ctx, label, Theme.SP_CAPTION, Theme.TEXT_MUTED), LinearLayout.LayoutParams(dp(96f), ViewGroup.LayoutParams.WRAP_CONTENT))
+            line.addView(Kit.text(ctx, value, Theme.SP_BODY, Theme.TEXT, bold = true))
+            content.addView(line)
+        }
+        val actions = Kit.row(ctx, 10f)
+        actions.addView(Kit.button(ctx, "Join") {
+            host.showDialog(null)
+            events.row("mp/servers", address, "activate")
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        actions.addView(Kit.button(ctx, "Close") { host.showDialog(null) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        content.addView(actions)
+        val scroll = ScrollView(ctx).apply { isFillViewport = true; addView(content) }
+        host.showDialog(dialogFrame(scroll, true))
+    }
+
     private fun generic(id: String, type: String, props: Map<String, Any?>): Entry {
         val col = Kit.column(ctx, 8f)
         val head = FrameLayout(ctx)
@@ -1726,7 +1769,11 @@ class ViewRenderer(
             if (second) {
                 if (e.props.str("selection") == "multi") select(e, id, key, true) // the first tap's toggle undone
                 events.row(id, key, "activate")
-            } else select(e, id, key, true)
+            } else {
+                val changed = !isServerSource(e.source) || serverState(e.source).selected != key
+                select(e, id, key, true)
+                if (changed && id == "mp/servers" && e.props.str("selection") == "single") showServerDetails(row)
+            }
         }
         v.setOnKeyListener { _, code, ev ->
             if (ev.action == android.view.KeyEvent.ACTION_UP && (code == android.view.KeyEvent.KEYCODE_ENTER || code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
