@@ -16,7 +16,7 @@
 # ANDYSU_PUBLISH_SH, or an authenticated `gh` to fetch both. No secrets.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-version=0.1.145
+version=0.1.147
 t="$(mktemp -d)"
 pids=()
 trap 'kill "${pids[@]}" 2>/dev/null || true; rm -rf "$t"' EXIT

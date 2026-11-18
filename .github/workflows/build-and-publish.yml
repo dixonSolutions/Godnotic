@@ -495,7 +495,7 @@ jobs:
           # (1.2.219 -> 1.2.223 on a tablet). Full blobs only until every host in the
           # field verifies a reconstructed payload before staging it.
           pack-args: --no-rename --deltas 0
-          andysu-version: 0.1.145
+          andysu-version: 0.1.147
       # The manifest must be the last asset a host can see change. A host that reads a manifest
       # naming blobs that are still uploading gets 404 for every one of them, which the Android
       # updater reports as "could not download <sha256>" (1.2.258 -> 1.2.259). The action uploads
