@@ -880,7 +880,12 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private fun applyInsets(insets: WindowInsets) {
         var l = 0; var t = 0; var r = 0; var b = 0
         if (Build.VERSION.SDK_INT >= 28) insets.displayCutout?.let { c -> l = c.safeInsetLeft; t = c.safeInsetTop; r = c.safeInsetRight; b = c.safeInsetBottom }
-        if (Build.VERSION.SDK_INT >= 30) b = maxOf(b, insets.getInsets(WindowInsets.Type.ime()).bottom)
+        if (Build.VERSION.SDK_INT >= 30) {
+            b = maxOf(b, insets.getInsets(WindowInsets.Type.ime()).bottom)
+            // visible system bars (a tablet's navigation bar) are not part of the screen the layout may use
+            val bars = insets.getInsets(WindowInsets.Type.systemBars())
+            l = maxOf(l, bars.left); t = maxOf(t, bars.top); r = maxOf(r, bars.right); b = maxOf(b, bars.bottom)
+        }
         // the screens keep clear of cutouts; the pinned bottom bar rides above the keyboard
         screenLayer.setPadding(l, t, r, b)
         dialogLayer.setPadding(l, t, r, b)

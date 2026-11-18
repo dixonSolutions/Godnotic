@@ -15,13 +15,16 @@ object HomeFit {
     /** The Godnotic banner's picture is 3:1. */
     const val BANNER_ASPECT = 3f
 
+    /** In landscape the banner never takes more than this share of the height (the cards need the rest). */
+    const val LANDSCAPE_BANNER = 0.20f
+
     /** True when a field of at least [minField] and chips of [chipsNatural] fit beside each other in [width]. */
     fun sideBySide(width: Int, minField: Int, chipsNatural: Int, gap: Int) = width >= minField + gap + chipsNatural
 
     fun plan(w: Int, h: Int, gap: Int, tiles: Int): Plan {
         val portrait = w < h
         val n = max(1, tiles)
-        val bannerH = min((w / BANNER_ASPECT).toInt(), (h * if (portrait) 0.24f else 0.28f).toInt())
+        val bannerH = min((w / BANNER_ASPECT).toInt(), (h * if (portrait) 0.24f else LANDSCAPE_BANNER).toInt())
         val room = max(0, h - bannerH - gap)
         val tilesH = if (portrait) {
             // stacked cards: wide, but never taller than 0.4 of the width each

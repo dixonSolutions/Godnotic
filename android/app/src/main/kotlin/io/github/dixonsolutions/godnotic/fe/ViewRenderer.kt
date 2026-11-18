@@ -1838,6 +1838,25 @@ class PageScroll(ctx: Context) : ScrollView(ctx) {
     /** The pinned section title's height: a list stops under it. */
     var topInset = 0
 
+    /**
+     * Home's fitted body is given the viewport's own height, whatever the scroller's
+     * fill-viewport pass did: measured here, after the scroller knows its size, so the
+     * cards can never end up under the bottom bar.
+     */
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val c = getChildAt(0) as? FitBody ?: return
+        if (!c.fit || MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) return
+        val h = measuredHeight - paddingTop - paddingBottom
+        val w = measuredWidth - paddingLeft - paddingRight
+        if (c.measuredHeight != h || c.measuredWidth != w) c.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        (getChildAt(0) as? FitBody)?.requestLayout()
+    }
+
     private fun topOf(target: View): Int {
         var y = 0
         var v: View? = target

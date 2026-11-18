@@ -29,8 +29,18 @@ class HomeFitTest {
         val phone = HomeFit.plan(320, 560, 18, 3).bannerH
         assertTrue("banner $tablet", tablet > 300)
         assertTrue(phone < tablet)
-        // landscape: banner takes about a quarter of the height
-        assertTrue(HomeFit.plan(1824, 1000, 18, 3).bannerH >= 250)
+        // landscape: the banner is small, a fifth of the height
+        assertTrue(HomeFit.plan(1824, 1000, 18, 3).bannerH >= 150)
+    }
+
+    @Test fun landscapeBannerIsCappedAndCardsKeepTheRest() {
+        // the tablet's landscape page: 1920x1200 less the bottom bar and padding
+        for ((w, h) in listOf(1872 to 960, 1824 to 1000, 1280 to 520)) {
+            val p = HomeFit.plan(w, h, 18, 3)
+            assertTrue("banner ${p.bannerH} of $h", p.bannerH <= (h * 0.22f).toInt())
+            assertTrue("cards ${p.tilesH} of $h", p.tilesH >= (h * 0.6f).toInt())
+            assertTrue(p.top + p.tilesTop + p.tilesH <= h)
+        }
     }
 
     @Test fun toolbarStacksWhenNarrow() {
