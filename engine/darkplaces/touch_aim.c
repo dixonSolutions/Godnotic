@@ -1200,7 +1200,7 @@ static float priority_bonus(const aimtarget_t *a, const touch_wep_t *wep, const 
 // crosshair (cl_touch_aimassist_priority: shifted by what each is worth),
 // the one held last frame preferred. All must be enemies, alive, drawn, in
 // range and in line of sight.
-static void scan(const vec3_t eye, const vec3_t fwd, float cone, float lock_cone, const touch_wep_t *wep, const touch_wep_fire_t *fire, float latency, qbool slew, qbool guided, qbool collect, int *on_target, int *friend_on, aimtarget_t *near_out)
+static int scan(const vec3_t eye, const vec3_t fwd, float cone, float lock_cone, const touch_wep_t *wep, const touch_wep_fire_t *fire, float latency, qbool slew, qbool guided, qbool collect, int *on_target, int *friend_on, aimtarget_t *near_out)
 {
 	prvm_prog_t *prog = CLVM_prog;
 	int team_game = teamplay_mode();
@@ -1210,7 +1210,7 @@ static void scan(const vec3_t eye, const vec3_t fwd, float cone, float lock_cone
 	float hyst = bound(0.0f, cl_touch_aimassist_hysteresis.value, 15.0f); // degrees the current target is preferred by
 	qbool prio = cl_touch_aimassist_priority.integer != 0;
 	double now = host.realtime;
-	int i, players = 0;
+	int i, players = 0, retained_seen = 0;
 	if (TouchTactics_Open() && cl_touch_practice_exact.integer)
 		range = 1e9f; // offline only: any distance
 	*on_target = 0;
@@ -1252,6 +1252,7 @@ static void scan(const vec3_t eye, const vec3_t fwd, float cone, float lock_cone
 				&& PRVM_clientedictfloat(ed, drawmask) != 0
 				&& !((int)PRVM_clientedictfloat(ed, effects) & EF_NODRAW);
 			cand.alpha = PRVM_clientedictfloat(ed, alpha);
+			retained_seen |= TouchAim_RetainedSeen(n, &cand, ta.lock_ent, ta.fire_target, ta.rk_target);
 			why = TouchAim_TargetCheck(&cand);
 			if (why != TOUCH_AIM_TARGET_OK)
 			{
@@ -1496,6 +1497,7 @@ static void scan(const vec3_t eye, const vec3_t fwd, float cone, float lock_cone
 		}
 		ta.target_since = now;
 	}
+	return retained_seen;
 }
 
 // A teammate the shot about to go would hit or catch (cl_touch_autoshoot_teamsafe),
@@ -2942,7 +2944,7 @@ static void aim_frame(void)
 	qbool autoshoot, assist, aim_touch, manual, locked, guided, pull_target_set = false;
 	float friction, strength, cone, turn_yaw, turn_pitch, turn_mag, radius, pull_yaw = 0, pull_pitch = 0;
 	vec3_t eye, fwd;
-	int on_target, friend_on, on_shoot, shootable, held, mode = TW_MODE_PRIMARY, why = TW_WHY_DEFAULT, mate_block;
+	int on_target, friend_on, on_shoot, shootable, held, retained_seen, mode = TW_MODE_PRIMARY, why = TW_WHY_DEFAULT, mate_block;
 	qbool was_firing = ta.firing || ta.firing2;
 	const touch_wep_t *wep;
 	const touch_wep_fire_t *fire = NULL;
@@ -3102,10 +3104,34 @@ static void aim_frame(void)
 	// a steered rocket is re-aimed in flight: it launches without the slew,
 	// the fall model or the interpolation term, which measured best
 	guided = wep && (wep->flags & TW_GUIDED) && cl_touch_autoshoot_steer.integer;
-	scan(eye, fwd, cone, locked ? cone + LOCK_CONE_EXTRA : 0, wep, fire, fire ? (hitscan_lag > 0 ? hitscan_lag : guided ? latency_estimate() : shot_latency()) : 0,
+	retained_seen = scan(eye, fwd, cone, locked ? cone + LOCK_CONE_EXTRA : 0, wep, fire, fire ? (hitscan_lag > 0 ? hitscan_lag : guided ? latency_estimate() : shot_latency()) : 0,
 		cl_touch_aimassist_track.integer && !guided, guided,
 		cl_touch_autoshoot_group.integer || cl_touch_autoswitch_smart.integer || cl_touch_aimassist_priority.integer,
 		&on_target, &friend_on, &near);
+	// Drop every retained reference before firing, ghost prediction or rocket
+	// steering can use it. A missing CSQC entity is not evidence of life.
+	if (ta.lock_ent && !(retained_seen & 1))
+	{
+		memset(&ta.tracks[ta.lock_ent & (TRACK_MAX - 1)].ghost, 0, sizeof(touch_wep_ghost_t));
+		ta.lock_ent = 0;
+		ta.lock_until = ta.lock_fired = 0;
+		ta.ghost_said = 0;
+	}
+	if (ta.fire_target && !(retained_seen & 2))
+	{
+		set_firing(false, false, 0);
+		ta.fire_target = 0;
+		ta.on_since = 0;
+	}
+	if (ta.rk_target && !(retained_seen & 4))
+	{
+		if (ta.rk_state != RK_IDLE && ta.rk_state != RK_RELEASE)
+		{
+			rk_set(RK_RELEASE, "target no longer eligible");
+			set_firing(false, false, 0);
+		}
+		ta.rk_target = 0;
+	}
 	if (near.entnum && near.err > cone && near.entnum != ta.lock_ent)
 		near.entnum = 0;
 	// the player turned the view away during a fight: the engagement goes on

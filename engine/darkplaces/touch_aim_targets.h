@@ -94,4 +94,14 @@ static int TouchAim_TargetCheck(const touch_aim_cand_t *c)
 	return TOUCH_AIM_TARGET_OK;
 }
 
+// Record retained targets that still have an eligible CSQC player entity.
+// Visibility and aim-cone tests happen later; missing entities never set a bit.
+static int TouchAim_RetainedSeen(int n, const touch_aim_cand_t *c, int lock, int fire, int rocket)
+{
+	if (!c || TouchAim_TargetCheck(c) != TOUCH_AIM_TARGET_OK)
+		return 0;
+	return (n && n == lock ? 1 : 0) | (n && n == fire ? 2 : 0)
+		| (n && n == rocket ? 4 : 0);
+}
+
 #endif
