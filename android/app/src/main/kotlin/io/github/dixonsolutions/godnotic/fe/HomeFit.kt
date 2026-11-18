@@ -15,6 +15,9 @@ object HomeFit {
     /** The Godnotic banner's picture is 3:1. */
     const val BANNER_ASPECT = 3f
 
+    /** True when a field of at least [minField] and chips of [chipsNatural] fit beside each other in [width]. */
+    fun sideBySide(width: Int, minField: Int, chipsNatural: Int, gap: Int) = width >= minField + gap + chipsNatural
+
     fun plan(w: Int, h: Int, gap: Int, tiles: Int): Plan {
         val portrait = w < h
         val n = max(1, tiles)
@@ -134,5 +137,39 @@ class CardColumn(ctx: Context, private val img: View, private val bar: View, pri
             bar.layout(0, img.measuredHeight, w, img.measuredHeight + bar.measuredHeight)
             text.layout(0, img.measuredHeight + bar.measuredHeight, w, h)
         }
+    }
+}
+
+/**
+ * A screen's toolbar (Multiplayer's search field and filter chips): side by side when the field
+ * keeps [minField] px and the chips fit in one line beside it, otherwise stacked, the field on
+ * top and the chips in one wrapping row under it. Re-decided on every measure, so a rotation
+ * changes it live.
+ */
+class AdaptiveBar(ctx: Context, private val gap: Int, private val minField: Int) : LinearLayout(ctx) {
+    private var lastSide: Boolean? = null
+
+    init { gravity = android.view.Gravity.CENTER_VERTICAL }
+
+    override fun onMeasure(wSpec: Int, hSpec: Int) {
+        val chips = (0 until childCount).map { getChildAt(it) }.firstOrNull { it is FlowGrid && it.visibility != GONE } as? FlowGrid
+        val field = (0 until childCount).map { getChildAt(it) }.firstOrNull { it !== chips && it.visibility != GONE }
+        if (chips == null || field == null) { orientation = HORIZONTAL; super.onMeasure(wSpec, hSpec); return }
+        var natural = 0
+        for (i in 0 until chips.childCount) {
+            val c = chips.getChildAt(i)
+            if (c.visibility == GONE) continue
+            c.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            natural += c.measuredWidth + gap
+        }
+        val width = MeasureSpec.getSize(wSpec) - paddingLeft - paddingRight
+        val side = HomeFit.sideBySide(width, minField, natural, gap)
+        if (lastSide != side) {
+            lastSide = side
+            orientation = if (side) HORIZONTAL else VERTICAL
+            field.layoutParams = LayoutParams(if (side) 0 else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, if (side) 1f else 0f)
+            chips.layoutParams = LayoutParams(if (side) 0 else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, if (side) 1f else 0f).apply { if (side) marginStart = gap else topMargin = gap }
+        }
+        super.onMeasure(wSpec, hSpec)
     }
 }

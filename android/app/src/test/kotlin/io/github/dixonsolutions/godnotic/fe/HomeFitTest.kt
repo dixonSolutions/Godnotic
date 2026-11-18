@@ -32,4 +32,9 @@ class HomeFitTest {
         // landscape: banner takes about a quarter of the height
         assertTrue(HomeFit.plan(1824, 1000, 18, 3).bannerH >= 250)
     }
+
+    @Test fun toolbarStacksWhenNarrow() {
+        assertEquals(false, HomeFit.sideBySide(1104, 720, 500, 20)) // tablet portrait: field on top, chips under it
+        assertEquals(true, HomeFit.sideBySide(1824, 720, 500, 20)) // tablet landscape: beside
+    }
 }

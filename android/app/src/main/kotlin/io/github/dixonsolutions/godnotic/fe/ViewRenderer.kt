@@ -222,7 +222,7 @@ class ViewRenderer(
     private fun build(id: String, type: String, props: Map<String, Any?>): Entry = when (type) {
         "screen" -> screen(id, props)
         "section" -> section(id, props)
-        "toolbar" -> group(id, type, props, Kit.row(ctx, 10f).apply { setPadding(0, dp(4f), 0, dp(4f)) })
+        "toolbar" -> group(id, type, props, AdaptiveBar(ctx, dp(10f), dp(360f)).apply { setPadding(0, dp(4f), 0, dp(4f)) })
         "actionbar" -> group(id, type, props, Kit.row(ctx, 12f).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL })
         "row" -> if (props.bool("wrap")) group(id, type, props, FlowGrid(ctx, 0, dp(10f), wrap = true)) else labelledRow(id, props, Kit.row(ctx, 12f).apply {
             gravity = when (props.str("align")) { "center" -> Gravity.CENTER; "end" -> Gravity.END or Gravity.CENTER_VERTICAL; else -> Gravity.START or Gravity.CENTER_VERTICAL }
@@ -253,8 +253,10 @@ class ViewRenderer(
     private fun layoutFor(g: ViewGroup, child: Entry, fill: Boolean): ViewGroup.LayoutParams {
         if (fill && g is LinearLayout) return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
         if (child.type == "divider") return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, max(1, dp(1f)))
+        if (g is AdaptiveBar) return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        // a field in a bar takes what the buttons beside it leave (it used to be 380 dp wide, which squeezed Join to a sliver)
         if (g is LinearLayout && g.orientation == LinearLayout.HORIZONTAL && child.type == "field")
-            return LinearLayout.LayoutParams(dp(380f), ViewGroup.LayoutParams.WRAP_CONTENT)
+            return LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         if (g is LinearLayout && g.orientation == LinearLayout.HORIZONTAL) {
             val grow = child.type == "card" || child.type == "hero" || child.type == "row" || child.type == "tab" || child.props.str("width") == "fill"
             return LinearLayout.LayoutParams(if (grow) 0 else ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, if (grow) 1f else 0f)
@@ -299,8 +301,8 @@ class ViewRenderer(
         val pad = dp(24f)
         // the header: back, title, the screen's actions; sticky (outside the scroller)
         val bar = Kit.row(ctx, 12f)
-        bar.setPadding(pad, dp(10f), pad, dp(6f))
-        bar.minimumHeight = dp(64f)
+        bar.setPadding(pad, dp(14f), pad, dp(10f))
+        bar.minimumHeight = dp(76f)
         val back = Kit.button(ctx, "‹") { events.back() }
         back.textSize = Theme.SP_HEADLINE
         back.minimumWidth = dp(56f)
@@ -309,6 +311,7 @@ class ViewRenderer(
         titleV.typeface = Theme.display
         val sub = Kit.text(ctx, "", Theme.SP_CAPTION, Theme.TEXT_MUTED, lines = 1)
         val titles = Kit.column(ctx)
+        titles.gravity = Gravity.CENTER_VERTICAL
         titles.addView(titleV)
         titles.addView(sub)
         val trailing = Kit.row(ctx, 8f)
