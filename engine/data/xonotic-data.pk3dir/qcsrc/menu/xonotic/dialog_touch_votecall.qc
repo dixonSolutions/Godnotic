@@ -68,3 +68,10 @@ void GodnoticVoteCallDialog_fill(entity me)
 		// what else the server accepts: printed to the console
 		me.TD(me, 1.5, 2, e = makeGodnoticCommandButton(_("List all vote commands"), '0 0 0', "cmd vote help; togglemenu 0; toggleconsole", 0));
 }
+
+void TouchVoteCall_ConfigureDialogs(entity mainwindow)
+{
+	entity dialog = NEW(GodnoticVoteCallDialog);
+	dialog.configureDialog(dialog);
+	mainwindow.addItemCentered(mainwindow, dialog, dialog.intendedWidth * eX + dialog.intendedHeight * eY, SKINALPHAS_MAINMENU_z);
+}

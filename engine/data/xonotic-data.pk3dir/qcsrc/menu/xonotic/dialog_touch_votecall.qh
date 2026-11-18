@@ -7,6 +7,7 @@
 // (vote help, printed to the console). Opened from the game menu.
 #include "rootdialog.qh"
 bool TouchVoteCall_ValidMap(string map);
+void TouchVoteCall_ConfigureDialogs(entity mainwindow);
 CLASS(GodnoticVoteCallDialog, XonoticRootDialog)
 	METHOD(GodnoticVoteCallDialog, fill, void(entity));
 	METHOD(GodnoticVoteCallDialog, configureDialog, void(entity));
