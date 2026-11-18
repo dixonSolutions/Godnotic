@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description,
                            rtcCandidateCallbackFunc candidate, rtcDataChannelCallbackFunc channel)
@@ -106,7 +107,124 @@ int Touch_BridgeUnpack(const void *packet, int size, struct touch_bridge_address
 /* Separate sockets keep IPv4 and IPv6 behavior independent of IPV6_V6ONLY. */
 struct touch_bridge_forwarder {
     int ipv4, ipv6;
+    pthread_mutex_t mutex;
+    struct touch_bridge_address *allowed;
+    size_t allowed_count;
+    struct touch_bridge_address *masters;
+    size_t master_count;
 };
+
+static int bridge_allowed(const struct touch_bridge_forwarder *f,
+                          const struct touch_bridge_address *address)
+{
+    size_t i, n = address->family == 4 ? 4 : 16;
+    for (i = 0; i < f->allowed_count; ++i)
+        if (f->allowed[i].family == address->family &&
+            f->allowed[i].port == address->port &&
+            !memcmp(f->allowed[i].address, address->address, n))
+            return 1;
+    return 0;
+}
+
+int Touch_BridgeAllowAddress(struct touch_bridge_forwarder *f,
+                             const struct touch_bridge_address *address)
+{
+    struct touch_bridge_address *addresses;
+    int result = 0;
+    if (!f || !address || !address->port ||
+        (address->family != 4 && address->family != 6))
+        return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    if (!bridge_allowed(f, address)) {
+        if (f->allowed_count >= 65536 ||
+            !(addresses = (struct touch_bridge_address *)realloc(f->allowed, (f->allowed_count + 1) * sizeof(*addresses))))
+            result = RTC_ERR_FAILURE;
+        else {
+            f->allowed = addresses;
+            f->allowed[f->allowed_count++] = *address;
+        }
+    }
+    pthread_mutex_unlock(&f->mutex);
+    return result;
+}
+
+int Touch_BridgeAllowMaster(struct touch_bridge_forwarder *f,
+                            const struct touch_bridge_address *address)
+{
+    struct touch_bridge_address *masters;
+    size_t i, n;
+    if (!f || !address || !address->port || (address->family != 4 && address->family != 6))
+        return RTC_ERR_INVALID;
+    n = address->family == 4 ? 4 : 16;
+    pthread_mutex_lock(&f->mutex);
+    for (i = 0; i < f->master_count; ++i)
+        if (f->masters[i].family == address->family && f->masters[i].port == address->port &&
+            !memcmp(f->masters[i].address, address->address, n))
+            break;
+    if (i == f->master_count) {
+        masters = (struct touch_bridge_address *)realloc(f->masters, (i + 1) * sizeof(*masters));
+        if (!masters) {
+            pthread_mutex_unlock(&f->mutex);
+            return RTC_ERR_FAILURE;
+        }
+        f->masters = masters;
+        f->masters[f->master_count++] = *address;
+    }
+    pthread_mutex_unlock(&f->mutex);
+    return Touch_BridgeAllowAddress(f, address);
+}
+
+/* Parse only complete DP master response records. An incomplete packet grants
+ * nothing, so a truncated or malformed response cannot add partial entries. */
+static void bridge_learn_servers(struct touch_bridge_forwarder *f,
+                                 const struct touch_bridge_address *source,
+                                 const unsigned char *data, size_t length)
+{
+    static const unsigned char prefix[] = "\xff\xff\xff\xffgetserversResponse";
+    static const unsigned char extprefix[] = "\xff\xff\xff\xffgetserversExtResponse";
+    size_t i, n, start, pos;
+    int extended, master = 0;
+    pthread_mutex_lock(&f->mutex);
+    n = source->family == 4 ? 4 : 16;
+    for (i = 0; i < f->master_count; ++i)
+        if (f->masters[i].family == source->family && f->masters[i].port == source->port &&
+            !memcmp(f->masters[i].address, source->address, n)) {
+            master = 1;
+            break;
+        }
+    pthread_mutex_unlock(&f->mutex);
+    if (!master) return;
+    if (length >= sizeof(extprefix)-1 && !memcmp(data, extprefix, sizeof(extprefix)-1)) {
+        start = sizeof(extprefix)-1;
+        extended = 1;
+    } else if (length >= sizeof(prefix)-1 && !memcmp(data, prefix, sizeof(prefix)-1)) {
+        start = sizeof(prefix)-1;
+        extended = 0;
+    } else return;
+    /* EOT can be either a three-byte marker or the padded seven-byte form. */
+    for (pos = start; pos < length;) {
+        if ((length - pos == 4 || (length - pos == 7 && !data[pos+4] && !data[pos+5] && !data[pos+6])) && !memcmp(data + pos, "\\EOT", 4)) {
+            pos += 4;
+            while (pos < length && !data[pos]) ++pos;
+            if (pos != length) return;
+            break;
+        }
+        n = data[pos] == '\\' ? 4 : (extended && data[pos] == '/' ? 16 : 0);
+        if (!n || length - pos < n + 3 || !(data[pos+n+1] | data[pos+n+2])) return;
+        pos += n + 3;
+    }
+    for (pos = start; pos < length;) {
+        struct touch_bridge_address address;
+        if ((length - pos == 4 || (length - pos == 7 && !data[pos+4] && !data[pos+5] && !data[pos+6])) && !memcmp(data + pos, "\\EOT", 4)) break;
+        n = data[pos] == '\\' ? 4 : 16;
+        memset(&address, 0, sizeof(address));
+        address.family = n == 4 ? 4 : 6;
+        memcpy(address.address, data + pos + 1, n);
+        address.port = (unsigned short)((data[pos+n+1] << 8) | data[pos+n+2]);
+        Touch_BridgeAllowAddress(f, &address);
+        pos += n + 3;
+    }
+}
 
 static int bridge_socket(int family)
 {
@@ -120,12 +238,17 @@ static int bridge_socket(int family)
 
 struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void)
 {
-    struct touch_bridge_forwarder *f = malloc(sizeof(*f));
+    struct touch_bridge_forwarder *f = (struct touch_bridge_forwarder *)calloc(1, sizeof(*f));
     if (!f)
         return NULL;
+    if (pthread_mutex_init(&f->mutex, NULL)) {
+        free(f);
+        return NULL;
+    }
     f->ipv4 = bridge_socket(AF_INET);
     f->ipv6 = bridge_socket(AF_INET6);
     if (f->ipv4 < 0 && f->ipv6 < 0) {
+        pthread_mutex_destroy(&f->mutex);
         free(f);
         return NULL;
     }
@@ -138,6 +261,9 @@ void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *f)
         return;
     if (f->ipv4 >= 0) close(f->ipv4);
     if (f->ipv6 >= 0) close(f->ipv6);
+    free(f->allowed);
+    free(f->masters);
+    pthread_mutex_destroy(&f->mutex);
     free(f);
 }
 
@@ -150,6 +276,12 @@ int Touch_BridgeForward(struct touch_bridge_forwarder *f, const void *packet, in
     socklen_t addrlen;
     if (!f || Touch_BridgeUnpack(packet, size, &address, &payload, &len) < 0)
         return RTC_ERR_INVALID;
+    pthread_mutex_lock(&f->mutex);
+    if (!bridge_allowed(f, &address)) {
+        pthread_mutex_unlock(&f->mutex);
+        return RTC_ERR_FAILURE;
+    }
+    pthread_mutex_unlock(&f->mutex);
     memset(&storage, 0, sizeof(storage));
     if (address.family == 4) {
         struct sockaddr_in *a = (struct sockaddr_in *)&storage;
@@ -171,7 +303,7 @@ int Touch_BridgeForward(struct touch_bridge_forwarder *f, const void *packet, in
     return 0;
 }
 
-static int bridge_poll_socket(int fd, touch_bridge_reply_fn reply, void *context)
+static int bridge_poll_socket(struct touch_bridge_forwarder *f, int fd, touch_bridge_reply_fn reply, void *context)
 {
     unsigned char payload[TOUCH_BRIDGE_MAX_DATAGRAM + 1];
     unsigned char packet[TOUCH_BRIDGE_MAX_DATAGRAM + 20];
@@ -202,6 +334,11 @@ static int bridge_poll_socket(int fd, touch_bridge_reply_fn reply, void *context
             address.port = ntohs(a->sin6_port);
             memcpy(address.address, &a->sin6_addr, 16);
         } else continue;
+        pthread_mutex_lock(&f->mutex);
+        size = bridge_allowed(f, &address);
+        pthread_mutex_unlock(&f->mutex);
+        if (!size) continue;
+        bridge_learn_servers(f, &address, payload, (size_t)len);
         size = Touch_BridgePack(packet, sizeof(packet), &address, payload, (int)len);
         if (size > 0) {
             reply(context, packet, size);
@@ -214,8 +351,8 @@ int Touch_BridgePoll(struct touch_bridge_forwarder *f, touch_bridge_reply_fn rep
 {
     int a, b;
     if (!f || !reply) return RTC_ERR_INVALID;
-    a = bridge_poll_socket(f->ipv4, reply, context);
-    b = bridge_poll_socket(f->ipv6, reply, context);
+    a = bridge_poll_socket(f, f->ipv4, reply, context);
+    b = bridge_poll_socket(f, f->ipv6, reply, context);
     return a < 0 || b < 0 ? RTC_ERR_FAILURE : a + b;
 }
 

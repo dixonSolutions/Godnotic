@@ -32,7 +32,16 @@ int Touch_BridgeUnpack(const void *packet, int size, struct touch_bridge_address
 struct touch_bridge_forwarder;
 typedef void (*touch_bridge_reply_fn)(void *context, const void *packet, int size);
 struct touch_bridge_forwarder *Touch_BridgeForwarderCreate(void);
+/* Engine peers must use this constructor after master cvars are loaded. */
+struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void);
 void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);
+/* Destinations are denied by default. This primitive does not establish that
+ * an address is a master or an advertised server; the caller must do that. */
+int Touch_BridgeAllowAddress(struct touch_bridge_forwarder *forwarder,
+                             const struct touch_bridge_address *address);
+/* Register a configured master. Server addresses are learned only from its replies. */
+int Touch_BridgeAllowMaster(struct touch_bridge_forwarder *forwarder,
+                            const struct touch_bridge_address *address);
 int Touch_BridgeForward(struct touch_bridge_forwarder *forwarder, const void *packet, int size);
 int Touch_BridgePoll(struct touch_bridge_forwarder *forwarder, touch_bridge_reply_fn reply,
                      void *context);

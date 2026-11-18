@@ -128,7 +128,8 @@ int main(void)
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) abort();
         address.port = server_port = ntohs(server.sin_port);
         forwarder = Touch_BridgeForwarderCreate();
-        if (!forwarder || rtcSetMessageCallback(atomic_load(&b.channel), forward_cb) < 0) abort();
+        if (!forwarder || Touch_BridgeAllowAddress(forwarder, &address) < 0 ||
+            rtcSetMessageCallback(atomic_load(&b.channel), forward_cb) < 0) abort();
         atomic_store(&forwarding, 1);
         n = Touch_BridgePack(packet, sizeof(packet), &address, "query", 5);
         if (Touch_BridgeSend(dc, packet, n) < 0 ||
