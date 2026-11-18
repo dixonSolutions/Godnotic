@@ -86,11 +86,18 @@ final class CrashReport {
         if (!interesting(reason, aroundUpdate)) {
             return false;
         }
+        String phase = phase(state);
+        boolean handoverPhase = "quiet".equals(phase) || "replacing".equals(phase);
+        if (reason == REASON_SIGNALED) {
+            // The host's relaunch can end the old process with a signal rather than a self-exit
+            // (owner's tablet, 1.2.290 -> 1.2.292: "signaled (2)", phase=replacing). The state
+            // line is the proof it was deliberate; without it a signal stays a report.
+            return !handoverPhase;
+        }
         if (reason != REASON_EXIT_SELF && reason != REASON_USER_REQUESTED) {
             return true;
         }
-        String phase = phase(state);
-        return !("quiet".equals(phase) || "replacing".equals(phase) || versionChanged);
+        return !(handoverPhase || versionChanged);
     }
 
     /** The {@code phase=...} field of a process state summary, or "" when it has none. */

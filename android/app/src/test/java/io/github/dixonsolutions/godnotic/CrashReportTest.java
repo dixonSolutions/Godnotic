@@ -77,6 +77,20 @@ public class CrashReportTest {
                 "app=1.2.270 stage=game engine=1 phase=checking", false));
     }
 
+    @Test public void aSignaledReplaceIsNotReportedButARealSignalIs() {
+        // The owner's 1.2.290 -> 1.2.292 banner: signaled (2), phase=replacing, same app version.
+        String replacing = "app=1.2.289 payload=1.2.290 host=present:check_only stage=game engine=0 phase=replacing";
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, replacing, false));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true,
+                "app=1.2.289 stage=game phase=quiet", false));
+        // Killed in any other phase around an update is still a report.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true,
+                "app=1.2.289 stage=game engine=1 phase=checking", false));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, "", true));
+        // A crash while replacing is still a crash.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true, replacing, false));
+    }
+
     @Test public void thePhaseComesOutOfTheStateLine() {
         assertEquals("quiet", CrashReport.phase("app=1.2.267 host=present stage=game phase=quiet"));
         assertEquals("replacing", CrashReport.phase(" phase=replacing "));
