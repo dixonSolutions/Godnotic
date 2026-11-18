@@ -137,6 +137,30 @@ class UiBridgeTest {
         assertTrue(sent.last().contains("\"t\":\"sync\""))
     }
 
+    @Test fun desktopAccessibilitySwitchRoundTripsThroughBridge() {
+        val rec = Recorder()
+        val sent = ArrayList<String>()
+        val client = UibClient(rec) { sent.add(it) }
+        val id = "settings/accessibility/desktop/assist"
+        fun switch(value: Boolean) = mapOf("id" to id, "type" to "switch",
+            "props" to mapOf("label" to "Enable auto shoot and aim assist",
+                "bind" to "cvar:cl_accessibility_desktop", "value" to value))
+        client.receive(mapOf("t" to "snapshot", "rev" to 1, "nodes" to listOf(
+            mapOf("id" to "app", "type" to "app", "props" to mapOf("stack" to listOf("settings")), "children" to listOf("settings")),
+            mapOf("id" to "settings", "type" to "screen", "props" to emptyMap<String, Any>(), "children" to listOf(id)),
+            switch(false))))
+        assertEquals("switch", rec.created[id])
+        assertFalse(client.store.node(id)!!.bool("value"))
+        client.event("value", mapOf("node" to id, "value" to true))
+        val event = Json.parse(sent.single()).obj()
+        assertEquals("value", event["ev"])
+        assertEquals(id, event["node"])
+        assertEquals(true, event["value"])
+        client.receive(mapOf("t" to "diff", "base" to 1, "rev" to 2, "set" to listOf(switch(true))))
+        assertTrue(client.store.node(id)!!.bool("value"))
+        assertTrue(rec.ops.contains("update $id"))
+    }
+
     @Test fun navigationPushPopAndToast() {
         val rec = Recorder()
         val c = UibClient(rec) {}
