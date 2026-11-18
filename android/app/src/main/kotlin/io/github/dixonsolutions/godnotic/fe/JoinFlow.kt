@@ -17,7 +17,7 @@ package io.github.dixonsolutions.godnotic.fe
  *
  * There is no logo page in a join any more: the engine always names a picture
  * (`levelshot`: the map's own, the one the server list's map name finds, or a generic
- * map picture marked `levelshot_kind` "generic", which the card dims and blurs), so the
+ * map picture marked `levelshot_kind` "generic", which the card dims a little), so the
  * card has a map behind it from the first frame, the map's own the moment its pack
  * (or its picture) arrives, then the live world.
  */
@@ -57,11 +57,14 @@ internal object JoinFlow {
     @Suppress("UNUSED_PARAMETER")
     fun banner(stage: String, previewSeen: Boolean): Boolean = false
 
-    /** The picture is the generic stand-in (not this map's): dimmed and blurred. */
+    /** The picture is the generic stand-in (not this map's): dimmed a little, never blurred. */
     fun generic(kind: String): Boolean = kind == "generic"
 
     /** How dark the generic picture is drawn (1 = as is). */
-    const val GENERIC_DIM = 0.5f
+    const val GENERIC_DIM = 0.75f
+
+    /** Decode the original picture without resampling or a JPEG thumbnail. */
+    const val SHOT_WIDTH = Int.MAX_VALUE
 
     /** MB with one decimal, KB under 1 MB: "12.3 MB", "640 KB". */
     fun size(bytes: Double): String =

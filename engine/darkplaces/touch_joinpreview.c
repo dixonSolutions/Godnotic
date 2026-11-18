@@ -222,12 +222,14 @@ static qbool JP_FindSimilar(const char *map, char *out, size_t size)
 	return found;
 }
 
-// Any map picture at all, for a join whose map this install has nothing for: the
-// first one found, kept for the session.
+// The picture for a join whose map this install has nothing for: the art of the home
+// screen's Multiplayer card (maps/xoylent), else any map picture, kept for the session.
 static qbool JP_FindGeneric(char *out, size_t size)
 {
 	static char generic[MAX_QPATH];
 	static double last;
+	if (!generic[0] && FS_FileExists("maps/xoylent.jpg"))
+		dp_strlcpy(generic, "maps/xoylent.jpg", sizeof(generic));
 	if (!generic[0] && Sys_DirtyTime() - last > 2.0)
 	{
 		fssearch_t *search = FS_Search("maps/*.jpg", true, true, NULL);

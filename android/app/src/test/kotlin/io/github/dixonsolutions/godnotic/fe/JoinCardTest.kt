@@ -19,7 +19,8 @@ class JoinCardTest {
         assertFalse(JoinFlow.showShot("/x/maps_foo.jpg", world = true))
         assertTrue(JoinFlow.generic("generic"))
         assertFalse(JoinFlow.generic("map"))
-        assertTrue(JoinFlow.GENERIC_DIM < 1f)
+        assertTrue(JoinFlow.GENERIC_DIM < 1f && JoinFlow.GENERIC_DIM >= 0.7f)
+        assertEquals(Int.MAX_VALUE, JoinFlow.SHOT_WIDTH)
     }
 
     @Test fun downloadLine() {

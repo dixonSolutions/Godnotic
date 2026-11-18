@@ -492,7 +492,7 @@ static void publish_connect(qbool force)
 	jb_kbool(&b, "local", sv.active || TouchJoinPreview_LocalLoading());
 	// the map's picture for the native card, from the first moment of a join until the
 	// world draws: the map's own, else what the server list's map name finds, else a
-	// generic map picture (levelshot_kind says which; the card dims and blurs the last)
+	// generic map picture (levelshot_kind says which; the card dims the last a little)
 	{
 		char map[MAX_QPATH], shot[MAX_OSPATH] = "", pic[MAX_QPATH];
 		static char shot_name[MAX_QPATH], shot_path[MAX_OSPATH];

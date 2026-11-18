@@ -358,7 +358,7 @@ object Images {
 
     fun cached(path: String, widthPx: Int): Bitmap? = cache.get("$path@${bucket(widthPx)}")
 
-    private fun bucket(w: Int) = when { w <= 256 -> 256; w <= 512 -> 512; else -> 1024 }
+    private fun bucket(w: Int) = when { w == Int.MAX_VALUE -> Int.MAX_VALUE; w <= 256 -> 256; w <= 512 -> 512; else -> 1024 }
 
     fun load(path: String, widthPx: Int, done: (Bitmap?) -> Unit) {
         val key = "$path@${bucket(widthPx)}"
@@ -373,6 +373,7 @@ object Images {
     private fun decode(path: String, width: Int): Bitmap? {
         val src = File(path)
         if (!src.isFile) return null
+        if (width == Int.MAX_VALUE) return BitmapFactory.decodeFile(path)
         val thumb = thumbDir?.let { File(it, "${src.name}.${src.length()}.${src.lastModified()}.$width.jpg") }
         if (thumb != null && thumb.isFile) BitmapFactory.decodeFile(thumb.path)?.let { return it }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

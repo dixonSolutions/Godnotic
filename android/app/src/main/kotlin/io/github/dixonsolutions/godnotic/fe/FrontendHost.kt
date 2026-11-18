@@ -337,10 +337,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val generic = JoinFlow.generic(c.str("levelshot_kind"))
         if (shot != shotPath) {
             shotPath = shot; shotBitmap = null; shotGeneric = generic
-            if (shot.isNotEmpty()) Images.load(shot, 1024) { bmp ->
+            if (shot.isNotEmpty()) Images.load(shot, JoinFlow.SHOT_WIDTH) { bmp ->
                 if (shotPath == shot && bmp != null) {
-                    // a stand-in picture is blurred: drawn from a thumbnail scaled back up
-                    shotBitmap = if (shotGeneric) android.graphics.Bitmap.createScaledBitmap(bmp, maxOf(1, bmp.width / 14), maxOf(1, bmp.height / 14), true) else bmp
+                    shotBitmap = bmp // sharp: decoded for the screen, drawn bilinear, never blurred
                     applyLook(JoinFlow.showShot(shotPath, lastWorld))
                 }
             }

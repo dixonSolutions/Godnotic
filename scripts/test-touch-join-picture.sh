@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A server join never shows the logo screen: from the first connect snapshot the
 # native card has a picture file. With the map unknown (nothing answers yet) it is a
-# generic map picture marked "generic" (the card dims and blurs it); once the server
+# generic map picture marked "generic" (the card dims it a little); once the server
 # names a map this install has, it is that map's own picture ("map"). The snapshot
 # also carries the precache step and the download size fields the card shows.
 set -euo pipefail
