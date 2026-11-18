@@ -131,7 +131,7 @@ def main():
         last_host[h] = (now, key)
         if not s.get("alive", True):
             return
-        if rnd.random() < a.loss:
+        if rnd.random() < s.get("loss", a.loss):
             stats["lost"] += 1
             return
         humans, bots = s.get("humans", 0), s.get("bots", 0)

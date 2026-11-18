@@ -167,7 +167,11 @@ try:
     alive = sum(1 for s in A if s["alive"])
 
     # A lost first master query is retried without another user refresh.
-    write_state(A, drop_master_queries=1)
+    # This check isolates the lost master request. Packet loss is covered by
+    # the cold refresh below; avoid making the master retry assertion depend
+    # on a second, unrelated loss at one of its servers.
+    retry_servers = [dict(s, loss=0.0) for s in A]
+    write_state(retry_servers, drop_master_queries=1)
     stats, sums, rows, log = run_engine(os.path.join(a.work, "user-retry"), True, "0-retry", quit_at=7, early_open=True)
     r = report()
     check(r["master_queries"] >= 2, "retry: silent master is asked again", str(r["master_queries"]))
@@ -180,9 +184,13 @@ try:
 
     # Quit while silent servers still keep the refresh open. Answers already
     # received must be available at once in the next process.
-    write_state(A)
+    # Quit after the offscreen client has started, with a small fast subset
+    # answered and the rest still pending. This exercises saving a genuinely
+    # unfinished refresh instead of racing startup with the quit timer.
+    partial = [dict(s, latency_ms=s["latency_ms"] if i < 20 else 10000) for i, s in enumerate(A)]
+    write_state(partial)
     interrupted = os.path.join(a.work, "user-interrupted")
-    run_engine(interrupted, True, "0-interrupted", quit_at=2, early_open=True)
+    run_engine(interrupted, True, "0-interrupted", quit_at=7, early_open=True)
     saved = os.path.join(interrupted, "data", "touch_serverlist_info.txt")
     check(os.path.exists(saved) and len(open(saved).readlines()) > 1,
           "interrupted: answers saved before the refresh settles")
