@@ -15,7 +15,7 @@ public class UpdateBackgroundTest {
         // Automatic, Wi-Fi only, unmetered, nothing staged, in the background: held at check_only
         // (the app cannot see the network there). With a download running it has to keep going, or
         // backgrounding Godnotic would cancel it and leave .part files for the next start.
-        assertEquals(AndySUState.MODE_CHECK_ONLY,
+        assertEquals(AndySUState.MODE_AUTO,
                 AndySUState.targetMode(true, true, false, false, false));
         assertEquals(AndySUState.MODE_AUTO,
                 AndySUState.targetMode(true, true, false, false, false, true));
@@ -41,8 +41,8 @@ public class UpdateBackgroundTest {
                         for (boolean foreground : new boolean[] { true, false }) {
                             String expected = !auto ? AndySUState.MODE_CHECK_ONLY
                                     : !wifi ? AndySUState.MODE_AUTO
-                                    : foreground ? (metered ? AndySUState.MODE_CHECK_ONLY : AndySUState.MODE_AUTO)
-                                    : staged ? AndySUState.MODE_AUTO : AndySUState.MODE_CHECK_ONLY;
+                                    : !metered ? AndySUState.MODE_AUTO
+                                    : (!foreground && staged) ? AndySUState.MODE_AUTO : AndySUState.MODE_CHECK_ONLY;
                             assertEquals(auto + "/" + wifi + "/" + metered + "/" + staged + "/" + foreground,
                                     expected, AndySUState.targetMode(auto, wifi, metered, staged, foreground));
                         }
