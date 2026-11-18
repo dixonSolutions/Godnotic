@@ -339,6 +339,10 @@ void MainWindow_configureMainWindow(entity me)
 	i.configureDialog(i); // Touch
 	me.addItemCentered(me, i, i.intendedWidth * eX + i.intendedHeight * eY, SKINALPHAS_MAINMENU_z); // Touch
 
+	i = NEW(GodnoticVoteCallDialog); // Touch: call a vote
+	i.configureDialog(i); // Touch
+	me.addItemCentered(me, i, i.intendedWidth * eX + i.intendedHeight * eY, SKINALPHAS_MAINMENU_z); // Touch
+
 	i = NEW(GodnoticJoinDialog); // Touch: finger-sized join dialog
 	i.configureDialog(i); // Touch
 	me.addItemCentered(me, i, i.intendedWidth * eX + i.intendedHeight * eY, SKINALPHAS_MAINMENU_z); // Touch

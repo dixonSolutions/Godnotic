@@ -1343,6 +1343,7 @@ void UIB_BuildPause()
 		uib_f("minItem", 200);
 		UIB_Button("resume", (cvar("_touch_menu_paused") ? _("Resume") : _("Back to game")), UIB_AS("resume", (cvar("_touch_menu_paused") ? _("Resume") : _("Back to game")), "resume", "primary"), "primary");
 		UIB_Button("settings", _("Settings"), UIB_A("settings", _("Settings"), "settings"), "secondary");
+		UIB_Button("vote", _("Call a vote"), UIB_A("vote.open", _("Call a vote"), ""), "secondary");
 		// the engine's action list (_touch_act_*): Join game while watching, Spectate while playing
 		if (cvar("_touch_act_join"))
 			UIB_Button("join", _("Join game"), UIB_A("join.open", _("Join game"), "play"), "secondary");
@@ -1360,6 +1361,29 @@ void UIB_BuildPause()
 			uib_j("action", UIB_AS("disconnect", (hosting ? _("End the game") : _("Leave match")), "disconnect", "destructive"));
 		UIB_Close();
 	UIB_Close();
+	UIB_Done();
+}
+
+void UIB_BuildVoteCall()
+{
+	if (!UIB_Screen("vote.call", _("Call a vote")))
+		return;
+	UIB_Text("note", _("Available votes depend on the server."), "");
+	UIB_Open("votes", "grid");
+		UIB_Button("restart", _("Restart match"), UIB_A("vote.restart", _("Restart match"), ""), "secondary");
+		UIB_Button("endmatch", _("End match"), UIB_A("vote.endmatch", _("End match"), ""), "secondary");
+		UIB_Button("extend", _("More time"), UIB_A("vote.extend", _("More time"), ""), "secondary");
+		UIB_Button("nextmap", _("Next map"), UIB_A("vote.nextmap", _("Next map"), ""), "secondary");
+	UIB_Close();
+	UIB_Open("form", "form");
+		UIB_Open("map", "field");
+			uib_s("label", _("Map name"));
+			uib_s("bind", "vm:vote.map");
+			uib_j("submit", UIB_A("vote.map", _("Vote for this map"), ""));
+		UIB_Close();
+		UIB_Button("mapvote", _("Vote for this map"), UIB_A("vote.map", _("Vote for this map"), ""), "primary");
+	UIB_Close();
+	UIB_Button("help", _("List all vote commands"), UIB_A("vote.help", _("List all vote commands"), ""), "secondary");
 	UIB_Done();
 }
 
@@ -1747,6 +1771,7 @@ void UIB_Build(string id)
 		case "mp.password": UIB_BuildPassword(); return;
 		case "welcome": UIB_BuildWelcome(); return;
 		case "pause": UIB_BuildPause(); return;
+		case "vote.call": UIB_BuildVoteCall(); return;
 		case "loading": UIB_BuildLoading(); return;
 		case "setup": UIB_BuildSetup(); return;
 		case "credits": UIB_BuildCredits(); return;
@@ -2013,6 +2038,20 @@ void UIB_Action(string node, string a, string payload)
 			return;
 		}
 		case "resume": m_hide(); return;
+		case "vote.open": UIB_Push("vote.call"); return;
+		case "vote.restart": localcmd("cmd vote call restart\n"); m_hide(); return;
+		case "vote.endmatch": localcmd("cmd vote call endmatch\n"); m_hide(); return;
+		case "vote.extend": localcmd("cmd vote call extendmatchtime\n"); m_hide(); return;
+		case "vote.nextmap": localcmd("cmd vote call nextmap\n"); m_hide(); return;
+		case "vote.map":
+		{
+			string map = UIB_VM("vote.map");
+			if (!TouchVoteCall_ValidMap(map))
+				uib_toast(_("Enter a valid map name"), "warning", "warning", 3);
+			else { localcmd("cmd vote call gotomap ", map, "\n"); m_hide(); }
+			return;
+		}
+		case "vote.help": localcmd("cmd vote help\ntoggleconsole\n"); m_hide(); return;
 		case "follow": case "next": case "prev": case "free":
 			localcmd(sprintf("\ntouch_action %s\n", a)); m_hide(); return;
 		case "spectate": localcmd("\ntouch_action spectate confirm\n"); m_hide(); return;
