@@ -200,15 +200,17 @@ void GameTypeVote_DrawGameTypeItem(vector pos, float maxh, float tsize, string g
 
 void MapVote_DrawMapPicture(string pic, vector pos, vector img_size, float theAlpha)
 {
-	if (pic == "")
-		drawfill(pos, img_size, '0.5 0.5 0.5', 0.7 * theAlpha, DRAWFLAG_NORMAL);
-	else
+	if (pic == "" || drawgetimagesize(pic) == '0 0 0')
 	{
-		if (drawgetimagesize(pic) == '0 0 0')
-			drawpic(pos, draw_UseSkinFor("nopreview_map"), img_size, '1 1 1', theAlpha, DRAWFLAG_NORMAL);
-		else
-			drawpic(pos, pic, img_size, '1 1 1', theAlpha, DRAWFLAG_NORMAL);
+		// Touch: a missing preview gets a small dim icon, not a full-size
+		// camera placeholder that obscures the vote tiles.
+		drawfill(pos, img_size, '0.5 0.5 0.5', 0.25 * theAlpha, DRAWFLAG_NORMAL);
+		float side = min(img_size.x, img_size.y) * 0.4;
+		vector isize = vec2(side, side);
+		drawpic(pos + (img_size - isize) * 0.5, draw_UseSkinFor("nopreview_map"), isize, '1 1 1', 0.35 * theAlpha, DRAWFLAG_NORMAL);
 	}
+	else
+		drawpic(pos, pic, img_size, '1 1 1', theAlpha, DRAWFLAG_NORMAL);
 }
 
 void MapVote_DrawMapItem(vector pos, float isize, float tsize, string map, string pic, int _count, int id, int most_votes)
@@ -573,7 +575,10 @@ void MapVote_Draw(bool should_draw)
 		vector img_size = endsize * f + startsize * (1 - f);
 		vector img_pos = endpos * f + startpos * (1 - f);
 
-		MapVote_DrawMapPicture(mv_pics[mv_winner - 1], img_pos, img_size, theAlpha);
+		// Touch: the winner's picture only when it exists: the placeholder
+		// would grow into a giant box over the whole vote
+		if (drawgetimagesize(mv_pics[mv_winner - 1]) != '0 0 0')
+			MapVote_DrawMapPicture(mv_pics[mv_winner - 1], img_pos, img_size, theAlpha);
 
 		if (were_suggesters)
 		{
@@ -652,6 +657,28 @@ void MapVote_CheckPic(string pic, string pk3, int id)
 	{
 		mv_preview[id] = true;
 		return;
+	}
+	// Touch: prefer the packaged maps/<map>.jpg preview when available.
+	string map_pic = strcat("maps/", mv_entries[id]);
+	if (map_pic != pic && PreviewExists(map_pic))
+	{
+		strfree(mv_pics[id]);
+		mv_pics[id] = strzone(map_pic);
+		mv_preview[id] = true;
+		return;
+	}
+	// Touch: the map's picture may be in another screenshot directory
+	// (for example levelshots/<map>).
+	for (int d = 0; d < mv_ssdirs_count; ++d)
+	{
+		string alt = strcat(mv_ssdirs[d], "/", mv_entries[id]);
+		if (mv_ssdirs[d] != "" && alt != pic && PreviewExists(alt))
+		{
+			strfree(mv_pics[id]);
+			mv_pics[id] = strzone(alt);
+			mv_preview[id] = true;
+			return;
+		}
 	}
 	MapVote_CheckPK3(pic, pk3, id);
 }
