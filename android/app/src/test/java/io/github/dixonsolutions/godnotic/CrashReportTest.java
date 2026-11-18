@@ -240,6 +240,10 @@ public class CrashReportTest {
         assertFalse(CrashReport.currentVersion(old, "", ""));
     }
 
+    @Test public void bannerSitsBelowTheScreenHeader() {
+        assertTrue(CrashReport.BANNER_TOP_DP >= CrashReport.HEADER_BOTTOM_DP);
+    }
+
     @Test public void bannerLeavesAfterAboutEightSeconds() {
         assertEquals(8000, CrashReport.BANNER_MS);
     }

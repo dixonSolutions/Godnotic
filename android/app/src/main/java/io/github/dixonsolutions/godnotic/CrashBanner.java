@@ -142,13 +142,23 @@ final class CrashBanner {
         }
     }
 
-    /** A small pill at the top of the screen, inside the cutout and the status bar. */
+    /** A small pill near the top of the screen, under the header, inside the cutout and the status bar. */
     private static FrameLayout.LayoutParams layout(Activity activity) {
         float dp = activity.getResources().getDisplayMetrics().density;
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        params.topMargin = Math.round(12 * dp);
+        int inset = 0;
+        try {
+            android.view.WindowInsets wi = activity.getWindow().getDecorView().getRootWindowInsets();
+            if (wi != null) {
+                inset = wi.getSystemWindowInsetTop();
+            }
+        } catch (RuntimeException e) {
+            inset = 0;
+        }
+        // below the header of whichever screen is up, never over its title
+        params.topMargin = inset + Math.round(CrashReport.BANNER_TOP_DP * dp);
         params.setMarginStart(Math.round(12 * dp));
         params.setMarginEnd(Math.round(12 * dp));
         return params;

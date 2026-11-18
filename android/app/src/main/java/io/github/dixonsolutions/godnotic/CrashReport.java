@@ -294,6 +294,15 @@ final class CrashReport {
     }
 
     /**
+     * Where the banner's top edge sits (dp, under the status bar and cutout): below a screen's
+     * header (14 dp padding + 76 dp minimum height), so it never covers a title.
+     */
+    static final int BANNER_TOP_DP = 96;
+
+    /** The header's bottom edge in dp (see the native screens' bar). */
+    static final int HEADER_BOTTOM_DP = 90;
+
+    /**
      * The banner's whole rule: only in the main menu (never in or entering a match), only for a
      * report newer than the last one dismissed, and only one of this app/payload version.
      */
