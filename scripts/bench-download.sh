@@ -81,7 +81,7 @@ for c in "$@"; do
 	a=(); b=()
 	for r in $(seq 1 "$RUNS"); do
 		a+=("$(run_one "+set curl_segments 1 +set curl_maxdownloads 3" "$kbps")")
-		b+=("$(run_one "" "$kbps")")
+		b+=("$(run_one "${B_CFG:-}" "$kbps")")
 	done
 	printf '| %s (%s) | %s | %s s | %s s |\n' "$name" "${netem//_/ }" "$( [ "$kbps" = 0 ] && echo none || echo "$kbps KiB/s")" "${a[*]}" "${b[*]}"
 done

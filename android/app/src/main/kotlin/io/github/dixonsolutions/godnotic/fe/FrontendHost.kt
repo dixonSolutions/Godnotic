@@ -301,6 +301,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     /** The map's picture file the card shows (engine connect `levelshot`), decoded once per file. */
     private var shotPath = ""
     private var shotBitmap: android.graphics.Bitmap? = null
+    /** The picture is the generic stand-in: dimmed and blurred behind the card. */
+    private var shotGeneric = false
 
     /**
      * A join or a map load: the engine publishes its progress from inside the
@@ -332,12 +334,18 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val shot = c.str("levelshot")
         val showShot = JoinFlow.showShot(shot, c.bool("world"))
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
+        val generic = JoinFlow.generic(c.str("levelshot_kind"))
         if (shot != shotPath) {
-            shotPath = shot; shotBitmap = null
+            shotPath = shot; shotBitmap = null; shotGeneric = generic
             if (shot.isNotEmpty()) Images.load(shot, 1024) { bmp ->
-                if (shotPath == shot && bmp != null) { shotBitmap = bmp; applyLook(JoinFlow.showShot(shotPath, lastWorld)) }
+                if (shotPath == shot && bmp != null) {
+                    // a stand-in picture is blurred: drawn from a thumbnail scaled back up
+                    shotBitmap = if (shotGeneric) android.graphics.Bitmap.createScaledBitmap(bmp, maxOf(1, bmp.width / 14), maxOf(1, bmp.height / 14), true) else bmp
+                    applyLook(JoinFlow.showShot(shotPath, lastWorld))
+                }
             }
         }
+        shotGeneric = generic
         lastWorld = c.bool("world")
         // The join dialog is the one join screen; the card goes when it opens.
         val joinDialog = client?.modal?.lastOrNull() == "join"
@@ -398,34 +406,27 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // the black page and the logo back over the live world.
         lastTransparent = JoinFlow.transparent(stage, previewSeen)
         applyLook(showShot)
-        val pct = when (stage) {
-            "downloading" -> c.num("download_progress")
-            "loading", "preview" -> c.num("load_progress")
-            else -> 0.0
-        }
+        val pct = JoinFlow.progress(stage, c.num("download_progress"), c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt())
         val map = app.str("map")
         loadingTitle?.text = when {
             c.bool("local") -> if (map.isNotEmpty()) "Starting ${map.replaceFirstChar { it.uppercase() }}" else "Starting the match"
             c.str("address").isNotEmpty() -> "Joining ${serverLabel(c.str("address"))}"
             else -> "Joining"
         }
-        val load = c.str("load")
-        val what = when (stage) {
-            "connecting" -> "Waiting for the server"
-            "downloading" -> {
-                val kib = c.num("speed") / 1024.0
-                "Downloading ${c.str("file").substringAfterLast('/')}" + if (kib > 0) "  ·  ${kib.toInt()} KiB/s" else ""
-            }
-            "signon" -> "Entering the game"
-            // the engine's step names are file names ("progs/bolt.mdl", "*1"): say it plainly
-            else -> when {
-                load.isEmpty() || load.startsWith("*") -> "Loading the map"
-                load.contains('/') -> "Loading " + load.substringAfterLast('/').substringBeforeLast('.')
-                else -> load.replaceFirstChar { it.uppercase() }
+        val what = JoinFlow.detail(
+            stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
+            c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(),
+        )
+        loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
+        // a real bar: the engine's own progress band is not drawn under the card
+        loadingBar?.let { bar ->
+            if (pct < 0) bar.isIndeterminate = true
+            else {
+                if (bar.isIndeterminate) bar.isIndeterminate = false
+                bar.max = 1000
+                bar.progress = (pct * 1000).toInt()
             }
         }
-        // the engine reports 1% for most of a map load: a number only once it says something
-        loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
     }
 
     /**
@@ -450,7 +451,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         previewStrip = strip
         loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE
         when {
-            showShot && bmp != null -> screen.background = ShotDrawable(bmp)
+            showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash
             lastTransparent -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             else -> screen.setBackgroundColor(android.graphics.Color.BLACK)

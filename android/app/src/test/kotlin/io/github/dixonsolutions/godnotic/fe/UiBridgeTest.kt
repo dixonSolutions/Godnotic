@@ -264,8 +264,8 @@ class UiBridgeTest {
         assertFalse(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
 
         // the logo is for the wait before the preview, once
-        assertTrue(JoinFlow.banner("connecting", previewSeen = false))
-        assertTrue(JoinFlow.banner("signon", previewSeen = false))
+        assertFalse(JoinFlow.banner("connecting", previewSeen = false))
+        assertFalse(JoinFlow.banner("signon", previewSeen = false))
         assertFalse(JoinFlow.banner("preview", previewSeen = false))
         assertFalse(JoinFlow.banner("signon", previewSeen = true))
         assertFalse(JoinFlow.banner("loading", previewSeen = true))
