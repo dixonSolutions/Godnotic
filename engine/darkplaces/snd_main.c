@@ -2083,6 +2083,7 @@ void S_Update(const matrix4x4_t *listenermatrix)
 	snd_blocked = (snd_mutewhenidle.integer == 1 && !vid_activewindow)
 	           || (snd_mutewhenidle.integer == 2 && vid_hidden)
 	           || cls.timedemo;
+	{ extern qbool TouchHudMode_MuteMenuAudio(void); snd_blocked |= TouchHudMode_MuteMenuAudio(); } // Touch: mute online game audio behind the menu
 
 	{
 		double mindist_trans, maxdist_trans;
