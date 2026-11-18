@@ -279,6 +279,21 @@ class UiBridgeTest {
         assertFalse(JoinFlow.transparent("signon", previewSeen = false))
     }
 
+    /** The map's picture shows at once: before the settle wait, before any server, until the world draws. */
+    @Test fun joinShowsTheMapPictureImmediately() {
+        assertTrue(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = false))
+        assertFalse(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = true))
+        assertFalse(JoinFlow.showShot("", world = false))
+        // a local start: first snapshot, no settle wait, no card yet
+        assertFalse(JoinFlow.card("loading", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false, shot = true))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, shot = true))
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = false, shot = true))
+        // the picture counts as the preview: the logo never shows
+        assertTrue(JoinFlow.preview("loading", previewSeen = false, shot = true))
+        assertFalse(JoinFlow.banner("loading", previewSeen = true))
+    }
+
     @Test fun joinLinks() {
         assertEquals("192.168.1.5:26001", FrontendHost.parseJoin("godnotic://join/192.168.1.5:26001"))
         assertEquals("host.example:26000", FrontendHost.parseJoin("host.example"))
