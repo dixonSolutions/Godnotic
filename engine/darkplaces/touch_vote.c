@@ -630,7 +630,7 @@ static void draw_chip(qbool badge, qbool pressed)
 }
 
 // Which claimed finger is on what (touch targets)
-enum { T_NONE, T_CHIP, T_CLOSE, T_CARD, T_OUTSIDE, T_ROW };
+enum { T_NONE, T_CHIP, T_CLOSE, T_CARD, T_OUTSIDE, T_QYES, T_QNO, T_ROW };
 #define MAX_CLAIMED 4
 static struct { int id; int target; float x0, y0; } claimed[MAX_CLAIMED];
 
@@ -840,11 +840,60 @@ static void draw_card(void)
 	card.drawn = true;
 }
 
+// ---------------------------------------------------------------------------
+// Yes / No while a called vote waits for an answer: two big buttons under the
+// stock vote panel, in every mode (also over the match-end screens, where the
+// chip is not shown), so a vote is answered with one tap and no key names.
+// ---------------------------------------------------------------------------
+static struct { rect_t b[2]; qbool drawn; } quick;
+
+static void quick_place(void)
+{
+	float s = smin();
+	float dpu = TouchDp_Density(cv("vid_touchscreen_ydpi", 0), (float)min(vid.mode.width, vid.mode.height)) * (vid.mode.height > 0 ? ui_h() / (float)vid.mode.height : 1.0f);
+	float h = max(0.105f * s, TOUCHDP_MIN_TARGET * 1.3f * dpu), w = max(0.24f * s, h * 2.2f), gap = 0.035f * s;
+	float x = (ui_w() - 2 * w - gap) * 0.5f, y = ui_h() * 0.235f;
+	y = min(y, ui_h() - h - 0.02f * s);
+	quick.b[0].x = x;           quick.b[0].y = y; quick.b[0].w = w; quick.b[0].h = h;
+	quick.b[1].x = x + w + gap; quick.b[1].y = y; quick.b[1].w = w; quick.b[1].h = h;
+}
+
+static void draw_quick(void)
+{
+	int i;
+	quick_place();
+	for (i = 0; i < 2; i++)
+	{
+		rect_t *b = &quick.b[i];
+		const float *col = i == 0 ? C_SUCCESS : C_DANGER;
+		float fs = b->h * 0.48f, stroke = max(1.5f, smin() / 300.0f);
+		qbool held = target_held(T_QYES + i);
+		char buf[32];
+		int count = i == 0 ? call.yes : call.no;
+		float tw;
+		box(b->x, b->y + stroke * 2, b->w, b->h, b->h * 0.3f, C_SHADOW, 0.45f);
+		box(b->x, b->y, b->w, b->h, b->h * 0.3f, C_SURFACE, 0.92f);
+		box(b->x, b->y, b->w, b->h, b->h * 0.3f, col, held ? 0.95f : 0.62f);
+		box_rim(b->x, b->y, b->w, b->h, b->h * 0.3f, stroke, C_INK, 0.85f);
+		if (count >= 0)
+			dpsnprintf(buf, sizeof(buf), "%s  %d", i == 0 ? "YES" : "NO", count);
+		else
+			dp_strlcpy(buf, i == 0 ? "YES" : "NO", sizeof(buf));
+		tw = text_width(buf, fs);
+		text_at(b->x + (b->w - tw) * 0.5f, b->y + (b->h - fs) * 0.5f, fs, buf, C_INK, 1.0f);
+	}
+	quick.drawn = true;
+}
+
 void TouchVote_Draw(void)
 {
 	qbool show;
 	update_state();
 	chip.drawn = false;
+	quick.drawn = false;
+	// Over every mode, even where the chip is not shown (the match-end screens)
+	if (in_play() && touch_device() && call_pending() && !card.open)
+		draw_quick();
 	// The end-of-match scoreboard and the next-map vote own the screen: MENU
 	// and the console button only (touch_hudmode.h TouchMode_Controls).
 	if (!in_play() || !touch_device() || !(TouchMode_Controls(TouchHudMode_Current()->mode, 0) & TOUCHCTL_VOTECHIP))
@@ -879,6 +928,10 @@ static int target_at(float px, float py)
 {
 	int i;
 	float dx = px - chip.cx, dy = py - chip.cy, cr;
+	if (quick.drawn)
+		for (i = 0; i < 2; i++)
+			if (in_rect(&quick.b[i], px, py, quick.b[i].h * 0.08f))
+				return T_QYES + i;
 	if (card.open && card.drawn)
 	{
 		float cdx = px - card.close_cx, cdy = py - card.close_cy;
@@ -936,7 +989,7 @@ qbool TouchVote_Finger(int type, int id, float nx, float ny)
 		int t;
 		if (slot >= 0)
 			claimed[slot].id = 0; // a stale entry for a reused id
-		if (!in_play() || !(chip.drawn || card.drawn))
+		if (!in_play() || !(chip.drawn || card.drawn || quick.drawn))
 			return false;
 		t = target_at(px, py);
 		if (t == T_NONE)
@@ -973,6 +1026,16 @@ qbool TouchVote_Finger(int type, int id, float nx, float ny)
 			}
 			else if (t == T_CLOSE)
 				card_close();
+			else if (t == T_QYES || t == T_QNO)
+			{
+				// the same answer as the card's rows
+				sent_choice = t == T_QYES ? TOUCHVOTE_YES : TOUCHVOTE_NO;
+				sent_serial = call_serial;
+				sent_time = host.realtime;
+				pr.refused = false;
+				Cbuf_AddText(cmd_local, t == T_QYES ? "cmd vote yes\n" : "cmd vote no\n");
+				Con_DPrintf("Touch vote: quick %s\n", t == T_QYES ? "yes" : "no");
+			}
 			else if (t >= T_ROW && t - T_ROW < card.nrows)
 				vote_row(t - T_ROW);
 		}
