@@ -151,6 +151,11 @@ void d0_blind_id_SHUTDOWN(void)
 	d0_bignum_free(temp2);
 	d0_bignum_free(temp3);
 	d0_bignum_free(temp4);
+	// Touch: a live engine swap shuts this shared library down and initializes it again
+	// for the next engine copy. These pointers outlive the free, and the next
+	// d0_bignum_int() would then reallocate a freed vector (SIGSEGV in memcpy).
+	zero = one = four = NULL;
+	temp0 = temp1 = temp2 = temp3 = temp4 = NULL;
 	d0_bignum_SHUTDOWN();
 	UNLOCKTEMPS();
 	d0_destroymutex(tempmutex);

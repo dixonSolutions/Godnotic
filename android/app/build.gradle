@@ -12,6 +12,10 @@ def keystorePath = project.findProperty('keystore')      ?: ''
 android {
     namespace 'io.github.dixonsolutions.godnotic'
     compileSdk 35
+    // Nothing in the app reads BuildConfig, and its generated VERSION_NAME /
+    // VERSION_CODE fields would put the release id in the dex even when the
+    // Java code is unchanged. Keep the dex a function of the sources alone.
+    buildFeatures { buildConfig false }
     ndkVersion project.findProperty('ndk_version') ?: '27.3.13750724'
 
     defaultConfig {
