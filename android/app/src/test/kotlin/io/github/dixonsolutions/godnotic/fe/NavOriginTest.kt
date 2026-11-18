@@ -39,4 +39,22 @@ class NavOriginTest {
         assertEquals(NavOrigin.HOME, NavOrigin.leave("deep-link"))
         assertEquals(NavOrigin.HOME, NavOrigin.cancelJoin(null))
     }
+
+    @Test
+    fun onlyLeavingAMatchSpendsTheOrigin() {
+        // a join passes through loading and a moment of menu: the origin must survive that
+        assertEquals(false, NavOrigin.consumesOrigin("loading"))
+        assertEquals(false, NavOrigin.consumesOrigin("menu"))
+        assertEquals(true, NavOrigin.consumesOrigin("game"))
+    }
+
+    @Test
+    fun returnStackKeepsTheCategory() {
+        assertEquals("home mp", NavOrigin.returnStack("home mp"))
+        assertEquals("home sp sp.map", NavOrigin.returnStack("home sp sp.map"))
+        assertEquals("home campaign", NavOrigin.returnStack("home campaign"))
+        assertEquals(NavOrigin.HOME, NavOrigin.returnStack(""))
+        assertEquals(NavOrigin.HOME, NavOrigin.returnStack(null))
+        assertEquals(NavOrigin.HOME, NavOrigin.returnStack("home settings"))
+    }
 }
