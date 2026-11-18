@@ -62,6 +62,8 @@ step("escape2", "uib_input key ESCAPE")
 step("open-settings", "uib_input tap home/nav/settings", 1.2)
 step("tab-credits", "uib_input tap settings/nav/credits", 1.2)
 step("tab-settings", "uib_input tap credits/nav/settings", 1.2)
+step("accessibility", 'uib_event {\\"ev\\":\\"value\\",\\"node\\":\\"settings/split\\",\\"value\\":\\"accessibility\\"}', 1.2)
+step("enable-assist", "uib_input tap settings/split/accessibility/desktop/assist", 1.2)
 step("open-classic", 'uib_event {\\"ev\\":\\"value\\",\\"node\\":\\"settings/split\\",\\"value\\":\\"menu\\"}', 1.0)
 step("classic-up", "uib_input tap settings/split/menu/classic/advanced", 2.5)
 step("classic-hold", "echo", 1.0)
@@ -187,6 +189,11 @@ check(app("open-settings").get("stack") == ["home", "settings"] and node("open-s
 check(app("tab-credits").get("stack") == ["home", "credits"] and node("tab-credits", "credits/nav").get("current") == "credits",
       "a tap on Credits in the bar swaps the screen in place (Back still goes Home)")
 check(app("tab-settings").get("stack") == ["home", "settings"], "and Settings swaps back")
+assist = "settings/split/accessibility/desktop/assist"
+check(node("accessibility", assist).get("value") is False and node("accessibility", assist).get("bind") == "cvar:cl_accessibility_desktop",
+      "Accessibility shows the desktop assist switch off by default")
+check(node("enable-assist", assist).get("value") is True and re.search(r'^(seta )?"?cl_accessibility_desktop"? "1"$', cfg, re.M),
+      "a mouse tap enables desktop assist and saves it in config.cfg")
 frames = lambda s: int((state.get(s, {}).get("r", "") + " frames=0").split("frames=")[1].split()[0])
 check(app("classic-hold").get("stack") == ["home", "settings"] and frames("classic-hold") == frames("classic-up"),
       f"Advanced settings: the classic dialog draws and the bridge renderer stands aside ({frames('classic-hold') - frames('classic-up')} bridge frames in the next second)")
