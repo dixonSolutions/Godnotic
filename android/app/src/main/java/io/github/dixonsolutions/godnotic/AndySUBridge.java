@@ -73,6 +73,8 @@ final class AndySUBridge {
     private String stagedForApply = "";
     private String stateForApply = "idle";
     private String applyPolicy;
+    /** The staged release changes only native code and content: the host can swap it live. */
+    private boolean pendingNativeLive;
     private String announced = "";
     private long announcedAt;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -133,6 +135,19 @@ final class AndySUBridge {
                         AndySUCompat.applyNow();
                         break;
                     }
+                    // Apply now is live whenever the release can be: no package replacement, no
+                    // restart, the player stays in the menu. Restart is only the fallback.
+                    if (AndySUState.shouldApplyLive("staged", false, applyPolicy, pendingNativeLive)
+                            && EngineSwap.liveReady(context)) {
+                        try {
+                            AndySUCompat.applyNow();
+                        } catch (ReflectiveOperationException | RuntimeException e) {
+                            requestError = "Could not apply the update live: "
+                                    + AndySUState.oneLine(e.getMessage());
+                        }
+                        publish();
+                        return;
+                    }
                     if (!prepareRestart()) { publish(); return; }
                     // Quiet this process and mark it replacing *before* the host is asked: the
                     // relaunch does not return, so anything after the call may never run.
@@ -160,11 +175,11 @@ final class AndySUBridge {
                     prefs.edit().putBoolean(PREF_WIFI_ONLY, REQUEST_WIFI_ON.equals(request)).apply();
                     break;
                 case REQUEST_LIVE_ON:
-                    if (hasMode() && "auto".equals(AndySUCompat.mode()))
-                        AndySUCompat.setMode("download_only");
+                    EngineSwap.setLiveEnabled(context, true);
                     AndySUCompat.setApplyPolicy("live");
                     break;
                 case REQUEST_LIVE_OFF:
+                    EngineSwap.setLiveEnabled(context, false);
                     AndySUCompat.setApplyPolicy("next_start");
                     break;
                 default:
@@ -236,6 +251,8 @@ final class AndySUBridge {
                     policy = "unknown";
                 }
             }
+            JSONObject pendingSlot = core == null ? null : core.optJSONObject("pending");
+            pendingNativeLive = pendingSlot != null && pendingSlot.optBoolean("native_live");
             boolean downloading = "downloading".equals(state);
             if (modeControl) mode = steerMode(mode, state, auto, wifiOnly, metered,
                     !staged.isEmpty(), downloading, policy);
@@ -273,6 +290,7 @@ final class AndySUBridge {
                     .flag("auto", modeControl ? auto : null)
                     .flag("wifi", modeControl ? wifiOnly : null)
                     .flag("live", live)
+                    .put("live_reason", live != null && live ? liveReason() : "")
                     .put("net", metered ? "metered" : (Net.kind(context) == Net.Kind.OFFLINE ? "offline" : "unmetered"))
                     .put("hold", AndySUState.hold(state, auto, wifiOnly, metered))
                     .put("api", level)
@@ -299,6 +317,33 @@ final class AndySUBridge {
             notice(null);
         }
         write(r);
+    }
+
+    /**
+     * The engine is connected, joining or downloading (or back to idle). While it is busy the
+     * host's apply policy is next_start, so a release that stages mid-match waits; the moment the
+     * player is back in the menu the policy returns to live and autoApply swaps it in-process.
+     */
+    void onEngineBusy(boolean busy) {
+        if (!AndySUCompat.present() || !AndySUCompat.has("applyPolicy")) return;
+        try {
+            String want = busy ? "next_start"
+                    : (EngineSwap.liveEnabled(context) ? "live" : "next_start");
+            String current = AndySUCompat.applyPolicy();
+            if (!want.equals(current)) {
+                AndySUCompat.setApplyPolicy(want);
+                applyPolicy = want;
+                Log.i(TAG, "AndySU apply policy " + current + " -> " + want);
+            }
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Log.w(TAG, "Could not steer the AndySU apply policy", e);
+        }
+    }
+
+    /** The reason live is waiting, for Settings > Updates; "" when live is available. */
+    private String liveReason() {
+        String blocked = EngineSwap.liveBlockedReason(context);
+        return blocked == null ? "" : "Live apply is waiting: " + blocked + ".";
     }
 
     /** What the last publish decided a restart would apply, for the boot screen's guard. */
@@ -329,6 +374,24 @@ final class AndySUBridge {
         }
         final String noticeVersion = version;
         long now = SystemClock.elapsedRealtime();
+        // Live first: a native/content release is swapped in the running process, and only a
+        // release that cannot be swapped restarts (with the reason on the Updates screen).
+        if (AndySUState.shouldApplyLive(stateForApply, inMatch, applyPolicy, pendingNativeLive)
+                && EngineSwap.liveReady(context)) {
+            if (version.equals(announced) && now - announcedAt < 60_000) return;
+            announced = version;
+            announcedAt = now;
+            main.post(() -> Toast.makeText(context, "Applying " + noticeVersion + " live…",
+                    Toast.LENGTH_SHORT).show());
+            try {
+                AndySUCompat.applyNow();
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                announced = "";
+                requestError = "Could not apply the update live: " + AndySUState.oneLine(e.getMessage());
+                Log.w(TAG, requestError, e);
+            }
+            return;
+        }
         if (!version.equals(announced)) {
             announced = version;
             announcedAt = now;
@@ -393,9 +456,9 @@ final class AndySUBridge {
         if (manualMode != null && now - manualAt > MANUAL_MAX_MS) manualMode = null;
         String want = manualMode != null ? manualMode
                 : AndySUState.targetMode(auto, wifiOnly, metered, staged, foreground(), downloading);
-        // In auto mode the host may restart immediately on staging, even during a match.
-        // Download-only still stages automatically; restartNow explicitly promotes it.
-        if ("auto".equals(want) && !"next_start".equals(policy)) want = "download_only";
+        // Auto stays auto. Steering to download_only stopped the host's onStaged() from ever
+        // offering the release, which is why every update waited for the next start; the busy
+        // match case is handled by the apply policy (onEngineBusy), not by disabling staging.
         if (want.equals(mode)) return mode;
         AndySUCompat.setMode(want);
         Log.i(TAG, "AndySU update mode " + mode + " -> " + want);

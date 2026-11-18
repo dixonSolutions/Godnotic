@@ -932,6 +932,7 @@ public final class XonoticActivity extends SDLActivity {
                 // connected, joining or downloading while away: keep the radio out of power save
                 LanLocks.connected(this, !idle && !front);
                 KeepAliveService.engineBusy = !idle;
+                if (andysuBridge != null) andysuBridge.onEngineBusy(!idle);
                 // A map change, a reconnect or a finished download can read idle
                 // for a poll; the service could not be started again from the
                 // background (Android 12+), so it stays 60 s after the last busy

@@ -1,7 +1,9 @@
 package io.github.dixonsolutions.godnotic
 
 import android.app.Application
+import android.os.Build
 import android.util.Log
+import java.io.File
 
 /**
  * The resident JNI bridge (cpp/nativeui/bridge.c) between Android code and
@@ -98,6 +100,17 @@ class NativeUIApplication : Application() {
         // path into the process: services, the content provider, the boot screen, and an AndySU
         // host relaunching us by class name.
         CrashStore.installHandler(this)
+        // AndySU relaunches the app through a short-lived :andysu_phoenix process. This
+        // Application is created there too, but none of the game's init belongs in it: no crash
+        // reader, no replace guard, no requests of the dead process. Its own death is still
+        // captured by the handler above, and its stage is published so the next report says where.
+        val processName = if (Build.VERSION.SDK_INT >= 28) getProcessName()
+        else runCatching { File("/proc/self/cmdline").readText().trimEnd('\u0000') }.getOrDefault("")
+        if (HostProcess.isRelaunch(processName)) {
+            ProcessState.start(this)
+            ProcessState.stage(this, "phoenix")
+            return
+        }
         // What each ApplicationExitInfo carries about the process that died (version, payload,
         // host, screen, engine, update phase), and what a report prints under "state:".
         ProcessState.start(this)
