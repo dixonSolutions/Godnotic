@@ -49,9 +49,12 @@ expect() { # case log phase mode
 run_case() { # gametype map
 	local gt=$1 map=$2 port=$((26600 + RANDOM % 300)) d="$WORK/$1" n
 	mkdir -p "$d/sv/data" "$d/cl/data"
-	"$ENGINE" -dedicated -xonotic -basedir "$STOCKBASE" -userdir "$d/sv" +set port $port +set sv_public 0 \
+	# the server polls stale.cfg; the watcher below fills it once the client has left the game
+	printf 'alias stale_poll "exec stale.cfg; defer 0.1 stale_poll"\nstale_poll\n' > "$d/sv/data/stale-poll.cfg"
+	"$ENGINE" -dedicated -xonotic -basedir "$STOCKBASE" -userdir "$d/sv" +exec stale-poll.cfg +set port $port +set sv_public 0 +set sv_cheats 1 \
 		+set bot_number 3 +set skill 3 +set g_maplist "$map" +set g_warmup 0 +set g_dm 0 +set "g_$gt" 1 \
 		+set g_balance_teams 0 +set timelimit_override 20 +map "$map" > "$d/server.log" 2>&1 &
+	local server=$!
 	for n in $(seq 1 600); do grep -q "Server spawned" "$d/server.log" 2> /dev/null && break; sleep 0.1; done
 	sleep 2
 	printf 'seta touch_profile_done 1\nseta _cl_name "hudtest"\nseta cl_allow_uid2name 0\n' > "$d/cl/data/autoexec.cfg"
@@ -61,16 +64,49 @@ run_case() { # gametype map
 		for n in $(seq 1 110); do echo "defer $n \"touch_hud_state\""; done
 		echo 'defer 40 "echo PHASE spectator"'
 		echo 'defer 46 "echo PHASE joining; togglemenu 0; cmd selectteam auto; cmd join"'
+		echo 'defer 51 "god"'
 		echo 'defer 53 "echo PHASE playing"'
 		echo 'defer 68 "echo PHASE dying; kill"'
 		echo 'defer 71 "echo PHASE dead"'
+		echo 'defer 72 "touch_hud_state rects"'
+		# Public servers' scoreboard can still show the dead player's frags when the spectator marker
+		# is owed (lag, loss). Fake that (see the watcher in run_case): the server keeps writing
+		# frags 3 into this client's edict while it spectates; only the CSQC's own status says
+		# "observing" then.
 		echo 'defer 74 "echo PHASE leaving; cmd spectate"'
 		echo 'defer 80 "echo PHASE spectator2"'
-		echo 'defer 88 "echo PHASE end; quit"'
+		echo 'defer 81 "touch_hud_state rects"'
+		echo 'defer 82 "echo PHASE follow_request; +attack"'
+		echo 'defer 82.2 "-attack"'
+		echo 'defer 85 "echo PHASE following"'
+		echo 'defer 91 "echo PHASE rejoin; cmd selectteam auto; cmd join"'
+		echo 'defer 93 "god"'
+		echo 'defer 98 "echo PHASE playing2"'
+		echo 'defer 105 "echo PHASE end; quit"'
 	} > "$d/cl/data/hud.cfg"
-	timeout 200 "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$d/cl" +vid_fullscreen 0 +vid_width 640 +vid_height 360 \
-		+set _touch_assets_ready 1 +exec hud.cfg > "$d/client.log" 2>&1
-	kill %1 2> /dev/null; wait 2> /dev/null
+	# The client sees a phone: a touchscreen and nothing else in /proc/bus/input/devices
+	# (the host's own keyboard and mouse would otherwise make this a desktop).
+	local fake=()
+	if command -v bwrap > /dev/null && [ -f "$ROOT/tests/input-presence/fixtures/phone-touch-only.txt" ]; then
+		fake=(bwrap --bind / / --dev-bind /dev /dev --ro-bind "$ROOT/tests/input-presence/fixtures/phone-touch-only.txt" /proc/bus/input/devices)
+	fi
+	( # the stale-scoreboard window: from "leaving" (cmd spectate) until the rejoin
+		for n in $(seq 1 1500); do
+			grep -aq "^PHASE leaving" "$d/client.log" 2> /dev/null && break; sleep 0.1
+		done
+		echo 'prvm_edictset server 1 frags 3' > "$d/sv/data/stale.cfg"
+		for n in $(seq 1 1500); do
+			grep -aq "^PHASE follow_request" "$d/client.log" 2> /dev/null && break; sleep 0.1
+		done
+		rm -f "$d/sv/data/stale.cfg"
+	) &
+	local watcher=$!
+	timeout 200 "${fake[@]}" "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$d/cl" +vid_fullscreen 0 +vid_width 640 +vid_height 360 \
+		+set _touch_assets_ready 1 +set vid_touchscreen_mode 2 +set developer 1 +set hud_panel_pressedkeys 1 +exec hud.cfg > "$d/client.log" 2>&1
+	rm -f "$d/sv/data/stale.cfg"
+	# the dedicated server can hang in its shutdown: ask, then insist
+	kill "$server" 2> /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$server" 2> /dev/null || break; sleep 0.3; done
+	kill -9 "$server" "$watcher" 2> /dev/null; wait 2> /dev/null
 	if ! grep -aq "is now playing" "$d/client.log"; then bad "$gt: the client never joined the game (log: $d/client.log)"; return; fi
 	if [ "$gt" = ctf ]; then
 		if grep -aq "is now playing on the" "$d/client.log"; then ok "$gt: joined a team"; else bad "$gt: no team join in the log"; fi
@@ -80,6 +116,18 @@ run_case() { # gametype map
 	expect "$gt" "$d/client.log" playing playing
 	expect "$gt" "$d/client.log" dead dead
 	expect "$gt" "$d/client.log" spectator2 spectating
+	if awk '/^PHASE leaving/{p=1} /^PHASE follow_request/{p=0} p && /^TOUCHHUD .* frags=3 /{found=1} END{exit !found}' "$d/client.log"; then ok "$gt: the scoreboard did show stale frags while spectating"; else bad "$gt: stale-scoreboard window never happened (the test proves nothing)"; fi
+	if awk '/^PHASE spectator|^PHASE leaving/{p=1} /^PHASE joining|^PHASE follow_request/{p=0} p && /^TOUCHHUD /{if ($0 !~ /spectatee=-1$/) bad=1} END{exit bad}' "$d/client.log"; then ok "$gt: CSQC spectatee_status read as observing"; else bad "$gt: CSQC spectatee_status was not -1 while spectating"; fi
+	if awk '/^PHASE dead/{p=1} /^PHASE leaving/{p=0} p && /TOUCHRECT .*RESPAWN/{found=1} END{exit !found}' "$d/client.log"; then ok "$gt: dead HUD offers RESPAWN"; else bad "$gt: dead HUD has no RESPAWN rectangle"; fi
+	if awk '/^PHASE spectator2/{p=1} /^PHASE follow_request/{p=0} p && /TOUCHRECT .*RESPAWN/{found=1} END{exit found}' "$d/client.log"; then ok "$gt: spectator HUD dropped the RESPAWN button"; else bad "$gt: spectator HUD still shows RESPAWN"; fi
+	if awk '/^PHASE spectator2/{p=1} /^PHASE follow_request/{p=0} p && /TOUCHRECT .*specbar3/{found=1} END{exit !found}' "$d/client.log"; then ok "$gt: spectator HUD offers JOIN"; else bad "$gt: spectator HUD has no JOIN rectangle"; fi
+	expect "$gt" "$d/client.log" following following
+	expect "$gt" "$d/client.log" playing2 playing
+	if [ "${EXPECT_TOUCH_PANELS:-1}" = 1 ]; then
+		for panel in HUD_InfoMessages HUD_PressedKeys; do
+			if grep -q "Touch HUD: suppressed stock $panel" "$d/client.log"; then ok "$gt: suppressed foreign $panel"; else bad "$gt: foreign $panel was not suppressed"; fi
+		done
+	fi
 }
 
 cases="${*:-dm ctf}"

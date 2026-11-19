@@ -3,6 +3,7 @@ package io.github.dixonsolutions.godnotic.fe
 import android.content.Context
 import android.graphics.Color
 import android.os.Parcelable
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -175,7 +176,15 @@ class ViewRenderer(
         }
         serverState(source).begin(total, rev)
         flushServers(source)
-        for (l in lists[source].orEmpty()) l.reask()
+        // Fetch the complete cached source, not just the visible RecyclerView
+        // window. Small batches keep bridge messages within their size limit.
+        val list = lists[source]?.firstOrNull()
+        val props = list?.let { nodes[it.id]?.props }
+        if (list != null && props != null) {
+            for (offset in 0 until total step 32)
+                events.window(list.id, source, offset, minOf(32, total - offset),
+                    props.str("sort"), props.bool("desc"), props.str("filter"))
+        }
     }
 
     /**
@@ -184,8 +193,12 @@ class ViewRenderer(
      * change, four a second) is not the end of the query, and settling here
      * dimmed then removed rows that had simply not been re-sent yet.
      */
+    private val firstRowsLogged = HashSet<String>()
+
     private fun flushServers(source: String) {
         val state = serverState(source)
+        if (state.size > 0 && lists[source].orEmpty().isNotEmpty() && firstRowsLogged.add(source))
+            Log.i("Godnotic", "Native UI: $source list holds ${state.size} rows (first rows handed to the list)")
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -703,7 +716,7 @@ class ViewRenderer(
         titleV.maxLines = 2
         titleV.ellipsize = null
         Kit.fitWords(titleV, Theme.SP_TITLE - 1f, 13f) // "Team Deathmatch" on a narrow card: smaller, never "Dea|thmatch"
-        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = 2)
+        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") 4 else 2)
         val badges = FlowGrid(ctx, 0, dp(6f), wrap = true)
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)
@@ -1411,6 +1424,40 @@ class ViewRenderer(
         return frame
     }
 
+    /** The native server selection panel: ask for its map picture as soon as the row is tapped. */
+    private fun showServerDetails(row: Map<String, Any?>) {
+        val cells = row["cells"].obj()
+        val map = cells.str("map")
+        val address = cells.str("address").ifEmpty { VirtualList.keyOf(row) }
+        val content = Kit.column(ctx, 12f)
+        val img = RoundImage(ctx, 16f).apply {
+            aspect = 16f / 9f
+            maxHeight = ServerDetails.imageMaxHeightPx(
+                ctx.resources.displayMetrics.widthPixels,
+                ctx.resources.displayMetrics.heightPixels,
+            )
+        }
+        if (map.isNotEmpty()) {
+            content.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            picture(img, "pk3:maps/$map")
+        }
+        content.addView(Kit.text(ctx, cells.str("name").ifEmpty { address }, Theme.SP_TITLE, Theme.TEXT, bold = true))
+        content.addView(Kit.text(ctx, ServerDetails.facts(cells), Theme.SP_BODY, Theme.TEXT_MUTED))
+        val playerDetails = cells.str("player_details").trim()
+        if (playerDetails.isNotEmpty()) {
+            content.addView(Kit.text(ctx, "Players · score · team", Theme.SP_CAPTION, Theme.TEXT_MUTED, bold = true))
+            content.addView(Kit.text(ctx, playerDetails, Theme.SP_BODY, Theme.TEXT, bold = true))
+        }
+        val actions = Kit.row(ctx, 10f)
+        actions.addView(Kit.button(ctx, "Join", primary = true) {
+            host.showDialog(null)
+            events.row("mp/servers", address, "activate")
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        content.addView(actions)
+        val scroll = ScrollView(ctx).apply { isFillViewport = true; addView(content) }
+        host.showDialog(dialogFrame(scroll, true))
+    }
+
     private fun generic(id: String, type: String, props: Map<String, Any?>): Entry {
         val col = Kit.column(ctx, 8f)
         val head = FrameLayout(ctx)
@@ -1569,7 +1616,7 @@ class ViewRenderer(
                     // `stale`: no answer this refresh (drawn dimmed until its grace runs
                     // out); `fresh`: new this refresh, so it fades and slides in rather
                     // than appearing between two frames
-                    val dim = if (data?.bool("disabled") == true) 0.5f else if (cells.bool("stale") || data?.bool("stale") == true) 0.55f else 1f
+                    val dim = if (data?.bool("disabled") == true) 0.5f else 1f
                     if (data != null && data.bool("fresh")) {
                         if (fadedIn.size > 4096) fadedIn.clear()
                         if (fadedIn.add(VirtualList.keyOf(data))) {
@@ -1726,7 +1773,11 @@ class ViewRenderer(
             if (second) {
                 if (e.props.str("selection") == "multi") select(e, id, key, true) // the first tap's toggle undone
                 events.row(id, key, "activate")
-            } else select(e, id, key, true)
+            } else {
+                val changed = !isServerSource(e.source) || serverState(e.source).selected != key
+                select(e, id, key, true)
+                if (changed && id == "mp/servers" && e.props.str("selection") == "single") showServerDetails(row)
+            }
         }
         v.setOnKeyListener { _, code, ev ->
             if (ev.action == android.view.KeyEvent.ACTION_UP && (code == android.view.KeyEvent.KEYCODE_ENTER || code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {

@@ -25,8 +25,10 @@ pub struct Core {
 
 /// A list node on screen and its model.
 pub struct ListView {
+    pub id: String,
     pub source: String,
     pub model: WindowModel,
+    pub selection: Option<gtk::SingleSelection>,
     pub sort: Option<String>,
     pub desc: bool,
     pub filter: String,
@@ -213,9 +215,26 @@ fn ui_lists(app: &App) -> Vec<Rc<RefCell<ListView>>> {
 fn rows(app: &App, source: &str, splices: &[Splice]) {
     for l in ui_lists(app) {
         if l.borrow().source == source {
-            let model = l.borrow().model.clone();
+            let (model, selection, id) = {
+                let l = l.borrow();
+                (l.model.clone(), l.selection.clone(), l.id.clone())
+            };
             for s in splices {
                 model.splice(s);
+            }
+            if let Some(selection) = selection {
+                // find the chosen row's position with the store borrowed, then set it with the borrow gone
+                let pos = {
+                    let core = app.core.borrow();
+                    let key = core.store.node(&id).and_then(|n| n.arr("selected").first()).and_then(Value::as_str).map(str::to_owned);
+                    key.and_then(|key| {
+                        let window = core.store.sources.get(source)?;
+                        (0..window.total()).find(|&i| window.row(i).and_then(|r| r.str_of("key")).as_deref() == Some(key.as_str()))
+                    })
+                };
+                if let Some(pos) = pos {
+                    selection.set_selected(pos as u32);
+                }
             }
         }
     }
@@ -228,7 +247,9 @@ pub fn request_rows(app: &App, l: &Rc<RefCell<ListView>>) {
         (b.source.clone(), b.sort.clone(), b.desc, b.filter.clone(), b.seen.get())
     };
     let first = if first == usize::MAX { 0 } else { first };
-    let last = last.max(first).max(30);
+    let last = if source == "servers" || source.starts_with("servers.") {
+        app.core.borrow().store.sources.get(&source).map(|w| w.total().saturating_sub(1)).unwrap_or(0).max(last)
+    } else { last.max(first).max(30) };
     let reqs = {
         let mut core = app.core.borrow_mut();
         core.store.sources.entry(source.clone()).or_default().need(first, last)

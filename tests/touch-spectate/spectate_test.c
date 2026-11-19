@@ -31,6 +31,16 @@ static int failures;
 
 int main(void)
 {
+	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFromCsqc(-1, TOUCHSPEC_NONE), "dead to observer with stale scoreboard");
+	CHECK_INT(TOUCHSPEC_FOLLOWING, TouchSpec_StateFromCsqc(4, TOUCHSPEC_OBSERVING), "observer to following");
+	CHECK_INT(TOUCHSPEC_NONE, TouchSpec_StateFromCsqc(0, TOUCHSPEC_OBSERVING), "spectator joins with stale scoreboard");
+	CHECK_INT(TOUCHSPEC_OUT_FREE, TouchSpec_StateFromCsqc(-1, TOUCHSPEC_OUT), "out-of-round observer");
+	CHECK_INT(1, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 0, 1), "foreign touch spectator hints hidden");
+	CHECK_INT(1, TouchSpec_HideStockPanel("HUD_PressedKeys", 1, 1, 0, 1), "foreign touch spectator keys hidden");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 1, 1), "keyboard retains foreign prompts");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 0, 0), "playing retains foreign messages");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 0, 1, 0, 1), "bundled prompts use touch labels");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_Chat", 1, 1, 0, 1), "chat is unaffected");
 	// The state from the scoreboard marker, the view and the health stat
 	// (values as seen on 0.8.2, 0.8.5, 0.8.6 and git servers).
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 3, 16, -666), "spectator marker, own view, observer health: free-fly");
