@@ -10,6 +10,7 @@
 #include "quakedef.h"
 #include "andysu_engine.h"
 #include "healthy_gate.h"
+#include "java_abi.h"
 
 extern void Andysu_InputDevices(int touch, int keyboard, int mouse); /* vid_touchdetect.c */
 
@@ -32,7 +33,7 @@ static int andysu_run(const andysu_loader_api *loader, int argc, char **argv, in
 }
 
 static const andysu_engine andysu_engine_desc = {
-	ANDYSU_ENGINE_ABI, sizeof(andysu_engine), 1, ANDYSU_BUILD_ID, andysu_run, Andysu_InputDevices,
+	ANDYSU_ENGINE_ABI, sizeof(andysu_engine), GODNOTIC_JAVA_ABI, ANDYSU_BUILD_ID, andysu_run, Andysu_InputDevices,
 };
 
 __attribute__((visibility("default"))) const andysu_engine *andysu_engine_v1(void)
