@@ -47,6 +47,7 @@ OBJ_COMMON= \
 	touch_tactics.o \
 	touch_assist.o \
 	touch_lan.o \
+	touch_webnet.o \
 	touch_net.o \
 	touch_joinfail.o \
 	touch_joinname.o \
@@ -433,9 +434,9 @@ ifeq ($(DP_TOUCH_BRIDGE),1)# Touch:
 TOUCH_BRIDGE_CACHE ?= $(if $(GODNOTIC_DATACHANNEL_CACHE),$(GODNOTIC_DATACHANNEL_CACHE),$(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)/godnotic/libdatachannel-4e4f4892dccb2a57fe3a490d0c9d958de4244e74)# Touch:
 TOUCH_BRIDGE_PREFIX := $(TOUCH_BRIDGE_CACHE)/prefix# Touch:
 OBJ_SV += touch_bridge.o# Touch:
-OBJ_SV += touch_bridge_engine.o touch_bridge_signaling.o# Touch:
+OBJ_SV += touch_bridge_engine.o touch_bridge_signaling.o touch_bridge_mqtt.o touch_bridge_relay.o touch_bridge_relay_engine.o# Touch:
 OBJ_SDL += touch_bridge.o# Touch:
-OBJ_SDL += touch_bridge_engine.o touch_bridge_signaling.o# Touch:
+OBJ_SDL += touch_bridge_engine.o touch_bridge_signaling.o touch_bridge_mqtt.o touch_bridge_relay.o touch_bridge_relay_engine.o# Touch:
 CFLAGS_COMMON += -I$(TOUCH_BRIDGE_PREFIX)/include -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 -DTOUCH_BRIDGE_ENABLED# Touch:
 LDFLAGS_LINUXSV += $(TOUCH_BRIDGE_PREFIX)/lib/libdatachannel.a $(TOUCH_BRIDGE_PREFIX)/lib/libjuice.a $(TOUCH_BRIDGE_PREFIX)/lib/libusrsctp.a -lstdc++ -lssl -lcrypto -lpthread# Touch:
 LDFLAGS_LINUXSDL += $(TOUCH_BRIDGE_PREFIX)/lib/libdatachannel.a $(TOUCH_BRIDGE_PREFIX)/lib/libjuice.a $(TOUCH_BRIDGE_PREFIX)/lib/libusrsctp.a -lstdc++ -lssl -lcrypto -lpthread# Touch:

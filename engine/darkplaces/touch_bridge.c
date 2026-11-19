@@ -30,14 +30,38 @@ int Touch_BridgeSetMaxPeers(unsigned int maximum)
     return result;
 }
 
+static char bridge_ice_server[256];
+
+int Touch_BridgeSetIceServer(const char *url)
+{
+    pthread_mutex_lock(&bridge_peers_mutex);
+    if (url && strlen(url) < sizeof(bridge_ice_server)) strcpy(bridge_ice_server, url);
+    else bridge_ice_server[0] = 0;
+    pthread_mutex_unlock(&bridge_peers_mutex);
+    return url && !bridge_ice_server[0] ? RTC_ERR_INVALID : 0;
+}
+
+unsigned int Touch_BridgeGetMaxPeers(void)
+{
+    unsigned int maximum;
+    pthread_mutex_lock(&bridge_peers_mutex);
+    maximum = bridge_peer_max;
+    pthread_mutex_unlock(&bridge_peers_mutex);
+    return maximum;
+}
+
 int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description,
                            rtcCandidateCallbackFunc candidate, rtcDataChannelCallbackFunc channel)
 {
     rtcConfiguration config;
+    char ice[sizeof(bridge_ice_server)];
+    const char *servers[1] = {ice};
     int peer;
     memset(&config, 0, sizeof(config));
     config.disableAutoNegotiation = true;
     pthread_mutex_lock(&bridge_peers_mutex);
+    memcpy(ice, bridge_ice_server, sizeof(ice));
+    if (ice[0]) { config.iceServers = servers; config.iceServersCount = 1; }
     if (bridge_peer_count >= bridge_peer_max) {
         pthread_mutex_unlock(&bridge_peers_mutex);
         return RTC_ERR_FAILURE;

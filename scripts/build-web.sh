@@ -51,10 +51,10 @@ EOF
 if [ "$ENGINE_ONLY" != "1" ]; then
     gmqcc="$ROOT/engine/gmqcc/gmqcc"
     if [ ! -x "$gmqcc" ]; then
-        make -C "$ROOT/engine/gmqcc" -j"$(nproc)" STRIP=: gmqcc
+        make -C "$ROOT/engine/gmqcc" -j"${XT_JOBS:-$(nproc)}" STRIP=: gmqcc
     fi
     make -C "$ROOT/engine/data/xonotic-data.pk3dir" QCC="$gmqcc" XON_BUILDSYSTEM=1 \
-        QCCFLAGS_WATERMARK="${QCCFLAGS_WATERMARK:-web}" -j"$(nproc)" qc
+        QCCFLAGS_WATERMARK="${QCCFLAGS_WATERMARK:-web}" -j"${XT_JOBS:-$(nproc)}" qc
     make -C "$ROOT/engine/data/xonotic-data.pk3dir/qcsrc" QCC="$gmqcc" XON_BUILDSYSTEM=1 \
         QCCFLAGS_WATERMARK="${QCCFLAGS_WATERMARK:-web}" ../menu.dat
 fi
@@ -87,7 +87,7 @@ if [ ! -f "$OPUS_PREFIX/lib/libopusfile.a" ]; then
     (cd "$DEPS/src-opus" && emconfigure ./configure -q --prefix="$OPUS_PREFIX" --host=wasm32-unknown-emscripten \
         --disable-shared --enable-static --disable-doc --disable-extra-programs --disable-asm --disable-rtcd \
         --disable-intrinsics --disable-stack-protector --disable-hardening --disable-dred --disable-deep-plc \
-        CFLAGS="-O2" >/dev/null && emmake make -s -j"$(nproc)" install >/dev/null)
+        CFLAGS="-O2" >/dev/null && emmake make -s -j"${XT_JOBS:-$(nproc)}" install >/dev/null)
     # opusfile: four sources and no HTTP, so no configure (it wants pkg-config).
     of="$DEPS/src-opusfile"
     for s in info internal opusfile stream; do
@@ -149,7 +149,7 @@ want_link="${LDFLAGS_WEB[*]}"
 if [ ! -f "$link_stamp" ] || [ "$(cat "$link_stamp")" != "$want_link" ]; then
     rm -f godnotic.js godnotic.wasm
 fi
-emmake make emscripten-release -j"$(nproc)" \
+emmake make emscripten-release -j"${XT_JOBS:-$(nproc)}" \
     EXE_WASMJS=godnotic.js \
     DP_VIDEO_CAPTURE=disabled \
     STRIP=: \
@@ -176,12 +176,17 @@ for icon in "$ROOT"/web/icon-*.png; do
 done
 rm -f "$OUT/config.js" "$OUT/build.json" "$OUT/godnotic.js" "$OUT/godnotic.wasm" \
     "$OUT/shell.js" "$OUT/shell.css" "$OUT/store.js" "$OUT/lazyfs.js" "$OUT/appdata.js" "$OUT/godnotic-banner.png" "$OUT/godnotic-banner.webp"
-rm -f "$OUT/mods.js" "$OUT/userdata.js"
+rm -f "$OUT/mods.js" "$OUT/userdata.js" "$OUT/bridge.js"
 rev="${VERCEL_GIT_COMMIT_SHA:-${GITHUB_SHA:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo local)}}"
 XT_BUILD_ID="$(date -u +%Y%m%d%H%M%S)-${rev:0:7}" XT_WEB_DATA_URL="${XT_WEB_DATA_URL:-}" \
 python3 -I - "$ROOT/web" "$PWD" "$OUT" <<'PY'
 import hashlib, json, os, re, shutil, sys
 web, engine, out = sys.argv[1:4]
+
+def bridge_bundle(web):
+    sys.path.insert(0, os.path.join(web, '..', 'scripts', 'lib'))
+    from bridge_bundle import bundle
+    return bundle(web)
 
 def hashed(src, name):
     data = open(src, 'rb').read()
@@ -198,6 +203,13 @@ names = {
 for f in ('shell.js', 'shell.css', 'store.js', 'lazyfs.js', 'appdata.js', 'godnotic-banner.webp'):
     names[f] = hashed(os.path.join(web, f), f)
 
+# Online play (web/bridge-*.mjs): the modules, bundled into one classic
+# script, define window.GodnoticBridge before shell.js runs.
+bundle = os.path.join(out, 'bridge.js')
+with open(bundle, 'w', encoding='utf-8') as f:
+    f.write(bridge_bundle(web))
+names['bridge.js'] = hashed(bundle, 'bridge.js')
+os.remove(bundle)
 names['mods.js'] = hashed(os.path.join(web, 'mods.js'), 'mods.js')  # Lua mods from a file
 names['userdata.js'] = hashed(os.path.join(web, 'userdata.js'), 'userdata.js')  # the user folder reaches IndexedDB
 
@@ -205,11 +217,15 @@ html = open(os.path.join(web, 'index.html'), encoding='utf-8').read()
 for page in ('mods.js', 'userdata.js'):
     html, n = re.subn(r'(src=")' + re.escape(page) + '"', r'\g<1>' + names[page] + '"', html)
     assert n == 1, page
-for plain in ('shell.js', 'shell.css', 'store.js', 'lazyfs.js', 'appdata.js', 'godnotic-banner.webp'):
+for plain in ('bridge.js', 'shell.js', 'shell.css', 'store.js', 'lazyfs.js', 'appdata.js', 'godnotic-banner.webp'):
     html, n = re.subn(r'((?:src|href)=")' + re.escape(plain) + '"', r'\g<1>' + names[plain] + '"', html)
     assert n == 1, plain
 cfg = {'engine': names['godnotic.js'], 'wasm': names['godnotic.wasm'], 'manifest': '',
        'dataUrl': os.environ.get('XT_WEB_DATA_URL', ''), 'build': os.environ['XT_BUILD_ID']}
+# A self-hosted relay's signaling broker(s) instead of the public ones
+# (relay/README.md); the page's ?relaybroker= still wins.
+if os.environ.get('XT_WEB_RELAY_BROKERS'):
+    cfg['relayBrokers'] = os.environ['XT_WEB_RELAY_BROKERS'].split()
 env = os.path.join(out, 'data', 'web-data.env')
 if os.path.exists(env):
     vals = dict(l.split('=', 1) for l in open(env).read().splitlines() if '=' in l)

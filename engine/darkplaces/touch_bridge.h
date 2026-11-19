@@ -2,6 +2,7 @@
 #define TOUCH_BRIDGE_H
 
 #include <rtc/rtc.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Callbacks execute on libdatachannel threads; the caller owns their context. */
@@ -9,6 +10,9 @@ int Touch_BridgeCreatePeer(void *context, rtcDescriptionCallbackFunc description
                            rtcCandidateCallbackFunc candidate, rtcDataChannelCallbackFunc channel);
 /* Every successfully created peer must be released through this function. */
 int Touch_BridgeDeletePeer(int peer);
+/* One STUN server for peers created afterwards ("stun:host:port"); NULL clears. */
+int Touch_BridgeSetIceServer(const char *url);
+unsigned int Touch_BridgeGetMaxPeers(void);
 /* A limit change cannot be smaller than the current number of peers. */
 int Touch_BridgeSetMaxPeers(unsigned int maximum);
 int Touch_BridgeOpenChannel(int peer, const char *label, void *context,
@@ -58,7 +62,14 @@ void Touch_BridgeInit(void);
 void Touch_BridgeSignalingInit(void);
 void Touch_BridgeSignalingFrame(void);
 void Touch_BridgeSignalingShutdown(void);
+/* The opt-in web relay (bridge_relay cvar), driven by the signaling frame. */
+void Touch_BridgeRelayInit(void);
+void Touch_BridgeRelayFrame(void);
+void Touch_BridgeRelayShutdown(void);
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void);
+/* sv_master1..4 and sv_masterextra1..3, resolved; 0 when unset or unresolvable. */
+#define TOUCH_BRIDGE_MASTER_CVARS 7
+int Touch_BridgeConfiguredMaster(size_t index, struct touch_bridge_address *address);
 void Touch_BridgeForwarderDestroy(struct touch_bridge_forwarder *forwarder);
 /* Destinations are denied by default. This primitive does not establish that
  * an address is a master or an advertised server; the caller must do that. */

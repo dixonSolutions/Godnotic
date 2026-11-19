@@ -138,11 +138,13 @@ static void bridge_offer(cmd_state_t *cmd)
 }
 void Touch_BridgeSignalingInit(void)
 {
+    Touch_BridgeRelayInit();
     Cmd_AddCommand(CF_SERVER, "bridge_offer", bridge_offer, "accept raw SDP offer file and write a complete SDP answer file");
 }
 void Touch_BridgeSignalingFrame(void)
 {
     struct bridge_session **link = &sessions;
+    Touch_BridgeRelayFrame();
     while (*link) {
         struct bridge_session *s = *link;
         int result;
@@ -162,6 +164,7 @@ void Touch_BridgeSignalingFrame(void)
 }
 void Touch_BridgeSignalingShutdown(void)
 {
+    Touch_BridgeRelayShutdown();
     while (sessions) {
         struct bridge_session *s = sessions;
         sessions = s->next;

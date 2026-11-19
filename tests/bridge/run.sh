@@ -60,3 +60,17 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
     "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
     -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/signaling_test"
 "$out/signaling_test"
+
+# The web relay over MQTT signaling, against the local test broker.
+broker_out="$out/broker.out"
+python3 -I "$root/tests/web-bridge/mqtt_broker.py" >"$broker_out" &
+broker=$!
+trap 'kill $broker 2>/dev/null; rm -rf "$out"' EXIT HUP INT TERM
+for _ in $(seq 50); do grep -q listening "$broker_out" 2>/dev/null && break; sleep 0.1; done
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -DRTC_STATIC -DRTC_ENABLE_MEDIA=0 \
+    -I"$prefix/include" -I"$root/engine/darkplaces" \
+    "$root/tests/bridge/relay_test.c" "$root/engine/darkplaces/touch_bridge_relay.c" \
+    "$root/engine/darkplaces/touch_bridge_mqtt.c" "$root/engine/darkplaces/touch_bridge.c" \
+    "$prefix/lib/libdatachannel.a" "$prefix/lib/libjuice.a" "$prefix/lib/libusrsctp.a" \
+    -lstdc++ -lssl -lcrypto -lpthread -lm -o "$out/relay_test"
+"$out/relay_test" "ws://127.0.0.1:$(awk '/listening/{print $2}' "$broker_out")/mqtt"

@@ -18,6 +18,9 @@ void Cmd_AddCommand(unsigned flags, const char *name, xcommand_t fn, const char 
 { (void)flags; (void)help; assert(!strcmp(name, "bridge_offer")); command = fn; }
 void Con_Printf(const char *fmt, ...)
 { va_list ap; va_start(ap, fmt); vfprintf(stderr, fmt, ap); va_end(ap); }
+void Touch_BridgeRelayInit(void) {}
+void Touch_BridgeRelayFrame(void) {}
+void Touch_BridgeRelayShutdown(void) {}
 struct touch_bridge_forwarder *Touch_BridgeCreateConfiguredForwarder(void)
 {
     struct touch_bridge_forwarder *f = Touch_BridgeForwarderCreate();
