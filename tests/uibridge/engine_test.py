@@ -80,7 +80,7 @@ class Conn:
             try:
                 uibschema.validate(m, uibschema.SCHEMA, uibschema.SCHEMA)
             except uibschema.Invalid as e:
-                check(False, f"schema: {m['t']} rev {m.get('rev')}: {str(e)[:300]}")
+                check(False, f"schema: {m['t']} rev {m.get('rev')}: {str(e)[:300]} (nodes {[n.get('id') for n in m.get('set', [])][:12]})")
             self.msgs += 1
         if m.get("t") == "snapshot":
             self.nodes = {n["id"]: n for n in m["nodes"]}

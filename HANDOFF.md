@@ -1,5 +1,17 @@
-# Multiplayer list handoff
+# Multiplayer list handoff (work/mplist)
 
-The Android list retains row positions while refresh replies change their sort values; explicit column choices still sort, and selection remains keyed by address (63e38410). Android unit tests passed with the offline Gradle test command in `~/Projects/.coord/mplist-report.md`.
+Done on this branch (see `~/Projects/.coord/mplist-report.md` for commands and numbers):
 
-The requested startup cache delivery, Home live preview, GTK/QC behavior, timings and emulator screenshot remain unfinished. The engine currently reads saved metadata to produce a summary at first frame, but populates the actual server cache on refresh. Home's card currently has no list source and uses a fixed map image. See the report for details.
+- Engine: the shared server cache is loaded on the first bridge request / first frame, not on the first refresh
+  (`TouchSrvList_EnsureCache`); cached rows are not stale while refreshing; `touch_uib_src.c` remembers the row order
+  per (sort, direction, filter) so Home's preview and the full list do not reorder each other.
+- QC front end: Home's Multiplayer card lists three live rows plus the top map; opening Multiplayer neither resets
+  nor reloads the list; Home refreshes every 30 s, Multiplayer every 10 s. The selection card is picture, title, one
+  facts line, player list and a primary Join.
+- Android: whole cached source requested in 32-row windows, details card with primary Join, no stale dimming,
+  error state no longer covers cached rows. GTK has the same selection/whole-source handling (not compiled here).
+- `tests/srvlist/measure_open.py` times first rows after opening Multiplayer.
+
+Open points: the GTK crate could not be compiled on this host (no GTK4/libadwaita dev packages); emulator
+screenshots were black (see report); `components.json` pins were not updated (component-push is for the
+integrator): the darkplaces and data components both changed.
