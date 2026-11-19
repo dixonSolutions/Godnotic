@@ -1650,7 +1650,11 @@ extern void TouchMusic_PlayTrack(const char *track);
 extern unsigned TouchCurl_JoinShotGeneration(void);
 void TouchMusic_BeginJoin(void)
 {
-    if (CDAudio_IsPlaying()) CDAudio_Stop();
+    if (CDAudio_IsPlaying())
+    {
+        if (TouchMusic_IsTheme(CDAudio_CurrentTrack())) Con_Printf("MUSIC: stop menu theme for join or match\n");
+        CDAudio_Stop();
+    }
 }
 
 void TouchMusic_EnsureMap(void)
