@@ -466,6 +466,7 @@ final class AndySUBridge {
                 Log.w(TAG, requestError);
             } else {
                 applyWanted = false;
+                requestError = ""; // "applies live when you are back in the menu" has happened
             }
             return;
         }
