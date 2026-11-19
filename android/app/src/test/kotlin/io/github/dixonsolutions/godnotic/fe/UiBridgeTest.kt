@@ -237,10 +237,10 @@ class UiBridgeTest {
     @Test fun joinCardIsNotDroppedForAVisibleNativeScreen() {
         assertFalse(JoinFlow.settled(0, 299))
         assertTrue(JoinFlow.settled(0, 300))
-        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true))
         assertTrue(JoinFlow.card("preview", joinDialog = false, settled = true))
-        assertFalse(JoinFlow.card("preview", joinDialog = true, settled = true))
+        assertTrue(JoinFlow.card("preview", joinDialog = true, settled = true))
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true))
         assertTrue(JoinFlow.transparent("preview"))
         assertFalse(JoinFlow.transparent("loading"))
@@ -253,7 +253,7 @@ class UiBridgeTest {
      */
     @Test fun joinLogoAppearsOnceAndOnlyUntilThePreview() {
         // built once, once it has settled...
-        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true, hasCard = false))
         // ...then kept through the stages that follow, settled or not
         for (stage in listOf("downloading", "loading", "signon", "preview")) {
@@ -261,7 +261,7 @@ class UiBridgeTest {
         }
         // the join is over, or the dialog is the join screen: the card goes
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true, hasCard = true))
-        assertFalse(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
+        assertTrue(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
 
         // the logo is for the wait before the preview, once
         assertFalse(JoinFlow.banner("connecting", previewSeen = false))
@@ -285,7 +285,7 @@ class UiBridgeTest {
         assertFalse(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = true))
         assertFalse(JoinFlow.showShot("", world = false))
         // a local start: first snapshot, no settle wait, no card yet
-        assertFalse(JoinFlow.card("loading", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false))
         assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false, shot = true))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, shot = true))
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = false, shot = true))

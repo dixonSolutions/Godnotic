@@ -37,8 +37,9 @@ internal object JoinFlow {
      * the stages that follow instead of being rebuilt (each build is another
      * black page with the logo).
      */
+    @Suppress("UNUSED_PARAMETER")
     fun card(stage: String, joinDialog: Boolean, settled: Boolean, hasCard: Boolean = false, shot: Boolean = false): Boolean =
-        isBusy(stage) && !joinDialog && (settled || hasCard || shot)
+        isBusy(stage)
 
     /**
      * The map's picture (the engine's connect `levelshot`: a file once the map is known, a

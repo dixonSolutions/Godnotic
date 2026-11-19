@@ -229,13 +229,14 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val sig = "$state menu=${a.bool("menu")} owns=${a.bool("owns_menu")} adv=${a.bool("advanced")} console=${a.bool("console")}"
         if (sig != lastSig) { lastSig = sig; Log.i(tag, "Native UI: engine $sig") }
         when {
+            loadingStrip != null -> { showBackPill(false); setVisible(false) }
             a.bool("advanced") || a.bool("console") -> { setVisible(false); showBackPill(a.bool("advanced")) }
             state == "menu" -> { showBackPill(false); stopgap?.showReturn(); setVisible(true) }
             state == "paused" -> { showBackPill(false); stopgap?.show("pause", a); setVisible(true) }
             else -> { showBackPill(false); setVisible(false) } // in a match, or the engine's loading screen
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
-        showReconnect(a.str("reconnect"))
+        showReconnect(if (loadingStrip == null) a.str("reconnect") else "")
         // No synthesized `idle` here: the engine publishes the connect stage
         // itself, and a card torn down by this guess was rebuilt by the next
         // stage 300 ms later, logo and all (the flashing screens during a join).
@@ -396,7 +397,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             screen.addView(card, android.widget.LinearLayout.LayoutParams(Theme.dp(activity, 640f).coerceAtMost(activity.resources.displayMetrics.widthPixels - Theme.dp(activity, 32f)), ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = Theme.dp(activity, 48f) })
             activity.addContentView(screen, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadingCard(true)
-            reconnectBar?.bringToFront()
+            showReconnect("")
             loadingStrip = screen; loadingText = t; loadingBar = bar; loadingTitle = title
             loadingCardView = card
         }

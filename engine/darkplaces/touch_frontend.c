@@ -1637,6 +1637,57 @@ void TouchFE_Init(void)
  * session. Asking again every half second, then every five, is what makes a
  * music pack that lands late play.
  */
+/* A join may render a world preview before the server's cd command arrives.
+ * Start the mapinfo track as soon as its file is mounted; the server remains
+ * free to replace it with its own command. */
+extern void TouchMusic_PlayTrack(const char *track);
+extern unsigned TouchCurl_JoinShotGeneration(void);
+void TouchMusic_BeginJoin(void)
+{
+    if (CDAudio_IsPlaying()) CDAudio_Stop();
+}
+
+void TouchMusic_EnsureMap(void)
+{
+    static char lastmap[MAX_QPATH];
+    static unsigned lastgen;
+    static double next;
+    char map[MAX_QPATH], path[MAX_QPATH], track[MAX_QPATH];
+    fs_offset_t size;
+    unsigned char *data;
+    char *line, *end;
+    unsigned gen = TouchCurl_JoinShotGeneration();
+    if (CDAudio_IsPlaying() || !TouchJoinPreview_MapName(map, sizeof(map))) return;
+    if (gen != lastgen || strcmp(lastmap, map)) { lastgen = gen; dp_strlcpy(lastmap, map, sizeof(lastmap)); next = 0; }
+    if (Sys_DirtyTime() < next) return;
+    next = Sys_DirtyTime() + 0.5;
+    if (strspn(map, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != strlen(map)) return;
+    dpsnprintf(path, sizeof(path), "maps/%s.mapinfo", map);
+    data = FS_LoadFile(path, tempmempool, true, &size);
+    if (!data) return;
+    if (size > 65536) { Mem_Free(data); return; }
+    for (line = (char *)data; *line; line = end)
+    {
+        char *p; size_t n;
+        end = strchr(line, '\n');
+        if (end) *end++ = 0; else end = line + strlen(line);
+        while (*line == ' ' || *line == '\t') line++;
+        if (strncmp(line, "cdtrack", 7) || (line[7] != ' ' && line[7] != '\t')) continue;
+        p = line + 7; while (*p == ' ' || *p == '\t') p++;
+        n = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-/.");
+        if (!n || n >= sizeof(track) || strstr(p, "..")) break;
+        memcpy(track, p, n); track[n] = 0;
+        TouchMusic_PlayTrack(track);
+        break;
+    }
+    Mem_Free(data);
+}
+
+qbool TouchMusic_BlockTrack(const char *track)
+{
+    return TouchMusic_IsTheme(track) && (TouchJoinPreview_LocalLoading() || cls.connect_trying || cls.state == ca_connected);
+}
+
 void TouchMusic_Update(void)
 {
     static double next_check;
@@ -1663,6 +1714,7 @@ void TouchMusic_Update(void)
         stage = TM_STAGE_DOWNLOAD;
     else
         stage = TM_STAGE_MENU;
+    if (stage == TM_STAGE_JOINING && !playing) TouchMusic_EnsureMap();
     if (stage != TM_STAGE_GAME && stage != TM_STAGE_JOINING && !theme_playing && bgmvolume.value > 0 && host.realtime >= next_check)
     {
         next_check = TouchMusic_NextCheck(host.realtime, 0);

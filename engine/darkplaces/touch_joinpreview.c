@@ -105,8 +105,13 @@ qbool TouchJoinPreview_Active(void)
 // A local game names its map before any server or client exists: the player
 // picked it. SV_SpawnServer says so as the loading plaque goes up; it ends with
 // the plaque (scr_loading).
+extern void TouchCurl_ClearJoinShot(void);
+extern unsigned TouchCurl_JoinShotGeneration(void);
+
 void TouchJoinPreview_SetMap(const char *map)
 {
+	TouchCurl_ClearJoinShot();
+	{ extern void TouchMusic_BeginJoin(void); TouchMusic_BeginJoin(); }
 	dp_strlcpy(jp_localmap, map ? map : "", sizeof(jp_localmap));
 	TouchFE_Loading("", 0); // the native card gets the map now, not at the first load step
 }
@@ -174,6 +179,8 @@ qbool TouchJoinPreview_MapName(char *buf, int size)
 // The picture file of a map in this install: maps/<map>.jpg (what the map list
 // shows), or the Quake 3 name levelshots/<map>. Only a file that is there is
 // returned: asking the picture cache for a missing one would cache the failure.
+extern qbool TouchCurl_JoinShot(const char *map, char *path, size_t size);
+
 static qbool JP_FindPicture(const char *map, char *out, size_t size)
 {
 	static const char *dirs[] = {"maps/", "levelshots/", NULL};
@@ -188,6 +195,8 @@ static qbool JP_FindPicture(const char *map, char *out, size_t size)
 			if (FS_FileExists(out))
 				return true;
 		}
+	if (TouchCurl_JoinShot(map, out, size))
+		return true;
 	out[0] = 0;
 	return false;
 }
@@ -199,16 +208,18 @@ int TouchJoinPreview_Picture(char *name, int size)
 {
 	static char key[MAX_QPATH + 2], cname[MAX_QPATH];
 	static int choice;
+	static unsigned generation;
 	static double last = -1;
 	char map[MAX_QPATH], file[MAX_QPATH];
 	qbool from_list = false, known = JP_MapNameSrc(map, sizeof(map), &from_list);
 	char nkey[MAX_QPATH + 2];
 	double now = Sys_DirtyTime();
 	dpsnprintf(nkey, sizeof(nkey), "%c%s", from_list ? 'L' : 'S', known ? map : "");
-	if (strcmp(nkey, key) || last < 0 || TouchJoinPreview_RetryPicture(choice, now, last))
+	if (generation != TouchCurl_JoinShotGeneration() || strcmp(nkey, key) || last < 0 || TouchJoinPreview_RetryPicture(choice, now, last))
 	{
 		int have_map = 0, have_list = 0;
 		last = now;
+		generation = TouchCurl_JoinShotGeneration();
 		dp_strlcpy(key, nkey, sizeof(key));
 		file[0] = 0;
 		if (known && JP_FindPicture(map, file, sizeof(file)))
@@ -480,6 +491,7 @@ qbool TouchJoinPreview_Camera(void)
 	if (!TouchJoinPreview_Active())
 		return false;
 
+	{ extern void TouchMusic_EnsureMap(void); TouchMusic_EnsureMap(); }
 	JP_SetScene();
 	JP_ChooseTarget();
 	JP_TargetCamera(org, ang);
