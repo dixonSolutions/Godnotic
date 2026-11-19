@@ -11,6 +11,7 @@ Run through scripts/test-touch-vote.sh.
 #include <string.h>
 
 #include "touch_vote_parse.h"
+#include "touch_hudmode.h"
 
 static int failures;
 
@@ -60,6 +61,49 @@ int main(void)
 	CHECK_STR("* embryo ^ok^", buf, "colour codes, ^^ and the chat-sound byte");
 	TouchVote_StripColors("^1abcdefgh", buf, 5);
 	CHECK_STR("abcd", buf, "output truncated to its size");
+
+	// A late joiner can recover the currently running vote with vote status.
+	check_line("late join status", "^7Vote for ^1restart^7 called by ^7Caller^7.", TOUCHVOTE_MSG_CALL, "Caller", "restart");
+
+	{
+		static touchvote_list_t list;
+		CHECK_INT(1, TouchVote_ParseList("You can call a vote for or execute these commands: ^3restart gotomap kick ^7 and maybe further ^3arguments^7", &list, 0), "allowed votes response");
+		CHECK_INT(3, list.count, "allowed vote count");
+		CHECK_STR("gotomap", list.item[1], "allowed map command");
+		CHECK_INT(1, TouchVote_ParseList("^7Maps available (3) (New maps have asterisks marked in blue): ^4*stormkeep ^3dance bad;quit", &list, 1), "server maps response");
+		CHECK_INT(2, list.count, "unsafe map excluded");
+		CHECK_STR("stormkeep", list.item[0], "new map marker removed");
+		CHECK_INT(0, TouchVote_ParseList("unrelated text", &list, 0), "unrelated list");
+		CHECK_INT(0, TouchVote_SafeToken("restart;quit"), "command injection rejected");
+	}
+
+	// The active flag is independent of vote_highlighted, including the caller's
+	// automatically recorded yes. Map/gametype state cannot set this flag.
+	CHECK_INT(1, TouchVote_CalledVisible(1, 1, 0, 0), "own already-cast vote visible");
+	CHECK_INT(0, TouchVote_CalledVisible(1, 0, 0, 0), "map vote alone excluded");
+	CHECK_INT(0, TouchVote_CalledVisible(1, 0, 0, 1), "gametype vote alone excluded");
+	CHECK_INT(1, TouchVote_CalledVisible(0, 0, 1, 10), "late status without globals");
+	CHECK_INT(0, TouchVote_CalledVisible(1, 0, 1, 6), "stale print cleared by globals");
+
+	// The i chip (and with it the card) is there in every mode of a running match
+	// and gone on the match-end screens, where the map and gametype votes have
+	// their own selection. A mode derived from mv_active is the map/gametype vote.
+	{
+		int m;
+		for (m = TOUCHMODE_PLAYING; m <= TOUCHMODE_OUT_FREE; m++)
+			CHECK_INT(1, (TouchMode_Controls(m, 0) & TOUCHCTL_VOTECHIP) != 0, TouchMode_Name(m));
+		CHECK_INT(0, TouchMode_Controls(TOUCHMODE_MAPVOTE, 0) & TOUCHCTL_VOTECHIP, "map vote has no chip");
+		CHECK_INT(0, TouchMode_Controls(TOUCHMODE_INTERMISSION, 0) & TOUCHCTL_VOTECHIP, "scoreboard has no chip");
+		CHECK_INT(0, TouchMode_Controls(TOUCHMODE_OFF, 0) & TOUCHCTL_VOTECHIP, "no chip outside a match");
+		{
+			touchmode_in_t in;
+			memset(&in, 0, sizeof(in));
+			in.in_match = 1;
+			in.mapvote = 1;
+			in.intermission = 1;
+			CHECK_INT(TOUCHMODE_MAPVOTE, TouchMode_Derive(&in).mode, "map or gametype vote mode");
+		}
+	}
 
 	// VoteCommand_call, VoteCommand_master
 	check_line("call", "\001^2* ^3embryo^2 calls a vote for ^1gotomap revdm3\n", TOUCHVOTE_MSG_CALL, "embryo", "gotomap revdm3");

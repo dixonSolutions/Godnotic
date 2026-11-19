@@ -18,9 +18,8 @@ package io.github.dixonsolutions.godnotic.fe
  *   the window did not send again `stale` (drawn dimmed) and keeps them for
  *   [graceRefreshes] completed queries (and at most [graceMillis] from the
  *   first one they missed), then removes them;
- * - a window's rows are ordered by the chosen column with ties broken by
- *   address, so equal pings never swap between refreshes, and not at all
- *   while [hold] (a finger on the list) is set;
+ * - the initial window and explicit column choices are ordered with ties
+ *   broken by address; later replies update rows without moving them;
  * - a row first seen after the first listing is marked `fresh` (fades in).
  *
  * Plain Kotlin with no Android classes, so it runs in JVM unit tests.
@@ -201,6 +200,8 @@ internal class ServerListState(
     fun choose(column: String, descending: Boolean) {
         sort = column
         desc = descending
+        if (!hold) sortWindow(0, slots.size)
+        rebuildShown()
     }
 
     /**
@@ -250,6 +251,7 @@ internal class ServerListState(
      * covers. Rows already on screen are never dropped here, whatever the total.
      */
     fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long = 0L) {
+        val firstListing = items.isEmpty()
         if (rev > 0) {
             // The engine may answer a request made before a source notice: its rows
             // (often an empty filtered page) must not replace the new revision.
@@ -282,7 +284,7 @@ internal class ServerListState(
             from = minOf(from, offset)
             to = maxOf(to, offset + rows.size - 1)
         }
-        if (!hold) sortWindow(offset, rows.size)
+        if (firstListing && !hold) sortWindow(offset, rows.size)
         rebuildShown()
     }
 
@@ -408,13 +410,14 @@ internal class ServerListState(
     /** Orders one window by the chosen column; ties by address, so it repeats exactly. */
     private fun sortWindow(offset: Int, count: Int) {
         if (sort.isEmpty() || count < 2) return
-        val keys = (offset until minOf(offset + count, slots.size)).mapNotNull { slots[it] }
+        val positions = (offset until minOf(offset + count, slots.size)).filter { slots[it] != null }
+        val keys = positions.mapNotNull { slots[it] }
         if (keys.size < 2) return
         val rows = keys.mapNotNull { items[it]?.row }
         if (rows.size != keys.size) return
         val ordered = rows.sortedWith { a, b -> compare(a, b) }.map { keyOf(it) }
         if (ordered == keys) return
-        for ((i, key) in ordered.withIndex()) { slots[offset + i] = key; at[key] = offset + i }
+        for ((i, key) in ordered.withIndex()) { slots[positions[i]] = key; at[key] = positions[i] }
     }
 
     private fun compare(a: Map<String, Any?>, b: Map<String, Any?>): Int {
@@ -447,7 +450,7 @@ internal class ServerListState(
          * saying so covered a list that was about to fill.
          */
         fun showEmpty(state: String, total: Int, drawn: Int = 0) =
-            state == "error" || (state == "ready" && total == 0 && drawn == 0)
+            drawn == 0 && (state == "error" || (state == "ready" && total == 0))
 
         /**
          * The screen's "N servers · M players" with what this list actually
