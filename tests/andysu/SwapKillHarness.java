@@ -7,6 +7,15 @@ public final class SwapKillHarness {
     public static void main(String[] args) throws Exception {
         File dir = new File(args[1]);
         if ("begin".equals(args[0])) {
+            // A staged release waits through a match and its busy hold.
+            if (AndySUState.safeToApplyNow("game", true, "busy", true, 0)
+                    || AndySUState.shouldApplyLive("staged", true, "live", true)
+                    || !"next_start".equals(AndySUState.desiredPolicy(true, false, 20000, 1000)))
+                throw new AssertionError("update allowed during match or busy hold");
+            if (!AndySUState.safeToApplyNow("game", false, "safe", true, 31000)
+                    || !AndySUState.shouldApplyLive("staged", false, "live", true)
+                    || !"live".equals(AndySUState.desiredPolicy(true, false, 31001, 1000)))
+                throw new AssertionError("staged update did not become eligible after match");
             if (!SwapTrial.begin(dir, "device")) throw new AssertionError("trial write failed");
             System.out.println("trial durable");
             System.out.flush();

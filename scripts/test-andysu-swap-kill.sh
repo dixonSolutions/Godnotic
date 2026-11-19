@@ -7,7 +7,7 @@ pid=
 cleanup() { [ -z "$pid" ] || kill "$pid" 2>/dev/null || true; rm -rf "$tmp"; }
 trap cleanup EXIT
 pkg=android/app/src/main/java/io/github/dixonsolutions/godnotic
-javac -d "$tmp" "$pkg/SwapTrial.java" "$pkg/CrashReport.java" tests/andysu/SwapKillHarness.java
+javac -d "$tmp" "$pkg/AndySUState.java" "$pkg/UpdateRetry.java" "$pkg/SwapTrial.java" "$pkg/CrashReport.java" tests/andysu/SwapKillHarness.java
 java -cp "$tmp" io.github.dixonsolutions.godnotic.SwapKillHarness begin "$tmp/state" > "$tmp/log" &
 pid=$!
 for _ in $(seq 1 100); do grep -q 'trial durable' "$tmp/log" && break; sleep .1; done
