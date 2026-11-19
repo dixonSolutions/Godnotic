@@ -23,6 +23,33 @@ class UiBridgeTest {
         assertEquals(0, ServerDetails.imageMaxHeightPx(100, 0))
     }
 
+    @Test fun serverDetailFactsUseWholeNumbersAndShowUnknownPing() {
+        assertEquals("stormkeep · CA · 6/16 · 362 ms", ServerDetails.facts(mapOf(
+            "map" to "stormkeep", "mode" to "ca", "players" to 6.0, "max" to 16.0, "ping" to 362.0)))
+        assertEquals("0 · – ms", ServerDetails.facts(emptyMap()))
+    }
+
+    @Test fun homeServerPreviewUpdatesWithoutChangingItsOpenAction() {
+        val rec = Recorder()
+        val sent = ArrayList<String>()
+        val client = UibClient(rec) { sent.add(it) }
+        fun card(text: String, map: String) = mapOf("id" to "home/tiles/mp", "type" to "card", "props" to mapOf(
+            "title" to "Multiplayer", "subtitle" to text, "image" to "pk3:maps/$map",
+            "primary" to mapOf("id" to "mp", "label" to "Open")))
+        client.receive(mapOf("t" to "snapshot", "rev" to 1, "nodes" to listOf(
+            mapOf("id" to "app", "type" to "app", "props" to mapOf("stack" to listOf("home")), "children" to listOf("home")),
+            mapOf("id" to "home", "type" to "screen", "props" to emptyMap<String, Any>(), "children" to listOf("home/tiles/mp")),
+            card("Alpha · stormkeep · 2/16\nBeta · xoylent · 1/8", "stormkeep"))))
+        client.receive(mapOf("t" to "diff", "base" to 1, "rev" to 2,
+            "set" to listOf(card("Alpha · stormkeep · 3/16\nBeta · xoylent · 1/8", "stormkeep"))))
+        val props = client.store.node("home/tiles/mp")!!.props
+        assertTrue(props.str("subtitle").contains("3/16"))
+        assertEquals("pk3:maps/stormkeep", props.str("image"))
+        assertEquals("mp", props["primary"].obj().str("id"))
+        assertTrue(rec.ops.contains("update home/tiles/mp"))
+        assertTrue(sent.isEmpty())
+    }
+
     /** Records renderer operations as lines. */
     class Recorder : UiRenderer {
         val ops = ArrayList<String>()
