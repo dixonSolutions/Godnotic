@@ -346,6 +346,24 @@ keeps the protocol packet for packet (`getserversExt` to the masters,
 `getstatus` with the timestamp challenge to the servers) and changes when
 things are sent and what is shown meanwhile:
 
+### Live previews in the server list
+
+The server-list query protocol has no image or world-frame response. `getinfo`
+returns server metadata; `getstatus` adds text player rows (score, ping, team
+and name). DarkPlaces builds those responses in
+`engine/darkplaces/netconn.c:NetConn_BuildStatusResponse`, and the client
+parses only those fields into `serverlist_info_t`. A live scene is delivered
+later by the regular connection and sign-on protocol, after the client has
+started joining and received the server's world state. The existing join
+preview uses that world while the match finishes loading.
+
+Starting that connection merely to show a selected server would begin a join,
+which can download game data and enter the match; it is not a passive server
+query. The selection panel therefore shows the cached map picture immediately
+and does not try to start a join for a live view. Adding live server-list
+previews would require an explicit server-side protocol and client support;
+the current `getinfo`/`getstatus` protocol cannot provide them.
+
 - **The saved list.** Every server that answered is kept with what its row
   shows (`touch_serverlist_info.txt` in the user directory: address, name,
   map, mode, players, ping, when it last answered, and how many sessions in a
