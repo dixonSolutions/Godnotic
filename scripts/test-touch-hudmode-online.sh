@@ -49,11 +49,12 @@ expect() { # case log phase mode
 run_case() { # gametype map
 	local gt=$1 map=$2 port=$((26600 + RANDOM % 300)) d="$WORK/$1" n
 	mkdir -p "$d/sv/data" "$d/cl/data"
-	# the server polls stale.cfg; the watcher the watcher below fills it once the client has left the game
+	# the server polls stale.cfg; the watcher below fills it once the client has left the game
 	printf 'alias stale_poll "exec stale.cfg; defer 0.1 stale_poll"\nstale_poll\n' > "$d/sv/data/stale-poll.cfg"
 	"$ENGINE" -dedicated -xonotic -basedir "$STOCKBASE" -userdir "$d/sv" +exec stale-poll.cfg +set port $port +set sv_public 0 +set sv_cheats 1 \
 		+set bot_number 3 +set skill 3 +set g_maplist "$map" +set g_warmup 0 +set g_dm 0 +set "g_$gt" 1 \
 		+set g_balance_teams 0 +set timelimit_override 20 +map "$map" > "$d/server.log" 2>&1 &
+	local server=$!
 	for n in $(seq 1 600); do grep -q "Server spawned" "$d/server.log" 2> /dev/null && break; sleep 0.1; done
 	sleep 2
 	printf 'seta touch_profile_done 1\nseta _cl_name "hudtest"\nseta cl_allow_uid2name 0\n' > "$d/cl/data/autoexec.cfg"
@@ -99,12 +100,13 @@ run_case() { # gametype map
 		done
 		rm -f "$d/sv/data/stale.cfg"
 	) &
+	local watcher=$!
 	timeout 200 "${fake[@]}" "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$d/cl" +vid_fullscreen 0 +vid_width 640 +vid_height 360 \
 		+set _touch_assets_ready 1 +set vid_touchscreen_mode 2 +set developer 1 +set hud_panel_pressedkeys 1 +exec hud.cfg > "$d/client.log" 2>&1
 	rm -f "$d/sv/data/stale.cfg"
 	# the dedicated server can hang in its shutdown: ask, then insist
-	kill %1 2> /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do kill -0 %1 2> /dev/null || break; sleep 0.3; done
-	kill -9 %1 2> /dev/null; wait 2> /dev/null
+	kill "$server" 2> /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$server" 2> /dev/null || break; sleep 0.3; done
+	kill -9 "$server" "$watcher" 2> /dev/null; wait 2> /dev/null
 	if ! grep -aq "is now playing" "$d/client.log"; then bad "$gt: the client never joined the game (log: $d/client.log)"; return; fi
 	if [ "$gt" = ctf ]; then
 		if grep -aq "is now playing on the" "$d/client.log"; then ok "$gt: joined a team"; else bad "$gt: no team join in the log"; fi
