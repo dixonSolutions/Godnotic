@@ -36,6 +36,7 @@ page.
 | Sound | Web Audio at the device's rate; pauses with the tab |
 | Phones | Landscape lock in fullscreen, screen kept on while playing, on-screen keyboard for chat and console |
 | Install | "Add to Home Screen" or "Install app" gives a fullscreen, landscape app (web manifest) |
+| Online servers | The server list and joins go through a **web relay**: a native Godnotic whose player turned on *Settings > Privacy > Let web players connect through this device* (or a self-hosted `godnotic-relay`). The page looks for one when the game first asks for a server. With none online it says once: "No relay online — play locally, or open Godnotic on a device and turn on “Let web players connect through this device”." See "Online play in the browser" |
 | Lua mods | Client mods, and server mods in the games the page hosts, as on Linux and Android. Installed with **Pick file** in Settings → Mobile → Mods → Install, by dropping a `.zip` on the page, or from a link (the host must allow web pages: CORS). Kept with the settings in IndexedDB. `xt.http` works, to hosts that allow web pages. See "Lua mods" |
 
 Needs a browser with WebAssembly and WebGL 2: current Chrome, Edge, Firefox or
@@ -45,10 +46,6 @@ build does.
 
 Not in the browser build yet:
 
-- **Online servers.** Browsers cannot send UDP, which Xonotic servers speak.
-  Joining public servers needs a WebSocket or WebRTC relay; local games with
-  bots work. The engine sends no master server or LAN queries, so the
-  server list stays empty instead of failing a WebSocket per master.
 - **XonStat / player IDs.** No `d0_blind_id` crypto in the WebAssembly build.
 - **WebGPU.** DarkPlaces has an OpenGL renderer only; WebGL 2 is the
   hardware-accelerated path (ANGLE on Direct3D, Metal or Vulkan underneath).
@@ -900,6 +897,108 @@ packs, and the page could fetch them without any pick.
 
 The hand-over to the app gives the player the installed game with no
 download at all, which is what this route would be for.
+
+## Online play in the browser
+
+Xonotic servers and masters speak UDP; a page cannot. The owner's choice
+(2026-11-18): no server of ours in the middle. Browsers reach UDP through
+**native Godnotic apps that opt in**, over a WebRTC data channel, found with a
+**public signaling service** and Google's STUN server.
+
+```
+page: engine (wasm) --lhnet hook--> touch_webnet.c --> Module.godnoticNet (web/bridge-net.mjs)
+        |  WebRTC data channel "datagrams" (unordered, no retransmits = UDP semantics)
+        v  each message: version, family, address, port, UDP payload (web/bridge-frame.mjs)
+relay:  native Godnotic, bridge_relay 1 (touch_bridge_relay.c) or relay/godnotic-relay
+        |  one UDP socket per browser (touch_bridge.c forwarder)
+        v
+masters and the game servers they list
+```
+
+- **The engine side** (web build): `lhnet.c` hands every IPv4 datagram to
+  `touch_webnet.c` (two `// Touch:` hooks); loopback (local games) is
+  untouched. `ServerList_QueryList` asks the page for a relay instead of
+  returning early. A browser has no DNS, so the relay's answer carries its
+  masters as addresses and the page sets `sv_masterextra1..3` from them. The
+  web build is IPv4-only (`NOSUPPORTIPV6`).
+- **When**: the page connects only once the game asks for a server (the
+  Multiplayer list, Home's server card, `connect`), then closes the
+  signaling connection; the data channel stays. A relay that goes away ends
+  the session; the next request looks again (at most every 20 s).
+- **Opt-in** (native): `bridge_relay` (archived, default 0), the switch in
+  Settings > Privacy, shown only where the engine has the relay (desktop
+  Linux builds today; the Android engine is not built with libdatachannel yet).
+  `bridge_relay_status`: off, connecting, online N/M, failed. Also
+  `bridge_relay_brokers`, `bridge_relay_stun`, `bridge_relay_topic`.
+
+### Signaling: public MQTT over WebSocket
+
+The relay keeps an MQTT 3.1.1 connection (`wss://`) to public brokers,
+`broker.emqx.io:8084` and `broker.hivemq.com:8884` by default (a minimal
+client in `touch_bridge_mqtt.c` / `web/bridge-mqtt.mjs`, QoS 0 only). Topics
+under `godnotic/relay/v1/` (formats in `engine/darkplaces/touch_bridge_relay.h`):
+
+| Topic | Who | What |
+|---|---|---|
+| `online/<relay>` | relay, **retained** | `peers N`, `max M`; cleared by an empty retained message when the relay stops, or by the broker (MQTT will) when it drops off |
+| `offer/<relay>` | browser | `from <client>` and the browser's complete SDP offer (non-trickle) |
+| `answer/<client>` | relay | the SDP answer and `master ip:port` lines, or `error full` / `busy` / `offer` |
+
+Why MQTT: a browser subscribing to `online/+` gets every live relay at once
+from the retained messages, and the will clears a crashed relay, so "is any
+relay online" is answered in about two seconds with no server of ours. The
+brokers need no account, speak WebSocket with TLS from a page, and the
+protocol is small enough to implement in C over libdatachannel's WebSocket
+(already linked for the bridge). Considered: public WebTorrent trackers over
+WSS (no retained presence, so no quick "no relay" answer; JSON in C; the two
+big public trackers did not even answer from here), and PeerJS / Firebase /
+other hosted signaling (accounts or a server of ours).
+
+**Privacy.** Anyone can subscribe to these topics. What they see: that a relay
+exists and its load, and every SDP, which holds ICE candidates: the relay's
+LAN and public addresses and the browser's public address (Chrome hides its
+LAN address behind mDNS). The game traffic itself goes peer to peer over
+DTLS, not through the broker. A web player's server sees the relay's
+address, not the player's. The switch's help says this in short.
+
+**Failure modes.**
+- No broker reachable: "Cannot reach the relay signaling service — play
+  locally, or try again later."
+- Brokers up, no relay announced: the "No relay online" message.
+- Relay full or rate-limited: it answers `error full` / `error busy`; the page
+  tries up to three relays, least loaded first, then "Could not connect to a
+  web relay: …".
+- Anyone may publish on the topics: a fake presence wastes a browser's
+  attempt (12 s answer timeout); a fake answer could only take the browser's
+  game datagrams (unencrypted UDP anyway) to another peer; offers to a relay
+  are parsed strictly and capped.
+- Two players behind symmetric NATs and no TURN server: the data channel does
+  not open (15 s timeout, "Could not connect …"). There is no TURN relay.
+- A public broker may disappear or rate-limit: the relay connects to every
+  broker in its list and retries each with backoff; the page asks all of them.
+
+**Abuse limits on the relay** (stage 1b, unchanged, plus signaling):
+forwarding only to its configured masters and the servers their replies list
+(`bridge_allow_loopback` stays a test-only exception), 8 peers, 200 packets
+and 1 MiB per second per peer, 120 s idle timeout, 20 s for an answered offer
+to open, 30 offers a minute, one session per client id, offers over 64 KiB
+dropped.
+
+### Testing it
+
+```sh
+GODNOTIC_DATACHANNEL_CACHE=... tests/bridge/run.sh       # relay, signaling, caps (local broker)
+for t in tests/web-bridge/*.test.mjs; do node $t; done   # page side without a browser
+env -u WAYLAND_DISPLAY -u DISPLAY -u XAUTHORITY STOCK=<dir with the stock pk3s> \
+    tests/web-bridge/join-e2e.sh                          # headless Chromium joins a local server
+#   BROKER=wss://broker.emqx.io:8084/mqtt  the real public broker (a topic of its own per run)
+#   PUBLIC=1                               the real public masters: list them, briefly join one
+#   RELAY_BIN=relay/godnotic-relay         the standalone relay
+BASEDIR=... scripts/test-web-relay-setting.sh             # the opt-in switch in the real engine
+```
+
+`tests/web-bridge/mqtt_broker.py` is a small MQTT-over-WebSocket broker for
+offline runs. A self-hosted relay and broker: [relay/README.md](../relay/README.md).
 
 ## Lua mods
 
