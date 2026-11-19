@@ -34,6 +34,15 @@ struct uibrow_s
 
 #define MAX_SOURCES 48
 #define MAX_PARAMS 12
+#define STABLE_SLOTS 4
+
+typedef struct
+{
+	char **keys;
+	int n, desc, used;
+	double at;              // last use: an order nobody asked for in 30 s is sorted afresh
+	char sort[64], filter[257];
+} stable_t;
 
 typedef struct
 {
@@ -60,6 +69,11 @@ typedef struct
 	char ordsort[64];
 	char ordfilter[257];
 	int ordvalid;
+	// Server rows retain their displayed order between source revisions, one
+	// memo per (sort, direction, filter) so that Home's small preview and the
+	// full list do not overwrite each other's order.
+	stable_t stable[STABLE_SLOTS];
+	int nextstable;
 } source_t;
 
 static source_t sources[MAX_SOURCES];
@@ -416,7 +430,9 @@ static void build_servers(source_t *s)
 		size_t vl = ve ? (size_t)(ve - ver) : strlen(ver);
 		cell_s(r, "version", ver, vl < 32 ? vl : 31);
 		// from the saved list, not answered yet this refresh (touch_srvlist.c)
-		cell_b(r, "stale", TouchSrvList_IsStale(i));
+		// A cached row is still usable while its refresh is in flight.  The
+		// scheduler removes it only after the server has actually timed out.
+		cell_b(r, "stale", false);
 	}
 }
 
@@ -569,6 +585,7 @@ static void refresh(source_t *s, int force)
 	s->next_poll = now + (s->kind == 2 ? 0.5 : 0.25); // maps: packs land while the game runs (touch_datafetch.c)
 	if (s->kind == 1)
 	{
+		TouchSrvList_EnsureCache();
 		// A finger on the list (the QuakeC renderer: the engine sees it) or a
 		// renderer that set the source's "hold" param: the rows stay exactly
 		// where they are, and the source catches up on release.
@@ -706,6 +723,10 @@ static int *order(source_t *s, const char *sort, int desc, const char *filter, i
 	if (s->ordvalid && s->ordrev == s->rev && s->orddesc == !!desc
 		&& !strcmp(s->ordsort, sort) && !strcmp(s->ordfilter, filter))
 	{
+		for (int m = 0; m < STABLE_SLOTS && s->kind == 1; m++)
+			if (s->stable[m].used && s->stable[m].desc == !!desc
+				&& !strcmp(s->stable[m].sort, sort) && !strcmp(s->stable[m].filter, filter))
+				s->stable[m].at = UIB_Time();
 		*count = s->ordcount;
 		return s->ord;
 	}
@@ -715,12 +736,54 @@ static int *order(source_t *s, const char *sort, int desc, const char *filter, i
 	for (int i = 0; i < s->nrows; i++)
 		if (row_matches(&s->rows[i], filter))
 			s->ord[n++] = i;
-	if (*sort)
+	stable_t *memo = NULL;
+	if (s->kind == 1)
+	{
+		for (int m = 0; m < STABLE_SLOTS; m++)
+			if (s->stable[m].used && UIB_Time() - s->stable[m].at < 30.0 && s->stable[m].desc == !!desc
+				&& !strcmp(s->stable[m].sort, sort) && !strcmp(s->stable[m].filter, filter))
+			{ memo = &s->stable[m]; break; }
+	}
+	if (memo)
+	{
+		// keep the rows where they were; new ones go last
+		int *prior = (int *)malloc(sizeof(int) * (n + 1));
+		unsigned char *used = (unsigned char *)calloc(n + 1, 1);
+		int k = 0;
+		for (int p = 0; p < memo->n; p++)
+			for (int i = 0; i < n; i++)
+				if (!used[i] && !strcmp(memo->keys[p], s->rows[s->ord[i]].key))
+				{ prior[k++] = s->ord[i]; used[i] = 1; break; }
+		for (int i = 0; i < n; i++)
+			if (!used[i]) prior[k++] = s->ord[i];
+		memcpy(s->ord, prior, sizeof(int) * n);
+		free(prior);
+		free(used);
+	}
+	else if (*sort)
 	{
 		sortkey = sort;
 		sortdesc = desc;
 		sortsrc = s;
 		qsort(s->ord, n, sizeof(int), cmp_rows);
+	}
+	if (s->kind == 1)
+	{
+		if (!memo)
+		{
+			memo = &s->stable[s->nextstable];
+			s->nextstable = (s->nextstable + 1) % STABLE_SLOTS;
+		}
+		for (int i = 0; i < memo->n; i++) free(memo->keys[i]);
+		free(memo->keys);
+		memo->keys = (char **)calloc(n + 1, sizeof(char *));
+		memo->n = n;
+		for (int i = 0; i < n; i++) memo->keys[i] = strdup(s->rows[s->ord[i]].key);
+		memo->desc = !!desc;
+		memo->used = 1;
+		memo->at = UIB_Time();
+		dp_strlcpy(memo->sort, sort, sizeof(memo->sort));
+		dp_strlcpy(memo->filter, filter, sizeof(memo->filter));
 	}
 	s->ordcount = n;
 	s->ordrev = s->rev;
@@ -860,7 +923,15 @@ void UIBSrc_Init(void) {}
 void UIBSrc_Reset(void)
 {
 	for (int i = 0; i < nsources; i++)
-		freerows(&sources[i]), free(sources[i].rows);
+	{
+		freerows(&sources[i]);
+		free(sources[i].rows);
+		for (int m = 0; m < STABLE_SLOTS; m++)
+		{
+			for (int j = 0; j < sources[i].stable[m].n; j++) free(sources[i].stable[m].keys[j]);
+			free(sources[i].stable[m].keys);
+		}
+	}
 	nsources = 0;
 	memset(&lw, 0, sizeof(lw));
 }

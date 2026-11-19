@@ -70,6 +70,7 @@ class ServerListStateTest {
         assertFalse(ServerListState.showEmpty("loading", 0))
         assertFalse(ServerListState.showEmpty("ready", 2))
         assertTrue(ServerListState.showEmpty("ready", 0))
+        assertFalse("network errors must not cover saved rows", ServerListState.showEmpty("error", 0, 3))
     }
 
     @Test

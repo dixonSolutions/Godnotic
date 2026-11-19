@@ -450,7 +450,7 @@ internal class ServerListState(
          * saying so covered a list that was about to fill.
          */
         fun showEmpty(state: String, total: Int, drawn: Int = 0) =
-            state == "error" || (state == "ready" && total == 0 && drawn == 0)
+            drawn == 0 && (state == "error" || (state == "ready" && total == 0))
 
         /**
          * The screen's "N servers · M players" with what this list actually

@@ -67,10 +67,10 @@ def servers_a():
     return out
 
 
-def write_state(servers, master_delay=0, drop_master_queries=0):
+def write_state(servers, master_delay=0, drop_master_queries=0, hold_answers=0):
     tmp = STATE + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"servers": servers, "hold_answers": 0, "master_delay": master_delay,
+        json.dump({"servers": servers, "hold_answers": hold_answers, "master_delay": master_delay,
                    "drop_master_queries": drop_master_queries}, f)
     os.replace(tmp, STATE)
     time.sleep(0.4)   # fakenet rereads it within 50 ms
@@ -83,7 +83,7 @@ def report():
         return json.load(f)
 
 
-def run_engine(userdir, fast, name, seed="0", quit_at=None, early_open=False):
+def run_engine(userdir, fast, name, seed="0", quit_at=None, early_open=False, startup_probe=False):
     """One session: the app's own refresh at start (if it makes one), a list opened at 8 s and again at
     14 s, where the saved rows, the summary and the bridge's source are read in the same frame, and
     all three once more at the end. Returns (stats lines, summaries, bridge windows, log)."""
@@ -102,8 +102,12 @@ def run_engine(userdir, fast, name, seed="0", quit_at=None, early_open=False):
         f.write('net_slist_stats\n'
                 'echo SUMMARY end "$_slist_summary" servers=$_slist_servers players=$_slist_players saved=$_slist_saved refreshing=$_slist_refreshing\n'
                 + windows(8))
+    with open(os.path.join(userdir, "data", "sl_start.cfg"), "w") as f:
+        f.write('echo STARTUP_CACHE_PROBE\n' + windows(6))
     with open(os.path.join(userdir, "data", "sl.cfg"), "w") as f:
-        if early_open:
+        if startup_probe:
+            f.write('defer 0.25 "exec sl_start.cfg"\ndefer 3 quit\n')
+        elif early_open:
             f.write('toggleconsole\ndefer 1 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
         elif quit_at:
             f.write('defer 8 "net_slist_open"\ndefer %d "exec sl_end.cfg"\ndefer %d quit\n' % (quit_at - 1, quit_at))
@@ -229,6 +233,14 @@ try:
     check(r["first_query"] is not None and r["first_query"] < 0.3, "cold: servers are asked as soon as the master answers", "%s s after the master was asked" % r["first_query"])
     check(os.path.exists(os.path.join(ud, "data", "touch_serverlist_info.txt")), "cold: the list was saved")
 
+    # No server can reply in this process: all responses are delayed beyond
+    # its lifetime. The bridge must expose every saved row before opening MP.
+    write_state(A, hold_answers=30)
+    _, _, startup, _ = run_engine(ud, True, "1b-startup-cached", startup_probe=True)
+    initial = startup.get(6)
+    check(initial is not None and initial["total"] == alive and len(initial["rows"]) == alive,
+          "startup: all cached bridge rows before any network reply", str(initial and (initial["total"], len(initial["rows"]))))
+
     # ---- 2 the next session
     write_state(A)
     stats, sums, rows, log = run_engine(ud, True, "2-warm")
@@ -249,16 +261,19 @@ try:
               "warm: the summary has them at once, flagged as saved", str(sums.get("open")))
         w = rows.get(7)
         stale = sum(1 for x in (w or {}).get("rows", []) if x["cells"].get("stale")) if w else -1
-        check(w is not None and w["total"] == alive and stale >= w["total"] - 12, "warm: the bridge's servers source has them, marked stale", "total %s, stale %d" % (w and w["total"], stale))
+        check(w is not None and w["total"] == alive and stale == 0, "warm: cached bridge rows are usable while refreshing", "total %s, stale %d" % (w and w["total"], stale))
         check(w is not None and all("image" not in x for x in w["rows"]), "warm: server rows carry no image")
         e = rows.get(8)
         check(e is not None and e["total"] == alive and not any(x["cells"].get("stale") for x in e["rows"]), "warm: after the refresh no row is stale")
         check(e is not None and len({x["key"] for x in e["rows"]}) == alive,
               "warm: every listed address occurs exactly once")
+        check(w is not None and e is not None and [x["key"] for x in w["rows"]] == [x["key"] for x in e["rows"]],
+              "warm: refreshing values does not reorder rows")
         check(e is not None and w is not None and e["rev"] > w["rev"], "warm: the source's rev moved as the answers came", "%s -> %s" % (w and w["rev"], e and e["rev"]))
         check(sums.get("end", {}).get("saved") == "0", "warm: the summary is live after the refresh", str(sums.get("end")))
     check(r["dropped_flood"] == 0, "warm: no server was asked twice within a second", str(r.get("flood_examples")))
-    check(r["queries"] <= 3 * (len(A) + 25), "warm: servers that failed last time get one ask", "%d queries over three refreshes" % r["queries"])
+    # Home also refreshes in the background, in addition to the two explicit opens.
+    check(r["queries"] <= 4 * (len(A) + 25), "warm: servers that failed last time get one ask", "%d queries including Home refresh" % r["queries"])
 
     # ---- 3 changed: 20 live servers gone, 10 new
     B = [dict(s) for s in A]
