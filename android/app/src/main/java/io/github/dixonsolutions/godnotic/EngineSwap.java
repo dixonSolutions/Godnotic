@@ -47,8 +47,36 @@ final class EngineSwap {
     private static final Handler main = new Handler(Looper.getMainLooper());
     private static final Runnable watchdog = EngineSwap::onWatchdog;
     private static volatile String deviceKey;
+    /**
+     * The swap in flight (or the last one) was started by the app for a release the host could not
+     * swap itself (its Java code changed): no host callback, the host stays on its slot, and the
+     * new engine runs on the staged slot's data until the next start promotes that slot.
+     */
+    private static volatile boolean detached;
+    /** Detached: the staged slot whose data the new engine runs on. */
+    private static volatile File detachedBundle;
+    /** Detached: what the data override was before this swap, restored by an in-process rollback. */
+    private static volatile String previousLive;
+    private static volatile File previousBundle;
+    /**
+     * The release whose engine and data this process runs after a detached swap, "" when none. It
+     * is process-wide: the next start runs whatever the host promotes.
+     */
+    private static volatile String liveRelease = "";
+    /** Why the last offer (host or app) was declined, for the Updates screen. */
+    private static volatile String lastDecline;
 
     private EngineSwap() {}
+
+    /** The release this process already swapped its engine and data to, "" when none. */
+    static String liveRelease() {
+        return liveRelease;
+    }
+
+    /** Whether the engine (and its loader) runs in this process: a swap needs one to replace. */
+    static boolean engineRunning() {
+        return appContext != null && XonoticActivity.running && "game".equals(ProcessState.stage());
+    }
 
     /** The loader answers for the engine library it loads; null means the swap was accepted. */
     static native String nativeRequestSwap(String enginePath);
@@ -172,37 +200,47 @@ final class EngineSwap {
         }
     }
 
-    /** Host thread: main. Returns true to accept (the loader then swaps and reports through callbacks). */
-    private static boolean onLiveSwap(File slotDir, String version, Object cb) {
+    /** Why a swap to {@code version} from {@code slotDir} cannot start now, or null. */
+    private static String preflight(File slotDir, String version) {
         String blocked = liveBlockedReason(appContext);
-        if (blocked != null) {
-            Log.i(TAG, "Live swap to " + version + " declined: " + blocked);
-            return false;
-        }
+        if (blocked != null) return blocked;
         if (KeepAliveService.engineBusy) {
             // The host offers the swap when the app comes back to the front. A swap
             // restarts the engine, which would drop the player's server, join or
             // download: decline, and the release applies on the next start instead.
-            Log.i(TAG, "Live swap to " + version + " declined: the game is connected, joining or downloading");
-            return false;
+            return "the game is connected, joining or downloading";
         }
         if (!AndySUBridge.applySafe) {
             // A swap restarts the engine: only from the menu, idle for a few seconds. The bridge
-            // re-offers the release (applyNow) once that holds.
-            Log.i(TAG, "Live swap to " + version + " declined: a match may be running");
-            return false;
+            // offers the release again once that holds.
+            return "a match may be running";
         }
-        File lib = findEngine(slotDir);
-        if (lib == null) {
-            Log.w(TAG, "Live swap to " + version + " declined: no libmain in " + slotDir);
-            return false;
-        }
+        if (findEngine(slotDir) == null) return "no engine library in " + slotDir;
         if (!guard.canAccept()) {
             // A second swap while one is being applied would have two engines swapping under one
             // process: decline it; the release applies on the next start instead.
-            Log.w(TAG, "Live swap to " + version + " declined: a swap is already in flight");
-            return false;
+            return "a swap is already in flight";
         }
+        return null;
+    }
+
+    private static boolean decline(String version, String reason) {
+        lastDecline = reason;
+        Log.i(TAG, "Live swap to " + version + " declined: " + reason);
+        return false;
+    }
+
+    /** Host thread: main. Returns true to accept (the loader then swaps and reports through callbacks). */
+    private static synchronized boolean onLiveSwap(File slotDir, String version, Object cb) {
+        String blocked = preflight(slotDir, version);
+        if (blocked != null) return decline(version, blocked);
+        if (!liveRelease.isEmpty()) {
+            // This process already runs a release's engine that the host has not switched to: the
+            // host's slot switch would hand that engine the host's data. The next start applies it.
+            return decline(version, "this process already runs " + liveRelease + "'s engine");
+        }
+        File lib = findEngine(slotDir);
+        detached = false;
         // Before the loader may start the swap: the host has not switched its slot yet, so this is
         // still the running release, and a rollback goes back to it.
         fromVersion = AndySUCompat.payloadVersion();
@@ -240,6 +278,126 @@ final class EngineSwap {
         armWatchdog(WATCHDOG_MS);
         Log.i(TAG, "Live swap to " + version + " accepted: " + lib);
         return true;
+    }
+
+    /**
+     * The app's own live swap of a staged release the host cannot swap (its Java code changed):
+     * the engine and the game data of {@code slotDir} replace the running ones in this process; the
+     * host keeps its slot, and the release's Java code takes over when the host promotes the slot
+     * at the next start. Returns null when the loader accepted the swap, else why not. Never
+     * restarts: a refusal leaves the running engine as it was.
+     */
+    static synchronized String swapEngine(File slotDir, String version) {
+        if (!engineRunning()) return "the game is not running yet";
+        String blocked = preflight(slotDir, version);
+        if (blocked != null) {
+            decline(version, blocked);
+            return blocked;
+        }
+        File bundle = new File(slotDir, LiveApply.DATA_BUNDLE);
+        if (!bundle.isFile()) {
+            decline(version, "no game data in " + slotDir);
+            return lastDecline;
+        }
+        File lib = findEngine(slotDir);
+        deviceKey = deviceKey();
+        File trials = trialDir(appContext);
+        if (!SwapTrial.begin(trials, deviceKey)) {
+            decline(version, "could not record the trial");
+            return lastDecline;
+        }
+        String was = liveRelease;
+        detached = true;
+        detachedBundle = bundle;
+        previousLive = was.isEmpty() ? null : was;
+        previousBundle = previousLive == null ? null : detachedBundle(previousLive);
+        fromVersion = was.isEmpty() ? AndySUCompat.payloadVersion() : was;
+        toVersion = version;
+        callback = null;
+        try {
+            String refused = nativeRequestSwap(lib.getAbsolutePath());
+            if (refused != null) {
+                SwapTrial.refused(trials, deviceKey);
+                detached = false;
+                fromVersion = toVersion = null;
+                decline(version, "the loader refused it: " + refused);
+                return lastDecline;
+            }
+        } catch (UnsatisfiedLinkError e) {
+            SwapTrial.refused(trials, deviceKey);
+            detached = false;
+            fromVersion = toVersion = null;
+            decline(version, "no engine loader in this build");
+            return lastDecline;
+        }
+        guard.accept(SystemClock.elapsedRealtime(), WATCHDOG_MS);
+        armWatchdog(WATCHDOG_MS);
+        lastDecline = null;
+        Log.i(TAG, "Live engine and data swap to " + version + " accepted (the Java code follows at the next start): " + lib);
+        return null;
+    }
+
+    /** The data bundle of a release slot next to {@code detachedBundle}'s, or null. */
+    private static File detachedBundle(String version) {
+        File current = detachedBundle;
+        if (current == null) return null;
+        File slots = current.getParentFile() == null ? null : current.getParentFile().getParentFile();
+        slots = slots == null ? null : slots.getParentFile();
+        if (slots == null) return null;
+        File b = new File(new File(slots, version), LiveApply.DATA_BUNDLE);
+        return b.isFile() ? b : null;
+    }
+
+    /** The host's own in-process apply (AndySU.applyLive) is reachable: it never relaunches. */
+    static boolean hostLiveEntry() {
+        try {
+            Class<?> c = Class.forName("com.andysu.host.AndySU");
+            c.getField("INSTANCE");
+            c.getMethod("applyLive");
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Ask the host for its live swap of a native-only release, through the entry that cannot fall
+     * back to a relaunch. {@code UpdateClient.applyNow()} calls the same {@code applyLive()} but
+     * relaunches the process when it returns false, which is how a declined swap used to close the
+     * app. Returns null when the host swapped (our handler accepted), else why not.
+     */
+    static String hostApplyLive() {
+        final Object instance;
+        final Method apply;
+        try {
+            Class<?> c = Class.forName("com.andysu.host.AndySU");
+            instance = c.getField("INSTANCE").get(null);
+            apply = c.getMethod("applyLive");
+        } catch (Throwable t) {
+            return "this AndySU host has no live apply entry";
+        }
+        lastDecline = null;
+        final Object[] result = new Object[1];
+        CountDownLatch done = new CountDownLatch(1);
+        main.post(() -> {
+            try {
+                result[0] = apply.invoke(instance);
+            } catch (Throwable t) {
+                result[0] = t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null ? t.getCause() : t;
+            } finally {
+                done.countDown();
+            }
+        });
+        try {
+            if (!done.await(10, TimeUnit.SECONDS)) return "the host did not answer";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "interrupted";
+        }
+        if (Boolean.TRUE.equals(result[0])) return null;
+        if (result[0] instanceof Throwable) return "the host's live apply failed: " + ((Throwable) result[0]).getMessage();
+        String why = lastDecline;
+        return why != null ? why : "the host declined it (a release is still being confirmed, or it is not native-only)";
     }
 
     private static File findEngine(File slotDir) {
@@ -284,6 +442,7 @@ final class EngineSwap {
                 break;
             case EV_FAILED:
                 if (!guard.failed()) break;
+                if (detached) liveRelease = previousLive == null ? "" : previousLive;
                 markDeviceBad(toVersion);
                 cancelWatchdog();
                 callback("failed", detail.isEmpty() ? "the new engine failed to start" : detail);
@@ -301,7 +460,10 @@ final class EngineSwap {
                     SwapTrial.healthy(trialDir(appContext), deviceKey);
                 }
                 try {
-                    Object h = Class.forName("com.andysu.api.Host").getMethod("current").invoke(null);
+                    // Detached: the host's slot is not the release that just proved healthy; the
+                    // host confirms that one itself after the next start promotes it.
+                    Object h = detached && trialHealthy ? null
+                            : Class.forName("com.andysu.api.Host").getMethod("current").invoke(null);
                     if (h != null) {
                         Class.forName("com.andysu.api.HostApi").getMethod("markHealthy").invoke(h);
                     }
@@ -329,7 +491,12 @@ final class EngineSwap {
         }
         GameData data = new GameData(c);
         long t0 = System.currentTimeMillis();
+        if (detached) {
+            return beforeDetachedStart(data, swapped, t0);
+        }
         try {
+            // A host-driven swap reads the host's (switched) assets, never a detached override.
+            GameData.clearLiveBundle();
             if (fromVersion != null) { // driven by an AndySU host: its slot switch has to be done first
                 // The host switches its slot (version, asset loader) on the main thread: right after
                 // onLiveSwap returns for the swap (same main-thread task), and in onLiveFailed, posted
@@ -360,6 +527,48 @@ final class EngineSwap {
                 // The previous engine must not run on a mix of two releases' data. Make the next
                 // start unpack everything and let the host relaunch the app now; if that is not
                 // possible the loader stops (return 1) and the next start does it.
+                data.invalidateBundle();
+                restartThroughHost();
+            }
+            return 1;
+        }
+    }
+
+    /**
+     * Detached swap: the host has not switched its slot, so the new release's data comes from the
+     * staged slot's file ({@link GameData#useLiveBundle}); a rollback puts back whatever the data
+     * was before this swap (the host's slot, or an earlier detached swap's release).
+     */
+    private static int beforeDetachedStart(GameData data, int swapped, long t0) {
+        try {
+            if (swapped == 1) {
+                GameData.useLiveBundle(toVersion, detachedBundle);
+                data.prepare((text, note, percent) -> { });
+                liveRelease = toVersion;
+            } else {
+                if (previousLive != null && previousBundle != null) GameData.useLiveBundle(previousLive, previousBundle);
+                else GameData.clearLiveBundle();
+                liveRelease = previousLive == null ? "" : previousLive;
+                data.prepareAfterRollback((text, note, percent) -> { }, toVersion);
+            }
+            Log.i("AndySU-Event", "{\"event\":\"game_data_prepared\",\"pid\":" + Process.myPid() + ",\"swapped\":" + swapped
+                    + ",\"detached\":true,\"release\":\"" + (swapped == 1 ? toVersion : fromVersion) + "\",\"data_version\":\""
+                    + data.bundleVersion() + "\",\"ms\":" + (System.currentTimeMillis() - t0) + "}");
+            return 0;
+        } catch (IOException | RuntimeException e) {
+            guard.failed();
+            markDeviceBad(toVersion);
+            cancelWatchdog();
+            Log.e(TAG, "Preparing the game data failed (detached, swapped=" + swapped + ")", e);
+            Log.i("AndySU-Event", "{\"event\":\"game_data_failed\",\"pid\":" + Process.myPid() + ",\"swapped\":" + swapped
+                    + ",\"detached\":true}");
+            if (swapped == 1) {
+                // The loader rolls back to the previous engine, which calls back with swapped=2.
+                liveRelease = previousLive == null ? "" : previousLive;
+            } else {
+                // The previous engine must not run on a mix of two releases' data: the next start
+                // unpacks everything again. The loader stops this engine (return 1).
+                GameData.clearLiveBundle();
                 data.invalidateBundle();
                 restartThroughHost();
             }
