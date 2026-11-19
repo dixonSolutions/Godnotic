@@ -21,6 +21,9 @@ static int failures;
 
 int main(void)
 {
+	CHECK_INT(7, TouchJoinPreview_TargetChoice(7, 3), "an active player is preferred");
+	CHECK_INT(3, TouchJoinPreview_TargetChoice(0, 3), "a quiet populated match still follows a player");
+	CHECK_INT(0, TouchJoinPreview_TargetChoice(0, 0), "an empty match keeps the overview camera");
 	CHECK_INT(0, TouchJoinPreview_Drawable(0, 1, 1, 1, 1), "no world model: not drawable");
 	CHECK_INT(0, TouchJoinPreview_Drawable(1, 0, 1, 1, 1), "no leaves: not drawable");
 	CHECK_INT(0, TouchJoinPreview_Drawable(1, 1, 0, 1, 1), "leaf data missing: not drawable");
