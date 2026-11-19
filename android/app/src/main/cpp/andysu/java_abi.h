@@ -16,7 +16,9 @@
 #ifndef GODNOTIC_JAVA_ABI_H
 #define GODNOTIC_JAVA_ABI_H
 
+#ifndef GODNOTIC_JAVA_ABI /* the desktop swap harness builds a mismatched engine */
 #define GODNOTIC_JAVA_ABI 2
+#endif
 #define GODNOTIC_JAVA_ABI_FINGERPRINT "bb97cf48f64ecb99f197d3b5e870d5935e8e8ec8858c0ac21df521b15c8c593e"
 
 #endif
