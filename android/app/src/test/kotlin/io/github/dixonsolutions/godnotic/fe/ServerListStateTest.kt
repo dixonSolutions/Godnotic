@@ -170,7 +170,24 @@ class ServerListStateTest {
         state.hold = false
         state.begin(3)
         state.accept(0, 3, listOf(row("c:3", 50), row("a:1", 50), row("b:2", 50)))
+        assertEquals(listOf("c:3", "a:1", "b:2"), keys())
+        state.choose("ping", false)
         assertEquals(listOf("a:1", "b:2", "c:3"), keys())
+    }
+
+    @Test
+    fun changingPingsDoNotMoveRowsOrSelectionDuringRefresh() {
+        state.choose("ping", false)
+        state.accept(0, 2, listOf(row("a", 10), row("b", 20)))
+        state.select("a")
+        state.begin(2)
+        state.accept(0, 2, listOf(row("b", 5), row("a", 90)))
+        assertEquals(listOf("a", "b"), keys())
+        assertEquals("a", state.selected)
+        assertEquals(90, state.row(0)!!["cells"].obj().int("ping"))
+        state.choose("ping", false)
+        assertEquals(listOf("b", "a"), keys())
+        assertEquals("a", state.selected)
     }
 
     @Test
