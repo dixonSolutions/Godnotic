@@ -648,9 +648,11 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             if (v == View.VISIBLE) { shownAt = SystemClock.elapsedRealtime(); root.requestFocus() }
         }
         // opaque: the engine draws nothing behind it and idles at cl_maxidlefps;
-        // see-through for a dialog over the match, which goes on being drawn
+        // see-through for a dialog over the match and for the menu over a match
+        // that is not paused (online): the game goes on being drawn behind it
         val name = if (overGame) client?.modal?.lastOrNull() ?: "join" else screens.lastOrNull() ?: "home"
-        NativeBridge.enqueue(FeArgs.command("screen", if (v == View.VISIBLE) name else "none", if (v == View.VISIBLE && !overGame) "2" else "0"))
+        val cover = MenuBackdrop.cover(v == View.VISIBLE, overGame, app.str("state") == "paused", app.bool("menu_paused"))
+        NativeBridge.enqueue(FeArgs.command("screen", if (v == View.VISIBLE) name else "none", cover))
     }
 
     /** While the QuakeC menu is up on purpose (Advanced, a stopgap screen): a way back to the native one. */

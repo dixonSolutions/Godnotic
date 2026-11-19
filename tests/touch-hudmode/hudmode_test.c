@@ -278,6 +278,10 @@ static void check_join_dialog(void)
 	CHECK_INT(0, TouchMode_MenuScrim(1, 0), "no scrim over the remote game");
 	CHECK_INT(1, TouchMode_MenuScrim(1, 1) > TouchMode_MenuScrim(1, 0), "a deeper scrim when the game really pauses");
 	CHECK_INT(1, TouchMode_MenuPaused(1, 1, 1), "a paused listen server is a pause");
+	CHECK_INT(0, TouchMode_MenuCover(2, 1, 0), "an online match stays drawn behind an opaque native menu");
+	CHECK_INT(0, TouchMode_MenuCover(1, 1, 0), "nor dimmed");
+	CHECK_INT(2, TouchMode_MenuCover(2, 1, 1), "a paused local game may be covered");
+	CHECK_INT(2, TouchMode_MenuCover(2, 0, 0), "the main menu out of a match covers the engine");
 
 	// The spectator bar carries a JOIN button beside < FREE > (touch_spectate.h).
 	CHECK_INT(4, TOUCHSPEC_BAR_PARTS, "the spectator bar has a JOIN part beside it");
