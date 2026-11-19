@@ -28,7 +28,7 @@ window.request = async function request(ip, port, payload, expected) {
   while (performance.now() - start < 5000) {
     let packet;
     while ((packet = bridge.receive())) {
-      const r = new Uint8Array([...header, ...packet.payload]);
+      const r = new Uint8Array([1, packet.address.length === 4 ? 4 : 6, ...packet.address, packet.port >> 8, packet.port & 255, ...packet.payload]);
       if (r.length > 12 && header.every((v, i) => r[i] === v) &&
           new TextDecoder().decode(r.slice(12)).startsWith(expected))
         return {ms: performance.now() - start, bytes: r.length - 8, data: Array.from(r.slice(8))};
