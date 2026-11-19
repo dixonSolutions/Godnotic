@@ -61,6 +61,9 @@ int main(void)
 	TouchVote_StripColors("^1abcdefgh", buf, 5);
 	CHECK_STR("abcd", buf, "output truncated to its size");
 
+	// A late joiner can recover the currently running vote with vote status.
+	check_line("late join status", "^7Vote for ^1restart^7 called by ^7Caller^7.", TOUCHVOTE_MSG_CALL, "Caller", "restart");
+
 	// VoteCommand_call, VoteCommand_master
 	check_line("call", "\001^2* ^3embryo^2 calls a vote for ^1gotomap revdm3\n", TOUCHVOTE_MSG_CALL, "embryo", "gotomap revdm3");
 	check_line("call, coloured name and kick display", "\001^2* ^3^1Bad^7Guy^2 calls a vote for ^1kick #3 ^7Some^3One^1 camping",

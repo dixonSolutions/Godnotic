@@ -12,7 +12,8 @@ answer either outside the stock screens' key binds:
     a finger can already tap (touch_hud.c, the CSQC pointer). Its options and
     counts are in the CSQC's mv_* globals, named differently by Xonotic 0.8.6
     (mv_maps, mv_num_maps) and later builds (mv_entries, mv_count).
-Both get the same chip and card here. Nothing is drawn while no vote is open.
+Only called votes appear in the chip card; map and gametype votes use the
+stock selection screen. The chip is available throughout the match.
 */
 
 #include "quakedef.h"
@@ -62,7 +63,7 @@ static float smin(void) { return min(ui_w(), ui_h()); }
 typedef struct vglobal_s { int ofs; int type; } vglobal_t;
 
 static void *bound_globals;
-static vglobal_t g_active, g_yes, g_no, g_needed, g_mine, g_text, g_uid2name;
+static vglobal_t g_active, g_waiting, g_yes, g_no, g_needed, g_mine, g_text, g_uid2name;
 static vglobal_t g_mv_active, g_mv_count, g_mv_entries, g_mv_data, g_mv_votes, g_mv_own, g_mv_flags, g_mv_timeout, g_mv_gtv, g_mv_winner;
 
 static vglobal_t vglobal(prvm_prog_t *prog, const char *name)
@@ -106,12 +107,13 @@ static void bind_globals(void)
 {
 	prvm_prog_t *prog = CLVM_prog;
 	bound_globals = prog->loaded ? (void *)prog->globals.fp : NULL;
-	g_active.ofs = g_yes.ofs = g_no.ofs = g_needed.ofs = g_mine.ofs = g_text.ofs = g_uid2name.ofs = -1;
+	g_waiting.ofs = g_active.ofs = g_yes.ofs = g_no.ofs = g_needed.ofs = g_mine.ofs = g_text.ofs = g_uid2name.ofs = -1;
 	g_mv_active.ofs = g_mv_count.ofs = g_mv_entries.ofs = g_mv_data.ofs = g_mv_votes.ofs = g_mv_own.ofs = -1;
 	g_mv_flags.ofs = g_mv_timeout.ofs = g_mv_gtv.ofs = g_mv_winner.ofs = -1;
 	if (!prog->loaded)
 		return;
 	g_active = vglobal(prog, "vote_active");
+	g_waiting = vglobal(prog, "vote_waiting");
 	g_yes = vglobal(prog, "vote_yescount");
 	g_no = vglobal(prog, "vote_nocount");
 	g_needed = vglobal(prog, "vote_needed");
@@ -291,7 +293,16 @@ static void read_call(callview_t *v)
 	if (globals)
 	{
 		v->from_globals = true;
-		v->active = gfloat(g_active, 0) != 0;
+		v->active = gfloat(g_waiting.ofs >= 0 ? g_waiting : g_active, 0) != 0;
+		if (!v->active && pr.active)
+		{
+			v->from_globals = false;
+			v->active = true;
+			dp_strlcpy(v->caller, pr.caller, sizeof(v->caller));
+			dp_strlcpy(v->text, pr.text, sizeof(v->text));
+			v->mine = pr.mine;
+			return;
+		}
 		if (!v->active)
 			return;
 		TouchVote_StripColors(gstring(g_text, 0), v->text, sizeof(v->text));
@@ -374,9 +385,8 @@ static int shown_map_pick(void)
 }
 
 static qbool call_pending(void) { return call.active && !shown_choice(); }
-// The next-map vote is the game's own full screen, tapped directly (the CSQC
-// pointer): no chip or card over it unless asked for (touch_vote_mapcard 1).
-static qbool map_pending(void) { return mapv.active && !mapv.decided && shown_map_pick() < 0 && cv("touch_vote_mapcard", 0); }
+// Map and gametype votes use the game's own selection screen.
+static qbool map_pending(void) { return false; }
 
 // ---------------------------------------------------------------------------
 // Card state
@@ -413,8 +423,8 @@ static void card_open(void)
 	}
 	else
 	{
-		card.kind = CARD_MAP;
-		map_unseen = false;
+		card.kind = CARD_CALL;
+		call_unseen = false;
 	}
 }
 
@@ -456,14 +466,23 @@ static void update_state(void)
 {
 	double now = host.realtime;
 	static double last_start;
+	static qbool queried_status;
 	if (cls.state != ca_connected || cls.signon != SIGNONS)
 	{
+		queried_status = false;
 		if (call_was || map_was || pr.active || card.open)
 			reset_all();
 		return;
 	}
 	if (bound_globals != (CLVM_prog->loaded ? (void *)CLVM_prog->globals.fp : NULL))
 		bind_globals();
+	// Older server CSQC may expose no vote globals. Ask once after signon:
+	// the broadcast announcing a running vote predates a late joiner.
+	if (!queried_status && CLVM_prog->loaded && (g_active.ofs < 0 || g_mine.ofs < 0 || cl_touch_vote_noglobals.integer))
+	{
+		queried_status = true;
+		Cbuf_AddText(cmd_local, "cmd vote status\n");
+	}
 
 	read_call(&call);
 	if (call.active && (!call_was || strcmp(call.text, shown_text) || (pr.active && pr.start != last_start && !call.from_globals)))
@@ -756,6 +775,14 @@ static void draw_card(void)
 		rgb = C_ACCENT_LIGHT;
 		text_at(x + pad, card.close_cy - fs_title * 0.5f, fs_title, ended ? result_label(&rgb) : "VOTE", rgb, a);
 		cy = card.header_bottom + pad * 0.3f;
+		if (!call.active && host.realtime - result_time >= RESULT_SHOW)
+		{
+			text_at(x + pad, cy, fs_sub, "No active vote", C_INK, a * 0.7f);
+			draw_close();
+			card.nrows = 0;
+			card.drawn = true;
+			return;
+		}
 		if (shown_caller[0])
 			dpsnprintf(buf, sizeof(buf), "%s calls a vote for", shown_caller);
 		else
@@ -901,7 +928,7 @@ void TouchVote_Draw(void)
 		card.drawn = false;
 		return;
 	}
-	show = call_pending() || map_pending() || card.open;
+	show = true;
 	if (!show)
 	{
 		card.drawn = false;

@@ -130,6 +130,17 @@ static int TouchVote_ParseLine(const char *raw, touchvote_msg_t *m)
 	if (!strcmp(line, "No vote called."))
 		return m->kind = TOUCHVOTE_MSG_NOVOTE;
 
+	// A status reply also recovers a vote that started before we joined.
+	if (!strncmp(line, "Vote for ", 9) && (q = strstr(line + 9, " called by ")))
+	{
+		const char *caller = q + strlen(" called by ");
+		size_t n = strlen(caller);
+		if (n && caller[n - 1] == '.') n--;
+		touchvote_copy(m->text, sizeof(m->text), line + 9, q - (line + 9));
+		touchvote_copy(m->caller, sizeof(m->caller), caller, n);
+		return m->kind = TOUCHVOTE_MSG_CALL;
+	}
+
 	// bprint lines all start "* "
 	if (line[0] != '*' || line[1] != ' ')
 		return m->kind = TOUCHVOTE_MSG_NONE;
