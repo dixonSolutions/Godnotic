@@ -12,12 +12,12 @@ import java.util.Map;
 
 /** The Updates screen's decisions on an AndySU install (AndySUState): plain JVM, no Android. */
 public class AndySUStateTest {
-    @org.junit.Test public void liveAppliesOnlyWhenNativeAndOutOfAMatch() {
+    @org.junit.Test public void liveAppliesOnlyWhenSwappableAndOutOfAMatch() {
         assertTrue(AndySUState.shouldApplyLive("staged", false, "live", true));
         assertFalse("in a match", AndySUState.shouldApplyLive("staged", true, "live", true));
         assertFalse("restart policy", AndySUState.shouldApplyLive("staged", false, "restart", true));
         assertFalse("next start", AndySUState.shouldApplyLive("staged", false, "next_start", true));
-        assertFalse("a Java release cannot be swapped", AndySUState.shouldApplyLive("staged", false, "live", false));
+        assertFalse("nothing to swap (a Java-only release)", AndySUState.shouldApplyLive("staged", false, "live", false));
         assertFalse("not staged yet", AndySUState.shouldApplyLive("available", false, "live", true));
     }
 

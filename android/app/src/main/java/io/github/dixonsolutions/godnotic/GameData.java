@@ -221,6 +221,30 @@ final class GameData {
      */
     private static final Object PREPARE_LOCK = new Object();
 
+    /**
+     * A live engine swap the app runs itself (EngineSwap, a release whose Java code changed): the
+     * new engine runs on the staged release's data while the host still runs the previous slot,
+     * so its asset loader still serves the previous bundle. For the rest of this process the data
+     * belongs to {@code liveVersion} and is read from that slot's file; null when no such swap ran.
+     */
+    private static volatile String liveVersion;
+    private static volatile File liveBundle;
+
+    static void useLiveBundle(String version, File bundle) {
+        synchronized (PREPARE_LOCK) {
+            liveBundle = bundle;
+            liveVersion = version;
+        }
+    }
+
+    /** The swap was rolled back: the data is the running slot's again. */
+    static void clearLiveBundle() {
+        synchronized (PREPARE_LOCK) {
+            liveVersion = null;
+            liveBundle = null;
+        }
+    }
+
     /** The release the unpacked bundle belongs to (the stamp written when an unpack finished), or null. */
     String bundleVersion() {
         File stamp = new File(baseDir(), BUNDLE_STAMP);
@@ -311,7 +335,9 @@ final class GameData {
         Map<String, String> previous = readManifest(manifestFile);
         Map<String, String> current = new HashMap<>();
         int[] written = new int[1];
-        try (InputStream raw = context.getAssets().open(BUNDLE_ASSET)) {
+        File live = liveBundle;
+        try (InputStream raw = live != null && liveVersion != null
+                ? new FileInputStream(live) : context.getAssets().open(BUNDLE_ASSET)) {
             unzip(new ZipInputStream(raw), baseDir(), null, progress, status, previous, current, written);
         }
 
@@ -817,6 +843,8 @@ final class GameData {
     }
 
     private String appVersion() {
+        String live = liveVersion;
+        if (live != null) return live; // an app-driven engine swap runs a staged release's data
         // Under AndySU the installed APK is a frozen host; the running payload's version is what
         // the bundled data belongs to.
         String payload = AndySUCompat.payloadVersion();

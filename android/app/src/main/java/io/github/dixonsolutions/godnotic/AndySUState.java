@@ -126,12 +126,14 @@ final class AndySUState {
     }
 
     /**
-     * Whether a staged release can be swapped in without restarting: live apply is the policy, the
-     * process is not in a match, and the release changes only native code and content. Anything
-     * else has to wait for the player or restart, and Settings says why.
+     * Whether a staged release is swapped into the running process now: live apply is the policy,
+     * the process is not in a match, and the release can be swapped in ({@code swappable}:
+     * {@link LiveApply#isLive}, which is true for an engine or data change even when the Java code
+     * changed too; the host's {@code native_live} alone, which is false whenever the dex changed,
+     * is what used to send every release to the restart path). Nothing else applies by itself.
      */
-    static boolean shouldApplyLive(String state, boolean inMatch, String policy, boolean nativeLive) {
-        return "staged".equals(state) && !inMatch && "live".equals(policy) && nativeLive;
+    static boolean shouldApplyLive(String state, boolean inMatch, String policy, boolean swappable) {
+        return "staged".equals(state) && !inMatch && "live".equals(policy) && swappable;
     }
 
 

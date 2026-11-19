@@ -36,7 +36,10 @@ final class AndySUBridge {
     private static final String TAG = "Godnotic";
 
     static final String REQUEST_CHECK = "check";
+    /** Apply live: swap the staged release into the running process. Never restarts. */
     static final String REQUEST_APPLY = "apply";
+    /** Restart now: the player's explicit choice for a release that cannot be swapped in live. */
+    static final String REQUEST_RESTART = "restart";
     /** "Download now": fetch the release a check found, on this connection. */
     static final String REQUEST_DOWNLOAD = "download";
     static final String REQUEST_AUTO_ON = "auto-on";
@@ -82,6 +85,14 @@ final class AndySUBridge {
     private String autoBlocked = "";
     /** The staged release changes only native code and content: the host can swap it live. */
     private boolean pendingNativeLive;
+    /** How the staged release gets into this process (LiveApply), and the line that says so. */
+    private LiveApply.How how = LiveApply.How.NONE;
+    private String howWhy = "";
+    /** What the staged slot changes against the running one, cached per staged release. */
+    private LiveApply.Changes changes;
+    private String changesFor = "";
+    /** The release a "needs a restart" notice was shown for (once per release and process). */
+    private String restartNoticeFor = "";
     private String announced = "";
     private long announcedAt;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -142,27 +153,33 @@ final class AndySUBridge {
                         AndySUCompat.applyNow();
                         break;
                     }
-                    if (!applySafe) {
-                        // A match is running or loading: replacing the process would kill it.
-                        applyWanted = true;
-                        requestError = "Update ready. It will apply when you are back in the menu.";
+                    if (!LiveApply.isLive(how)) {
+                        // Nothing in this release can be swapped into the running app. Apply live
+                        // does not turn into a restart: the Updates screen says so and offers
+                        // Restart now, the player's own choice.
+                        applyWanted = false;
+                        requestError = "";
                         publish();
                         return;
                     }
                     applyWanted = true;
-                    // Apply now is live whenever the release can be: no package replacement, no
-                    // restart, the player stays in the menu. Restart is only the fallback.
-                    if (AndySUState.shouldApplyLive("staged", false, applyPolicy, pendingNativeLive)
-                            && EngineSwap.liveReady(context)) {
-                        try {
-                            AndySUCompat.applyNow();
-                        } catch (ReflectiveOperationException | RuntimeException e) {
-                            requestError = "Could not apply the update live: "
-                                    + AndySUState.oneLine(e.getMessage());
-                        }
+                    if (!applySafe) {
+                        // A match is running or loading: swapping the engine would end it.
+                        requestError = "Update ready. It applies live when you are back in the menu.";
                         publish();
                         return;
                     }
+                    String refused = applyLiveNow();
+                    if (refused == null) {
+                        applyWanted = false;
+                        requestError = "";
+                    } else {
+                        requestError = LiveApply.refused(refused);
+                        Log.w(TAG, requestError);
+                    }
+                    publish();
+                    return;
+                case REQUEST_RESTART:
                     if (!prepareRestart()) { publish(); return; }
                     // Quiet this process and mark it replacing *before* the host is asked: the
                     // relaunch does not return, so anything after the call may never run.
@@ -241,7 +258,9 @@ final class AndySUBridge {
             String release = status.optString("release", status.optString("id", ""));
             JSONObject core = confirmStableTrial(coreState());
             String pending = pendingRelease(core, r.installed);
-            if (core != null) syncNextStartRequest(pending, auto());
+            // A release whose engine and data already run here must be the one the next start
+            // promotes, automatic updates or not: otherwise the next start goes back to the old one.
+            if (core != null) syncNextStartRequest(pending, auto() || (!pending.isEmpty() && pending.equals(EngineSwap.liveRelease())));
             String problem = "apply_refused".equals(state) ? AndySUState.applyRefusedMessage()
                     : applyProblem(core, pending);
             if (requestError.startsWith("Still confirming the current version")) requestError = "";
@@ -283,6 +302,7 @@ final class AndySUBridge {
             stagedForApply = staged;
             stateForApply = !staged.isEmpty() ? "staged" : state;
             applyPolicy = policy;
+            plan(core, staged, "shell-update".equals(state), level);
             ProcessState.phase(context, stateForApply);
 
             if ("downloading".equals(state)) {
@@ -315,6 +335,9 @@ final class AndySUBridge {
                     .flag("wifi", modeControl ? wifiOnly : null)
                     .flag("live", live)
                     .put("live_reason", live != null && live ? liveReason() : "")
+                    .put("apply_how", LiveApply.token(how))
+                    .put("apply_why", howWhy)
+                    .put("engine_live", EngineSwap.liveRelease())
                     .put("net", metered ? "metered" : (Net.kind(context) == Net.Kind.OFFLINE ? "offline" : "unmetered"))
                     .put("hold", AndySUState.hold(state, auto, wifiOnly, metered))
                     .put("api", level)
@@ -413,7 +436,10 @@ final class AndySUBridge {
             announced = "";
             return;
         }
-        if (!applyProblem(coreState(), version).isEmpty()) {
+        JSONObject core = coreState();
+        if (core == null || !core.isNull("trial")) {
+            // Unknown state, or the running release is still being confirmed: a swap now would
+            // be blamed on it. Settings shows why; the next poll tries again.
             announced = "";
             return;
         }
@@ -422,80 +448,93 @@ final class AndySUBridge {
         if (!AndySUState.mayAnnounce(version, autoBlocked)) return;
         final String noticeVersion = version;
         long now = SystemClock.elapsedRealtime();
-        // Live first: a native/content release is swapped in the running process, and only a
-        // release that cannot be swapped restarts (with the reason on the Updates screen).
-        if (AndySUState.shouldApplyLive(stateForApply, inMatch, applyPolicy, pendingNativeLive)
-                && EngineSwap.liveReady(context)) {
+        // Live only: the engine and data (or a native-only release through the host) are swapped
+        // in this process. A release that cannot be swapped never restarts by itself: it applies
+        // at the next start, and the Updates screen says so and offers Restart now.
+        if (AndySUState.shouldApplyLive(stateForApply, inMatch, applyPolicy, LiveApply.isLive(how))) {
+            if (!EngineSwap.engineRunning() || !EngineSwap.liveReady(context)) return;
             if (version.equals(announced) && now - announcedAt < 60_000) return;
             announced = version;
             announcedAt = now;
             main.post(() -> Toast.makeText(context, "Applying " + noticeVersion + " live…",
                     Toast.LENGTH_SHORT).show());
-            try {
-                AndySUCompat.applyNow();
-            } catch (ReflectiveOperationException | RuntimeException e) {
+            String refused = applyLiveNow();
+            if (refused != null) {
                 announced = "";
                 autoBlocked = noticeVersion;
-                requestError = "Could not apply the update live: " + AndySUState.oneLine(e.getMessage());
-                Log.w(TAG, requestError, e);
+                requestError = LiveApply.refused(refused);
+                Log.w(TAG, requestError);
+            } else {
+                applyWanted = false;
+                requestError = ""; // "applies live when you are back in the menu" has happened
             }
             return;
         }
-        if (!version.equals(announced)) {
-            announced = version;
-            announcedAt = now;
-            main.post(() -> Toast.makeText(context, "?".equals(noticeVersion) ? "Updating — restarting…"
-                    : "Updating to " + noticeVersion + " — restarting…",
-                    Toast.LENGTH_SHORT).show());
-        } else if (now - announcedAt >= 1000) {
-            android.content.SharedPreferences prefs =
-                    context.getSharedPreferences("andysu_apply", Context.MODE_PRIVATE);
-            long wall = System.currentTimeMillis();
-            if (!AndySUState.mayAutoRestart(noticeVersion, prefs.getString("version", ""),
-                    prefs.getLong("at", 0L), wall)) {
-                // Avoid a restart loop; publish the failure from the persisted attempt.
-                announced = "";
-                autoBlocked = noticeVersion;
-                stagedForApply = "";
-                stateForApply = "idle";
-                Log.w(TAG, "Not restarting again for " + noticeVersion);
-                return;
+        if (how == LiveApply.How.RESTART && !noticeVersion.equals(restartNoticeFor)) {
+            restartNoticeFor = noticeVersion;
+            main.post(() -> Toast.makeText(context, "Version " + noticeVersion
+                    + " is ready. It applies the next time Godnotic starts (Settings, Updates: Restart now).",
+                    Toast.LENGTH_LONG).show());
+        }
+    }
+
+    /**
+     * Swap the staged release into this process: the host's own live swap for a native-only
+     * release (through the entry that cannot relaunch), else the app's engine and data swap.
+     * Returns null when a swap is under way, else why not. Never restarts.
+     */
+    private String applyLiveNow() {
+        JSONObject core = coreState();
+        if (core == null) return "the update state could not be read";
+        if (!core.isNull("trial")) return "the current version is still being confirmed";
+        String pending = pendingRelease(core, AndySUCompat.payloadVersion());
+        if (pending.isEmpty()) return "there is no staged update";
+        if (how == LiveApply.How.HOST_LIVE) {
+            String refused = EngineSwap.hostApplyLive();
+            if (refused == null) return null;
+            Log.i(TAG, "The host did not swap " + pending + " live (" + refused + "); swapping the engine from the app");
+        }
+        return EngineSwap.swapEngine(new File(hostRoot, "slots/" + pending), pending);
+    }
+
+    /** Decide how the staged release applies, and the line the Updates screen shows for it. */
+    private void plan(JSONObject core, String staged, boolean shellUpdate, int level) {
+        String engineLive = EngineSwap.liveRelease();
+        boolean liveOn = EngineSwap.liveEnabled(context);
+        boolean hostEntry = level >= 2 && engineLive.isEmpty() && EngineSwap.hostLiveEntry();
+        LiveApply.Changes c = changes(core, staged);
+        how = LiveApply.how(staged, shellUpdate, liveOn, pendingNativeLive, hostEntry, c, engineLive);
+        String blocked = LiveApply.isLive(how) ? EngineSwap.liveBlockedReason(context) : null;
+        howWhy = LiveApply.why(how, c, blocked, liveOn);
+    }
+
+    /** What the staged slot changes against the slot the host runs, from both slot indexes. */
+    private LiveApply.Changes changes(JSONObject core, String staged) {
+        if (staged == null || staged.isEmpty()) return null;
+        if (staged.equals(changesFor) && changes != null) return changes;
+        JSONObject current = core == null ? null : core.optJSONObject("current");
+        Map<String, String> running = current == null ? null : slotIndex(current.optString("id", ""));
+        changes = LiveApply.Changes.between(running, slotIndex(staged));
+        changesFor = staged;
+        return changes;
+    }
+
+    /** path -> sha256 of a slot's {@code .andysu-slot.json}; null when it cannot be read. */
+    private Map<String, String> slotIndex(String id) {
+        if (id == null || id.isEmpty() || id.contains("/")) return null;
+        File index = new File(hostRoot, "slots/" + id + "/.andysu-slot.json");
+        try {
+            JSONObject json = new JSONObject(new String(Files.readAllBytes(index.toPath()), StandardCharsets.UTF_8));
+            org.json.JSONArray comps = json.optJSONArray("components");
+            if (comps == null) return null;
+            Map<String, String> m = new HashMap<>();
+            for (int i = 0; i < comps.length(); i++) {
+                JSONObject c = comps.getJSONObject(i);
+                m.put(c.optString("path"), c.optString("sha256"));
             }
-            // Do not repeatedly ask if the host rejects or returns from the relaunch.
-            announced = "";
-            autoBlocked = noticeVersion;
-            stagedForApply = "";
-            stateForApply = "idle";
-            if (!prepareRestart()) {
-                publish();
-                return;
-            }
-            // Quiet this process and mark it replacing *before* the host is asked to relaunch:
-            // the relaunch does not return, so the work after the call may never run.
-            ReplaceSequence.apply(
-                    () -> ReplaceGuard.beforeReplace(context),
-                    () -> ReplaceGuard.beginReplace(context),
-                    () -> {
-                        try {
-                            if (AndySUCompat.has("restartToApply")) {
-                                String result = AndySUCompat.restartToApply();
-                                if (!"restarting".equals(result)) {
-                                    throw new IllegalStateException(AndySUState.applyRefusedMessage());
-                                }
-                            } else if (AndySUCompat.has("restartNow")) {
-                                AndySUCompat.restartNow();
-                            } else {
-                                AndySUCompat.applyNow();
-                            }
-                        } catch (ReflectiveOperationException | RuntimeException e) {
-                            requestError = "Could not restart to apply the update: "
-                                    + AndySUState.oneLine(e.getMessage());
-                            Log.w(TAG, requestError, e);
-                        }
-                    });
-            // A host that returns or throws did not relaunch; keep Settings available.
-            if (requestError.isEmpty()) requestError = "AndySU did not restart to apply the update.";
-            publish();
+            return m;
+        } catch (Exception e) {
+            return null;
         }
     }
 
