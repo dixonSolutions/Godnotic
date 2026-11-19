@@ -237,6 +237,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
         showReconnect(if (loadingStrip == null) a.str("reconnect") else "")
+        if (loadingStrip != null) { recheckCard(); refreshCardText() }
         // No synthesized `idle` here: the engine publishes the connect stage
         // itself, and a card torn down by this guess was rebuilt by the next
         // stage 300 ms later, logo and all (the flashing screens during a join).
@@ -281,11 +282,15 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val addr = a.str("join_fail_address").takeUnless { text.contains(it) } ?: ""
         val body = listOf(text, a.str("join_fail_detail"), serverLabel(addr))
             .filter { it.isNotEmpty() }.distinct().joinToString("\n")
-        main.postDelayed({
-            confirm(mapOf("title" to title, "body" to body, "ok" to "Retry", "cancel" to "Close")) {
-                NativeBridge.enqueue(FeArgs.command("join_retry"))
-            }
-        }, 300)
+        if (loadingStrip != null) {
+            // the join card turns into the error: no menu between them, one place for Retry and Back
+            joinError = title to body
+            refreshCardText()
+            return
+        }
+        confirm(mapOf("title" to title, "body" to body, "ok" to "Retry", "cancel" to "Back")) {
+            NativeBridge.enqueue(FeArgs.command("join_retry"))
+        }
     }
 
     private var loadingStrip: android.widget.LinearLayout? = null
@@ -304,6 +309,59 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var shotBitmap: android.graphics.Bitmap? = null
     /** The picture is the generic stand-in: dimmed and blurred behind the card. */
     private var shotGeneric = false
+
+    /** A join that failed, shown on the card itself (title, body); null while none. */
+    private var joinError: Pair<String, String>? = null
+    private var cardCancelled = false
+    private var cardIgnoreBusy = false
+    private var cardCheckPosted = false
+    private var loadingCancel: View? = null
+    private var loadingRetry: View? = null
+    private var loadingBack: View? = null
+
+    /** The card goes (the join is over, or was cancelled); the native screen below it shows again. */
+    private fun dropCard() {
+        loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
+        loadingBanner = null; loadingCardView = null; previewStrip = false
+        loadingCancel = null; loadingRetry = null; loadingBack = null
+        previewSeen = false; joinError = null
+        shotPath = ""; shotBitmap = null; lastWorld = false
+        if (engineSeen && app.isNotEmpty()) main.post { onApp(app) }
+    }
+
+    private fun scheduleCardCheck() {
+        if (cardCheckPosted) return
+        cardCheckPosted = true
+        main.postDelayed({ cardCheckPosted = false; recheckCard() }, JoinFlow.FAIL_GRACE_MS + 50)
+    }
+
+    /** The grace after an idle stage may be over, or the app entered the game: the card goes unless something holds it. */
+    private fun recheckCard() {
+        if (loadingStrip == null) return
+        val stage = joinStage
+        if (!JoinFlow.holdCard(stage, app.str("state"), true, joinError != null, app.str("reconnect").isNotEmpty(), SystemClock.elapsedRealtime() - joinStageAt, cardCancelled)) dropCard()
+        else if (!JoinFlow.isBusy(stage)) scheduleCardCheck()
+    }
+
+    /** What the card says while the engine is idle in a join: the failure, the reconnect, else the last step. */
+    private fun refreshCardText() {
+        val err = joinError
+        val reconnect = app.str("reconnect")
+        loadingCancel?.visibility = if (err == null) View.VISIBLE else View.GONE
+        loadingRetry?.visibility = if (err != null) View.VISIBLE else View.GONE
+        loadingBack?.visibility = if (err != null) View.VISIBLE else View.GONE
+        if (err != null) {
+            loadingTitle?.text = err.first
+            loadingText?.text = err.second
+            loadingText?.maxLines = 4
+            loadingBar?.visibility = View.GONE
+        } else {
+            loadingText?.maxLines = 1
+            loadingBar?.visibility = View.VISIBLE
+            if (reconnect.isNotEmpty()) { loadingText?.text = reconnect; loadingBar?.isIndeterminate = true }
+        }
+    }
 
     /**
      * A join or a map load: the engine publishes its progress from inside the
@@ -349,12 +407,17 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         lastWorld = c.bool("world")
         // The join dialog is the one join screen; the card goes when it opens.
         val joinDialog = client?.modal?.lastOrNull() == "join"
-        if (!JoinFlow.card(stage, joinDialog, JoinFlow.settled(joinStageAt, now), loadingStrip != null, showShot)) {
-            loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
-            loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
-            loadingBanner = null; loadingCardView = null; previewStrip = false
-            previewSeen = false
-            shotPath = ""; shotBitmap = null; lastWorld = false
+        if (cardIgnoreBusy) { if (busy) return; cardIgnoreBusy = false }
+        if (busy) { cardCancelled = false; if (joinError != null) { joinError = null; refreshCardText() } }
+        if (!JoinFlow.holdCard(stage, app.str("state"), loadingStrip != null, joinError != null, app.str("reconnect").isNotEmpty(), now - joinStageAt, cardCancelled)) {
+            dropCard()
+            return
+        }
+        if (!busy) {
+            // a gap in the join (between a drop and the reconnect, or before the failure notice): the card
+            // stays as it is, and is checked again when the grace is over
+            scheduleCardCheck()
+            refreshCardText()
             return
         }
         // A join starts from a native screen. That screen was left visible by
@@ -385,13 +448,31 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             val bar = android.widget.ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal)
             bar.isIndeterminate = true
             bar.indeterminateTintList = android.content.res.ColorStateList.valueOf(Theme.EMBER)
-            val cancel = Kit.button(activity, "Cancel") { NativeBridge.enqueue(FeArgs.command("cancel")) }
+            val cancel = Kit.button(activity, "Cancel") {
+                // the join is over for the player: the card goes at once, whatever the engine still reports
+                cardCancelled = true; cardIgnoreBusy = true
+                NativeBridge.enqueue(FeArgs.command("cancel"))
+                dropCard()
+            }
+            val retry = Kit.button(activity, "Retry", primary = true) {
+                joinError = null; cardCancelled = false
+                NativeBridge.enqueue(FeArgs.command("join_retry"))
+                refreshCardText()
+            }
+            val back = Kit.button(activity, "Back") {
+                cardCancelled = true // the stage is idle already: a later join builds a new card
+                dropCard()
+            }
+            retry.visibility = View.GONE; back.visibility = View.GONE
             val row = Kit.row(activity, 16f)
             row.gravity = Gravity.CENTER_VERTICAL
             val texts = Kit.column(activity, 4f)
             texts.addView(title); texts.addView(t)
             row.addView(texts, android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(cancel)
+            row.addView(back)
+            row.addView(retry)
+            loadingCancel = cancel; loadingRetry = retry; loadingBack = back
             card.addView(row)
             card.addView(bar, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Theme.dp(activity, 6f)).apply { topMargin = Theme.dp(activity, 12f) })
             screen.addView(card, android.widget.LinearLayout.LayoutParams(Theme.dp(activity, 640f).coerceAtMost(activity.resources.displayMetrics.widthPixels - Theme.dp(activity, 32f)), ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = Theme.dp(activity, 48f) })
@@ -417,7 +498,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
             c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(), c.str("join_map"),
         )
-        loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
+        val reconnect = app.str("reconnect")
+        loadingText?.text = if (stage == "connecting" && reconnect.isNotEmpty()) reconnect else if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
         // a real bar: the engine's own progress band is not drawn under the card
         loadingBar?.let { bar ->
             if (pct < 0) bar.isIndeterminate = true

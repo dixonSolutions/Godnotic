@@ -41,6 +41,25 @@ internal object JoinFlow {
     fun card(stage: String, joinDialog: Boolean, settled: Boolean, hasCard: Boolean = false, shot: Boolean = false): Boolean =
         isBusy(stage)
 
+    /** How long the card waits, after the engine says idle, for the failure notice or the reconnect that explains it. */
+    const val FAIL_GRACE_MS = 2500L
+
+    /**
+     * The card stays through a gap in a join: the engine reads `idle` for a moment between a
+     * dropped connection and the reconnect, and between a failed attempt and its notice (a
+     * second later, from the app topic). Tearing the card down there showed the menu for those
+     * moments. It stays while the join has not ended: a failure to show ([failed]), a reconnect
+     * under way, or the app has not entered the game and the grace ([FAIL_GRACE_MS]) is not over.
+     * A cancel, and the game itself ([appState] `ingame`/`paused`), end it at once.
+     */
+    fun holdCard(stage: String, appState: String, hasCard: Boolean, failed: Boolean, reconnecting: Boolean, idleMs: Long, cancelled: Boolean): Boolean {
+        if (isBusy(stage)) return true
+        if (!hasCard || cancelled) return false
+        if (failed) return true
+        if (appState == "ingame" || appState == "paused") return false
+        return reconnecting || idleMs < FAIL_GRACE_MS
+    }
+
     /**
      * The map's picture (the engine's connect `levelshot`: a file once the map is known, a
      * local game's pick before any server exists) is what the card shows until the world is
