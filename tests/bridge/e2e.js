@@ -2,11 +2,11 @@
 const {chromium} = require('playwright');
 const {spawn} = require('child_process');
 const dgram = require('dgram');
+const http = require('http');
 const dns = require('dns').promises;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {pathToFileURL} = require('url');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const median = a => { a.sort((x,y) => x-y); return (a[24] + a[25]) / 2; };
 async function direct(socket, port, text, timeout = 5000) {
@@ -31,6 +31,10 @@ async function main() {
     '-userdir', path.join(tmp, 'user'), '-port', String(port), '+sv_public', '0', '+map', process.env.BRIDGE_MAP || 'boil'],
     {stdio: ['pipe', log, log]});
   let browser;
+  const root = path.resolve(__dirname, '../..');
+  const files = {'/': path.join(__dirname, 'e2e.html'), '/web/bridge-channel.mjs': path.join(root, 'web/bridge-channel.mjs'), '/web/bridge-frame.mjs': path.join(root, 'web/bridge-frame.mjs')};
+  const web = http.createServer((req, res) => { const file = files[req.url]; if (!file) { res.writeHead(404).end(); return; } res.setHeader('Content-Type', file.endsWith('.mjs') ? 'text/javascript' : 'text/html'); fs.createReadStream(file).pipe(res); });
+  await new Promise(resolve => web.listen(0, '127.0.0.1', resolve));
   const socket = dgram.createSocket('udp4');
   try {
     for (let i = 0; ; i++) {
@@ -40,7 +44,8 @@ async function main() {
     }
     browser = await chromium.launch({headless: true, ...(process.env.CHROMIUM_PATH ? {executablePath: process.env.CHROMIUM_PATH} : {})});
     const page = await browser.newPage();
-    await page.goto(pathToFileURL(path.join(__dirname, 'e2e.html')).href);
+    await page.goto(`http://127.0.0.1:${web.address().port}/`);
+    await page.waitForFunction(() => typeof window.offer === 'function');
     const offer = await page.evaluate(() => window.offer());
     const offerPath = path.join(tmp, 'offer.sdp'), answerPath = path.join(tmp, 'answer.sdp');
     fs.writeFileSync(offerPath, offer);
@@ -50,11 +55,13 @@ async function main() {
       await sleep(100);
     }
     await page.evaluate(sdp => window.answer(sdp), fs.readFileSync(answerPath, 'utf8'));
-    const result = await page.evaluate(([ip, port]) => window.request(ip, port, 'getservers Xonotic 3 empty full\n', 'getserversResponse'), [master.address, masterPort]);
-    if (result.bytes < 29 || result.data[22] !== 92 ||
-        (result.data[23] === 69 && result.data[24] === 79 && result.data[25] === 84) ||
-        !(result.data[27] || result.data[28])) throw Error('master returned empty or malformed server list');
-    console.log(`master getservers: PASS (${result.bytes} bytes from ${master.address}:${masterPort})`);
+    if (!process.env.BRIDGE_SKIP_MASTER) {
+      const result = await page.evaluate(([ip, port]) => window.request(ip, port, 'getservers Xonotic 3 empty full\n', 'getserversResponse'), [master.address, masterPort]);
+      if (result.bytes < 29 || result.data[22] !== 92 ||
+          (result.data[23] === 69 && result.data[24] === 79 && result.data[25] === 84) ||
+          !(result.data[27] || result.data[28])) throw Error('master returned empty or malformed server list');
+      console.log(`master getservers: PASS (${result.bytes} bytes from ${master.address}:${masterPort})`);
+    }
     const bridged = [], directTimes = [];
     for (let i = 0; i < 50; i++) {
       const response = await page.evaluate(([port, i]) => window.request('127.0.0.1', port, 'getinfo bridge' + i, 'infoResponse'), [port, i]);
@@ -67,6 +74,7 @@ async function main() {
     throw e;
   } finally {
     if (browser) await browser.close();
+    web.close();
     socket.close();
     server.kill('SIGTERM');
     await new Promise(resolve => { if (server.exitCode !== null || server.signalCode !== null) resolve(); else server.once('exit', resolve); });
