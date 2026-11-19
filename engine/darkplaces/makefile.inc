@@ -49,6 +49,8 @@ OBJ_COMMON= \
 	touch_lan.o \
 	touch_webnet.o \
 	touch_net.o \
+	touch_netkeep.o \
+	touch_netdl.o \
 	touch_joinfail.o \
 	touch_joinname.o \
 	touch_srvlist.o \
