@@ -364,6 +364,14 @@ void TouchHudMode_Update(void)
 	publish();
 }
 
+// Online matches keep running behind the menu, but should not keep playing
+// at full volume while it is open. Local games keep their usual pause/audio.
+qbool TouchHudMode_MuteMenuAudio(void)
+{
+	return cls.state == ca_connected && cls.signon == SIGNONS && !cls.demoplayback
+		&& !sv.active && (key_dest == key_menu || key_dest == key_menu_grabbed);
+}
+
 const touchmode_t *TouchHudMode_Current(void)
 {
 	return &current;
