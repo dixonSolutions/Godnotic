@@ -170,6 +170,11 @@ def modes_and_match():
         c = Conn(connect(sock))
         hello(c)
         c.settle()
+        wait_for(c, lambda: "Test server 00000" in c.nodes.get("home/tiles/mp", {}).get("props", {}).get("subtitle", ""), 5)
+        preview = c.nodes.get("home/tiles/mp", {}).get("props", {})
+        check("Test server 00000" in preview.get("subtitle", "") and "afterslime" in preview.get("subtitle", "") and "/16" in preview.get("subtitle", "")
+              and preview.get("image") == "pk3:maps/afterslime",
+              f"Home previews the server name, map, players and its map image ({preview!r})")
         c.send({"t": "ev", "ev": "action", "node": "home/tiles/mp", "action": "mp"})
         wait_for(c, lambda: "mp/servers" in c.nodes, 15)
         c.settle()
@@ -183,15 +188,14 @@ def modes_and_match():
         selected = c.nodes.get("mp/servers", {}).get("props", {}).get("selected")
         check(field == address and selected == [address], f"selecting a server fills the address and selects the row ({field!r}, {selected!r})")
         details = c.nodes.get("mp/details", {}).get("props", {})
-        attrs = details.get("attrs", [])
         check(details.get("image") == "pk3:maps/afterslime" and details.get("title") == "Test server 00000",
               f"the selected row immediately emits its map picture and server name ({details.get('image')!r}, {details.get('title')!r})")
-        check(any(a.get("label") == "Game type" and a.get("value") == "Deathmatch" for a in attrs) and
-              any(a.get("label") == "Players" and a.get("value", "").endswith(" / 16") for a in attrs) and
-              any(a.get("label") == "Address" and a.get("value") == address for a in attrs),
-              f"the selected server preview includes game type, player count and address ({attrs!r})")
-        check(not any(a.get("label") == "Scores and teams" for a in attrs),
-              "the selected server preview omits scores and teams when status data is missing")
+        facts = details.get("subtitle", "")
+        check("afterslime" in facts and "Deathmatch" in facts and "/16" in facts and "ms" in facts,
+              f"the selected server preview has one facts line ({facts!r})")
+        check(details.get("primary", {}).get("id") == "server.join" and details.get("primary", {}).get("style") == "primary",
+              "the selected server preview has a primary Join action")
+        check(not details.get("body"), "the selected server preview omits player scores when status data is missing")
         for chip in ("empty", "full", "laggy"):
             c.send({"t": "ev", "ev": "value", "node": "mp/bar/filters/" + chip, "value": False})
             c.settle()
