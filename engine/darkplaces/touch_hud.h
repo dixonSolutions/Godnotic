@@ -94,7 +94,6 @@ qbool TouchHUD_TopBarRect(int slot, float *x, float *y, float *w, float *h);
 struct touchmode_s;
 void TouchHudMode_Init(void);
 void TouchHudMode_Update(void);
-qbool TouchHudMode_MuteMenuAudio(void);
 const struct touchmode_s *TouchHudMode_Current(void);
 const char *TouchHudMode_Target(void);   // the followed player's name, "" if none
 void TouchHudMode_Reset(void);

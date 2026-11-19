@@ -520,11 +520,10 @@ static inline int TouchMode_MenuOverlay(int menu_open)
 	return menu_open ? 1 : 0;
 }
 
-// How dark the game is behind the menu, in percent: a light scrim, deeper when
-// the game really pauses.
+// Only dim a game that is actually paused.
 static inline int TouchMode_MenuScrim(int menu_open, int really_paused)
 {
-	return menu_open ? (really_paused ? 72 : 55) : 0;
+	return menu_open && really_paused ? 72 : 0;
 }
 
 // While the menu is open the touch controls are not on screen.

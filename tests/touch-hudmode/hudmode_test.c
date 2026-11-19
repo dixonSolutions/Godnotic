@@ -275,7 +275,7 @@ static void check_join_dialog(void)
 	CHECK_INT(0, TouchMode_MenuHidesHud(0), "touch controls stay while playing");
 	CHECK_INT(1, TouchMode_MenuHidesHud(1), "touch controls hide behind the menu");
 	CHECK_INT(0, TouchMode_MenuScrim(0, 0), "no scrim while playing");
-	CHECK_INT(1, TouchMode_MenuScrim(1, 0) >= 40 && TouchMode_MenuScrim(1, 0) <= 70, "a light scrim over the remote game");
+	CHECK_INT(0, TouchMode_MenuScrim(1, 0), "no scrim over the remote game");
 	CHECK_INT(1, TouchMode_MenuScrim(1, 1) > TouchMode_MenuScrim(1, 0), "a deeper scrim when the game really pauses");
 	CHECK_INT(1, TouchMode_MenuPaused(1, 1, 1), "a paused listen server is a pause");
 
