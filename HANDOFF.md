@@ -1,7 +1,18 @@
 # vote2 handoff
 
-Incomplete. The info chip now stays visible in modes with touch match controls, its card opens even after the player has voted, and end-of-match map/gametype choices no longer open there. Called-vote reads prefer the server's `vote_waiting` flag and fall back to a parsed broadcast; clients without readable vote globals request and parse `vote status` after joining.
+Complete. Branch work/vote2 (built on work/integration of cx-lead), merged with origin/main (already up to date).
 
-The create-vote button, virtual list of server commands, and argument pickers are not implemented. Late joining, the caller's choice, and map/gametype exclusion still need behavioral tests. The status parser test alone does not prove recovery on a running server. The offscreen server/client attempt and its result are recorded in the worker report. Nothing has been tested on a tablet. Review print/global state transitions and the empty-card design before integration.
+- The info "i" chip is shown in every in-match mode (playing, dead, spectating, out) and hidden on the match-end
+  screens (intermission, map vote, gametype vote), where the open card is also closed (touch_vote.c TouchVote_Draw).
+- Called votes: listed with Yes/No/Abstain for the caller (own Yes already counted), voters, and late joiners.
+  The late-join recovery is `cmd vote status` once after signon (parsed in touch_vote_parse.h); the caller is
+  recovered from its reply.
+- "+" in the card header opens a lazily drawn (5 rows visible), drag-scrolled list of the server's allowed commands
+  (reply to `cmd vote help`), with pickers: maps (`cmd lsmaps`), players (#entity), numbers; any other command opens
+  the console prefilled with `cmd vote call <command> `. Server-provided names are filtered to [A-Za-z0-9_.-].
+- Tests: scripts/test-touch-vote.sh (unit), scripts/test-touch-vote-live.sh (offscreen local dedicated server,
+  4 phases; needs /tmp/cx-fast-data/data and the built darkplaces-sdl). `touch_vote_state` prints the panel state.
 
-Validation: `scripts/test-touch-vote.sh` passed; `taskset -c 12-15 make -C engine/darkplaces -j4 sdl-release sv-release DP_LINK_JPEG=dlopen` passed; `git diff --check` passed. Web engine build failed because the documented cached dependency path is absent and outside the writable workspace. Do not integrate this as a completed task.
+Not checked: a real tablet; the web build (documented dependency cache missing); Android.
+Known gap: the gotomap/kick/number pickers key off command names; unknown custom commands use the console prefill.
+Live test notes: spectator clients are used for most phases; one client joins (`cmd join`) for the playing mode.
