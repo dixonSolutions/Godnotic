@@ -36,7 +36,8 @@ signon's baselines and the entity updates carry.
 #include "touch_joinpreview.h"
 #include "touch_joinpreview_logic.h"
 #include "touch_frontend.h" // TouchFE_MenuHidden: the native menu is not drawn
-#include "touch_joinname.h" // TouchJoinName_MapFor: the map the server list names
+#include "touch_joinname.h"
+#include "touch_joinfail.h" // TouchJoinName_MapFor: the map the server list names
 #include "fs.h"
 
 static cvar_t touch_join_preview = {CF_CLIENT, "touch_join_preview", "1",
@@ -143,7 +144,8 @@ static qbool JP_MapNameSrc(char *buf, int size, qbool *from_list)
 		InfoString_GetValue(cl.qw_serverinfo, "map", buf, size);
 	// a DarkPlaces server sends no serverinfo map: the precache list's first entry is the
 	// world model ("maps/foo.bsp"), there from the first reliable message of the signon
-	if (buf[0] == '\0' && !JP_LocalLoading() && cls.state == ca_connected && cl.model_name[1][0] && !strncmp(cl.model_name[1], "maps/", 5))
+	// (not while a new connect is pending: the old server's world model is still in cl until the new one accepts us)
+	if (buf[0] == '\0' && !JP_LocalLoading() && !cls.connect_trying && cls.state == ca_connected && cl.model_name[1][0] && !strncmp(cl.model_name[1], "maps/", 5))
 		dp_strlcpy(buf, cl.model_name[1], size);
 	if (buf[0] == '\0' && !JP_LocalLoading())
 	{
@@ -267,6 +269,7 @@ qbool TouchJoinPreview_DrawLevelshot(void)
 	float x, y, w, h, f, bright;
 	float verts[12], texcoords[8];
 	int choice;
+	TouchJoinFail_CloseStaleMenu(cls.connect_trying); // a blocking load runs no host frame: the edge is seen here too
 	if (!TouchJoinPreview_Waiting())
 		return false;
 	choice = TouchJoinPreview_Picture(path, sizeof(path));
