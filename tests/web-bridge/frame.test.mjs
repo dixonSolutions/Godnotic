@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {pack, unpack} from '../../web/bridge-frame.mjs';
+const ip = Uint8Array.of(192, 0, 2, 1);
+const data = Uint8Array.of(255, 0, 7);
+const frame = pack(ip, 26000, data);
+assert.deepEqual([...frame], [1, 4, 192, 0, 2, 1, 101, 144, 255, 0, 7]);
+assert.deepEqual(unpack(frame), {address: ip, port: 26000, payload: data});
+const ipv6 = Uint8Array.from({length: 16}, (_, i) => i);
+assert.deepEqual(unpack(pack(ipv6, 65535, data)), {address: ipv6, port: 65535, payload: data});
+for (const bad of [new Uint8Array(), Uint8Array.of(2, 4), Uint8Array.of(1, 4, 1, 2, 3, 4, 0, 0, 1), frame.slice(0, 8)]) assert.throws(() => unpack(bad), RangeError);
+for (const port of [0, 65536, 1.5]) assert.throws(() => pack(ip, port, data), RangeError);
+assert.throws(() => pack(ip, 1, new Uint8Array(65508)), RangeError);
+assert.equal(unpack(pack(ip, 1, new Uint8Array(65507))).payload.length, 65507);
+console.log('web bridge datagram frames: PASS');

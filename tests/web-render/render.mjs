@@ -201,19 +201,19 @@ check(menu && !pageError, `the game starts (${Math.round((Date.now() - t0) / 100
 if (!menu) { console.log(JSON.stringify({ label, W, H, touch, fail: 1, errors: consoleErrors })); process.exit(1); }
 const touchDetected = await evaluate('window.xt && xt.cvar ? xt.cvar("vid_touchscreen_detected") : "?"');
 const touchMode = await evaluate('window.xt && xt.cvar ? xt.cvar("vid_touchscreen") : "?"');
-check(String(touchDetected) === '1', `the web build reports its touch screen to the engine (vid_touchscreen_detected=${touchDetected}, vid_touchscreen=${touchMode})`);
+check(String(touchDetected) === (touch ? '1' : '0'), `the web build reports its pointer capabilities to the engine (vid_touchscreen_detected=${touchDetected}, vid_touchscreen=${touchMode})`);
 await sleep(6000);
 await shot('01-home');
 
 // The welcome is a first-start thing; answer it the way a player does.
 let nodes = await snapshot();
-if (JSON.stringify(nodes.app && nodes.app.props.modal) === '["welcome"]') {
+if (nodes['welcome/form/name']) {
   // A first start asks for a name. Type it into the description's own field,
   // through the renderer's scripted input: browser key events are not what
   // the page's text field receives on every build, and a welcome left up
   // swallows every tap that follows.
   const f = await rectOf('welcome/form/name');
-  if (f) { await click(f.x, f.y); await sleep(500); }
+  if (f) { await click(f.x + f.w / 2, f.y + f.h / 2); await sleep(500); }
   // The renderer's own tap focuses the field whatever the browser delivered.
   await command('uib_input tap welcome/form/name');
   await sleep(600);
@@ -222,7 +222,7 @@ if (JSON.stringify(nodes.app && nodes.app.props.modal) === '["welcome"]') {
   await command('uib_input key ENTER');
   await sleep(2000);
   nodes = await snapshot();
-  if (JSON.stringify(nodes.app && nodes.app.props.modal) === '["welcome"]') {
+  if (nodes['welcome/form/name']) {
     await command('uib_event {"ev":"value","node":"welcome/form/name","value":"Webby"}');
     await sleep(500);
     await command('uib_input tap welcome/primary');
@@ -254,25 +254,22 @@ const visit = async (name, open, afterOpen) => {
   await command('uib_input key ESCAPE');
   await sleep(1200);
 };
-// A tap on a control, and what it took to land. Chrome's emulated touch
-// does not reach the engine's menu on every build; a mouse press and, as a
-// last resort, the renderer's own scripted tap (uib_input tap, the same hit
-// test) are tried in turn, and the method that worked is reported.
+// A tap on the center of a control must reach the engine through the browser.
+// Do not fall back to scripted input: that would hide broken pointer handling.
 const tapNode = async (nid, expect, verify) => {
   const r = await rectOf(nid);
   if (!r) return null;
   const methods = [
-    ['touch', async () => click(r.x, r.y)],
+    ['touch', async () => click(r.x + r.w / 2, r.y + r.h / 2)],
     ['mouse', async () => {
-      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
-      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x + r.w / 2, y: r.y + r.h / 2 });
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x + r.w / 2, y: r.y + r.h / 2, button: 'left', clickCount: 1 });
       await sleep(60);
-      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x + r.w / 2, y: r.y + r.h / 2, button: 'left', clickCount: 1 });
     }],
-    ['uib_input', async () => command(`uib_input tap ${nid}`)],
   ];
   for (const [name, go] of methods) {
-    if (name === 'touch' && !touch) continue;
+    if ((name === 'touch') !== touch) continue;
     await go();
     await sleep(1400);
     const n = await snapshot();
@@ -325,10 +322,12 @@ for (let i = 0; i < 1200 && !loaded; i++) {
 check(loaded, 'a local match loads on stormkeep');
 await sleep(5000);
 await shot('06-ingame');
-const hud = await ask('echo HUDSTATE $_touch_hud_mode $_touch_hud_controls', (x) => x.includes('HUDSTATE'));
-check(/HUDSTATE (playing|dead|spectating|following|out)\b/.test(hud), `the touch HUD is running in a web match (${hud.trim()})`);
-const hudRects = await ask('touch_hud_state rects', (x) => x.includes('TOUCHRECTS mode='));
-check(/TOUCHRECTS mode=(playing|dead|spectating|following|out)/.test(hudRects), `the touch HUD lays out its controls (${hudRects.trim().slice(0, 120)})`);
+if (touch) {
+  const hud = await ask('echo HUDSTATE $_touch_hud_mode $_touch_hud_controls', (x) => x.includes('HUDSTATE'));
+  check(/HUDSTATE (playing|dead|spectating|following|out)\b/.test(hud), `the touch HUD is running in a web match (${hud.trim()})`);
+  const hudRects = await ask('touch_hud_state rects', (x) => x.includes('TOUCHRECTS mode='));
+  check(/TOUCHRECTS mode=(playing|dead|spectating|following|out)/.test(hudRects), `the touch HUD lays out its controls (${hudRects.trim().slice(0, 120)})`);
+}
 await command('uib_input key ESCAPE');
 await sleep(2500);
 let nm = await snapshot();

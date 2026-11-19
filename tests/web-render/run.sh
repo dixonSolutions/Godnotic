@@ -63,13 +63,15 @@ if [ -n "${SIZES:-}" ]; then
 else
     sizes=("1920 1200 tablet-1920x1200" "1280 800 tablet-1280x800" "844 390 phone-844x390")
 fi
+touch_arg=()
+if [ "${TOUCH:-1}" = 1 ]; then touch_arg=(--touch); fi
 failed=0
 : >"$log"
 for spec in "${sizes[@]}"; do
     set -- $spec
     echo "== $3 (${1}x${2}, touch)"
     if node "$here/render.mjs" --port "$dbg" --url "$url" --out "$out" \
-        --width "$1" --height "$2" --touch --label "$3" 2>&1 | tee -a "$log"; then
+        --width "$1" --height "$2" "${touch_arg[@]}" --label "$3" 2>&1 | tee -a "$log"; then
         echo "-- $3: PASS"
     else
         echo "-- $3: FAIL"

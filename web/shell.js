@@ -284,6 +284,18 @@
 
   // ---------------------------------------------------- pointer lock
 
+  // SDL (Emscripten) also asks for the lock when the game grabs the mouse
+  // and drops the promise: a refused lock (no focus, Esc before it landed,
+  // a headless browser) then surfaced as an uncaught page exception. A
+  // refusal is normal; the next click asks again.
+  if (canvas.requestPointerLock) {
+    const ask = canvas.requestPointerLock;
+    canvas.requestPointerLock = function (...a) {
+      const p = ask.apply(this, a);
+      if (p && p.catch) p.catch(() => {});
+      return p;
+    };
+  }
   function requestLock() {
     if (document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
     try {
@@ -1915,6 +1927,30 @@
       fail(`The game stopped: ${what}\n\n${tail}`);
     },
   };
+
+  // Online play: a browser has no UDP, so the engine's datagrams go over a
+  // WebRTC data channel to a native Godnotic that lets web players connect
+  // through it (web/bridge-net.mjs, engine/darkplaces/touch_webnet.c). The
+  // page looks for one only when the engine first asks for a server.
+  // ?relaybroker=wss://… (repeatable), ?relaytopic=, ?relaystun= override
+  // the public defaults (tests, a self-hosted relay: relay/README.md).
+  if (window.GodnoticBridge) {
+    const relayEngine = (fn, text) => {
+      try { if (state.started) Module.ccall(fn, null, ['string'], [text]); } catch (e) { /* the engine is gone */ }
+    };
+    Module.godnoticNet = new window.GodnoticBridge.GodnoticNet({
+      brokers: params.has('relaybroker') ? params.getAll('relaybroker') : (CONFIG.relayBrokers || undefined),
+      prefix: params.get('relaytopic') || undefined,
+      stun: params.has('relaystun') ? params.get('relaystun') : undefined,
+      onState: (s, message) => {
+        crumb('relay ' + s);
+        if (!message) return;
+        relayEngine('xt_web_relay_message', message);
+        if (s !== 'searching') toast(message, s === 'connected' ? 3500 : 12000);
+      },
+      onConnected: (masters) => relayEngine('xt_web_relay_connected', masters),
+    });
+  }
 
   // The engine shut down cleanly (menu Quit): offer a fresh start, which
   // is a reload, since the engine cannot be started twice in one page.
