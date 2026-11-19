@@ -11,5 +11,5 @@ assert 'Tap ^3FREE^1 to observe' in observer
 join = s.split('string Touch_Spec_JoinHint', 1)[1].split('string Touch_Spec_CommandLabel', 1)[0]
 assert 'vid_keyboard_detected' in join and 'Tap ^3JOIN' in join
 pressed = (root / 'engine/data/xonotic-data.pk3dir/qcsrc/client/hud/panel/pressedkeys.qc').read_text()
-assert 'vid_touchscreen_detected") && !cvar("vid_keyboard_detected' in pressed
+assert 'vid_keyboard_detected' in pressed and 'vid_touchscreen_detected' in pressed
 print('ok   spectator touch hint guards')

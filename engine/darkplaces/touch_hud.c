@@ -2803,6 +2803,34 @@ static qbool reduce_motion(void) { return cv("touch_reduce_motion", 0) != 0; }
 static qbool spec_hud(void)
 {
 	// Before the join choice the observer HUD is not the player's screen: the
+
+// Foreign Xonotic CSQC builds the spectator prompts and pressed-key pictures
+// itself, without our touch label hooks. Hide those two panels while a touch
+// spectator has no keyboard; the engine's spectator bar supplies the actions.
+qbool TouchHUD_HideStockKeyPanel(prvm_prog_t *prog)
+{
+	int i;
+	if (prog != CLVM_prog || cl_touch_csqc_active || !TouchMode_IsSpectating(hud_mode())
+		|| !(vid_touchscreen.integer || vid_touchscreen_detected.integer) || vid_keyboard_detected.integer)
+		return false;
+	for (i = -1; i < prog->depth; i++)
+	{
+		mfunction_t *f = i < 0 ? prog->xfunction : prog->stack[i].f;
+		const char *name = f ? PRVM_GetString(prog, f->s_name) : "";
+		if (TouchSpec_HideStockPanel(name, 1, 1, 0, 1))
+		{
+			static int reported;
+			int bit = !strcmp(name, "HUD_InfoMessages") ? 1 : 2;
+			if (developer.integer && !(reported & bit))
+			{
+				reported |= bit;
+				Con_DPrintf("Touch HUD: suppressed stock %s\n", name);
+			}
+			return true;
+		}
+	}
+	return false;
+}
 	// join dialog comes first, over the preview or as soon as observing starts.
 	if (TouchHudMode_JoinWaiting())
 		return false;

@@ -288,6 +288,13 @@ string Touch_Spec_ObserverHint(string hint, int status, int choice)
 {
 	if (cvar("_touch_join_waiting"))
 		return "";
+	if ((cvar("vid_touchscreen") || cvar("vid_touchscreen_detected")) && !cvar("vid_mouse_confirmed") && cvar("vid_keyboard_detected"))
+	{
+		if (status == -1 && choice == 0)
+			return Touch_Spec_BarShown(Touch_Spec_State()) ? "^1Tap ^3>^1 to spectate" : "";
+		if (status != -1 && choice == 1)
+			return Touch_Spec_State() == TOUCH_SPEC_FOLLOWING ? "^1Tap ^3FREE^1 to observe" : "";
+	}
 	if ((cvar("vid_touchscreen") || cvar("vid_touchscreen_detected")) && !cvar("vid_keyboard_detected"))
 	{
 		if (choice == 2 || (status == -1 && choice == 1))
@@ -308,11 +315,11 @@ string Touch_Spec_TeamHint(string hint, string color)
 	return hint;
 }
 
-string Touch_Spec_NextHint(string hint, int status)
+string Touch_Spec_NextHint(string hint, int status, int choice)
 {
 	if (cvar("_touch_join_waiting"))
 		return "";
-	if ((!cvar("vid_touchscreen") && !cvar("vid_touchscreen_detected")) || cvar("vid_keyboard_detected") || status == -1)
+	if ((!cvar("vid_touchscreen") && !cvar("vid_touchscreen_detected")) || (cvar("vid_keyboard_detected") && cvar("vid_mouse_confirmed")) || status == -1 || choice != 0)
 		return hint;
 	if (!Touch_Spec_BarShown(Touch_Spec_State()))
 		return "";
