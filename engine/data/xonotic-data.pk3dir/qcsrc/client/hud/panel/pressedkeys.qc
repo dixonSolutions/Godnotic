@@ -13,6 +13,7 @@ void HUD_PressedKeys_Export(int fh)
 
 void HUD_PressedKeys(bool should_draw)
 {
+	if (cvar("vid_touchscreen_detected") && !cvar("vid_keyboard_detected")) return; // Touch: no keyboard on this device
 	if (!should_draw)
 		return;
 	// On touch the controls on screen are the keys; the panel is for a keyboard.

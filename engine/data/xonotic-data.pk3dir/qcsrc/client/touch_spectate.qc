@@ -288,9 +288,15 @@ string Touch_Spec_ObserverHint(string hint, int status, int choice)
 {
 	if (cvar("_touch_join_waiting"))
 		return "";
-	// Free flight has no speed control in the touch spectator overlay.
-	if (cvar("vid_touchscreen") && status == -1 && choice == 1)
-		return "";
+	if ((cvar("vid_touchscreen") || cvar("vid_touchscreen_detected")) && !cvar("vid_keyboard_detected"))
+	{
+		if (choice == 2 || (status == -1 && choice == 1))
+			return "";
+		if (status == -1)
+			return Touch_Spec_BarShown(Touch_Spec_State()) ? "^1Tap ^3>^1 to spectate" : "";
+		if (choice == 1)
+			return Touch_Spec_State() == TOUCH_SPEC_FOLLOWING ? "^1Tap ^3FREE^1 to observe" : "";
+	}
 	return hint;
 }
 
@@ -306,7 +312,7 @@ string Touch_Spec_NextHint(string hint, int status)
 {
 	if (cvar("_touch_join_waiting"))
 		return "";
-	if (!cvar("vid_touchscreen") || status == -1)
+	if ((!cvar("vid_touchscreen") && !cvar("vid_touchscreen_detected")) || cvar("vid_keyboard_detected") || status == -1)
 		return hint;
 	if (!Touch_Spec_BarShown(Touch_Spec_State()))
 		return "";
@@ -317,7 +323,7 @@ string Touch_Spec_JoinHint(string hint)
 {
 	if (cvar("_touch_join_waiting"))
 		return "";
-	if (!cvar("vid_touchscreen"))
+	if ((!cvar("vid_touchscreen") && !cvar("vid_touchscreen_detected")) || cvar("vid_keyboard_detected"))
 		return hint;
 	if (Touch_Spec_BarShown(Touch_Spec_State()))
 		return "^1Tap ^3JOIN^1 to join";
