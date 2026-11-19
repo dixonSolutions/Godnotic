@@ -61,6 +61,15 @@ internal object JoinFlow {
     }
 
     /**
+     * The connection was lost in the game and the engine joins again by itself (touch_net.c): the
+     * app topic then reads `menu` (nothing is connected for a moment) with the reconnect text.
+     * That is a join: the card takes the screen with the first such snapshot, before the first
+     * `connect` snapshot of the new attempt, instead of the main menu showing in between.
+     */
+    fun reconnectCard(appState: String, reconnect: String, hasCard: Boolean): Boolean =
+        reconnect.isNotEmpty() && !hasCard && appState in setOf("menu", "loading", "connecting")
+
+    /**
      * The map's picture (the engine's connect `levelshot`: a file once the map is known, a
      * local game's pick before any server exists) is what the card shows until the world is
      * drawable (`world`). The engine cannot draw it itself during a blocking local load, so

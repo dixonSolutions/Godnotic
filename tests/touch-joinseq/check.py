@@ -3,7 +3,8 @@ server, rides a map change on it (changelevel), then joins a second server on an
 
   python3 -I check.py <client.log> <mapA> <mapB> <mapC>
 
-Join A = mapA then mapB (changelevel), join B = mapC (a new connect while still connected to A).
+Join A = mapA then mapB (changelevel), join B = mapC (a new connect while still connected to A),
+then a lost connection (MARK-FREEZE) that the client rejoins by itself.
 Exit 0 and one `ok` line per rule, else the failing rule and the offending snapshots.
 """
 import json, sys
@@ -94,8 +95,24 @@ for j in joins():
                 bad("join %d: the main menu state shows during the join" % n, d)
             if d.get("menu"):
                 bad("join %d: the menu is open before the first world frame" % n, d)
-if n < 3:
-    bad("expected 3 joins (connect, map change, second connect), found %d" % n)
+# 3. a lost connection (MARK-FREEZE): from the disconnect until the game is entered again, every app
+#    snapshot that reads `menu` carries the reconnect text, so the native side can keep the join card
+#    up (a bare `menu` would show the main menu in the gap).
+frozen, regained = False, False
+for topic, d in events:
+    if topic == "mark" and d["name"] == "MARK-FREEZE":
+        frozen = True
+    elif frozen and topic == "app":
+        if d.get("state") == "ingame":
+            regained = True
+        if not regained and d.get("state") == "menu" and not d.get("reconnect"):
+            if d.get("reconnect_note", "").startswith("Disconnected"):
+                continue
+            bad("after the lost connection the app reads a bare menu (no reconnect text)", d)
+if frozen and not regained:
+    bad("the lost connection was never regained")
+if n < 4:
+    bad("expected 4 joins (connect, map change, second connect, reconnect after a lost connection), found %d" % n)
 if not [f for f in fails if f.startswith("join")]:
     print("ok   join-card screen sequence: %d joins, no menu/idle before the first world frame" % n)
 

@@ -28,7 +28,9 @@ touch_joinfail_logic.h.
 #include "touch_nativefe.h"
 #include "touch_datafetch.h"
 #include "touch_joinname.h"
+#ifdef CONFIG_MENU
 #include "menu.h"
+#endif
 
 static cvar_t join_fail_serial = {CF_CLIENT | CF_READONLY, "_join_fail_serial", "0", "Godnotic: counts the joins that failed this session; the other _join_fail_* cvars describe the last one"};
 static cvar_t join_fail_kind = {CF_CLIENT | CF_READONLY, "_join_fail_kind", "", "Godnotic: why the last join failed: timeout, busy, refused, network, dropped, files, error"};
@@ -119,11 +121,12 @@ void TouchJoinFail_CloseStaleMenu(qbool trying)
 	qbool begins = (trying && !was_trying) || (was_complete && cls.state == ca_connected && cls.signon < SIGNONS);
 	was_complete = complete;
 	was_trying = trying;
-	if (begins && !cls.demoplayback && (key_dest == key_menu || key_dest == key_menu_grabbed))
-	{
-		if (MR_ToggleMenu)
-			MR_ToggleMenu(0); // at once: a queued command left the old dialog up for the next two snapshots
-	}
+#ifdef CONFIG_MENU
+	if (begins && !cls.demoplayback && (key_dest == key_menu || key_dest == key_menu_grabbed) && MR_ToggleMenu)
+		MR_ToggleMenu(0); // at once: a queued command left the old dialog up for the next two snapshots
+#else
+	(void)begins;
+#endif
 }
 
 void TouchJoinFail_Frame(void)

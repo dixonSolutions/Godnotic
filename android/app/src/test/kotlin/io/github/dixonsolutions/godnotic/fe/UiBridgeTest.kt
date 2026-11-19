@@ -390,6 +390,15 @@ class UiBridgeTest {
         assertEquals(1, r.cards)
     }
 
+    /** A connection lost in the game: no card yet, the app topic says `menu` with the reconnect text; the card comes up from it. */
+    @Test fun lostConnectionRaisesTheCardBeforeTheMenu() {
+        assertTrue(JoinFlow.reconnectCard("menu", "Reconnecting to x (attempt 1 of 5)...", hasCard = false))
+        assertTrue(JoinFlow.reconnectCard("loading", "Reconnecting to x (attempt 2 of 5)...", hasCard = false))
+        assertFalse("a plain menu is a menu", JoinFlow.reconnectCard("menu", "", hasCard = false))
+        assertFalse("the card is there already", JoinFlow.reconnectCard("menu", "Reconnecting...", hasCard = true))
+        assertFalse("in the game, the banner is enough", JoinFlow.reconnectCard("ingame", "Reconnecting...", hasCard = false))
+    }
+
     /** A failure: the card waits for the notice (idle, app `menu`), becomes the error, and Back removes it. */
     @Test fun joinCardBecomesTheErrorNotTheMenu() {
         val r = Replay()

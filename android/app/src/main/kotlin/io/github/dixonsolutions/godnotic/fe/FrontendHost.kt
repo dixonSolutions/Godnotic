@@ -236,6 +236,10 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             else -> { showBackPill(false); setVisible(false) } // in a match, or the engine's loading screen
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
+        if (JoinFlow.reconnectCard(state, a.str("reconnect"), loadingStrip != null) && !cardIgnoreBusy) {
+            // a lost connection joins again by itself: the join card is up from this snapshot, not the main menu
+            onConnect(mapOf("stage" to "connecting", "status" to a.str("reconnect"), "address" to a.str("server"), "levelshot" to "", "world" to false))
+        }
         showReconnect(if (loadingStrip == null) a.str("reconnect") else "")
         if (loadingStrip != null) { recheckCard(); refreshCardText() }
         // No synthesized `idle` here: the engine publishes the connect stage
