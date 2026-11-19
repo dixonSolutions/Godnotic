@@ -704,8 +704,8 @@ void UIB_SecUpdatesAndySU()
 		// never restarts; only Restart now does, and it says so.
 		string how = TouchAndySU_extra("apply_how");
 		string why = TouchAndySU_extra("apply_why");
-		UIB_Section("staged", (how == "done") ? sprintf(_("Version %s is running"), staged)
-			: sprintf(_("Version %s is ready"), staged), false);
+		string title = (how == "done") ? sprintf(_("Version %s is running"), staged) : sprintf(_("Version %s is ready"), staged);
+		UIB_Section("staged", title, false);
 			if (how == "")
 			{
 				// an older Android side that does not say how
@@ -720,7 +720,8 @@ void UIB_SecUpdatesAndySU()
 			}
 			else
 			{
-				UIB_Text("about", (why != "") ? why : _("Downloaded and checked. It swaps in while you stay where you are."), "caption");
+				if (why == "") why = _("Downloaded and checked. It swaps in while you stay where you are.");
+				UIB_Text("about", why, "caption");
 				UIB_Button("apply", _("Apply live"), UIB_A("updates.apply", _("Apply live"), "check"), "primary");
 			}
 		UIB_Close();
