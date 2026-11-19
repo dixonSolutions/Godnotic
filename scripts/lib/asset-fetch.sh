@@ -123,13 +123,19 @@ xonotic_ensure_menu_theme_track() {
 
     if curl -fL --connect-timeout 20 --max-time 180 -C - \
         -o "$partial" "$XONOTIC_MENU_THEME_URL"; then
-        mv -f "$partial" "$dest"
-        xonotic_mark_music_ready "$data_dir"
-        echo "godnotic: menu theme ready at $dest" >&2
-        return 0
+        :
+    elif [ "$?" -eq 33 ] && curl -fL --connect-timeout 20 --max-time 180 \
+        -o "$partial" "$XONOTIC_MENU_THEME_URL"; then
+        # This server does not support resuming: retry from the beginning.
+        :
+    else
+        # Keep the received prefix for the next attempt.
+        return 1
     fi
-    rm -f "$partial" 2>/dev/null || true
-    return 1
+    mv -f "$partial" "$dest"
+    xonotic_mark_music_ready "$data_dir"
+    echo "godnotic: menu theme ready at $dest" >&2
+    return 0
 }
 
 xonotic_nexcompat_assets_missing() {
