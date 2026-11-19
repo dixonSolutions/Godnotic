@@ -1955,6 +1955,22 @@
       .join(',');
   }
 
+  /**
+   * A browser has no device scan to report a touch screen with. What the page can see decides whether
+   * the engine takes its touch routes (the finger-sized game menu, the touch HUD): a touch digitizer, or
+   * a coarse pointer; and only a device with no fine pointer at all is put into touch mode.
+   */
+  function webHasTouch() {
+    const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    return (navigator.maxTouchPoints || 0) > 0 || !!coarse;
+  }
+  function webCoarseOnly() {
+    return webHasTouch() && !(window.matchMedia && matchMedia('(any-pointer: fine)').matches);
+  }
+  function reportTouch() {
+    try { Module._xt_web_touch(webHasTouch() ? 1 : 0, webCoarseOnly() ? 1 : 0); } catch (e) { /* older engine */ }
+  }
+
   function engineArgs(fullscreen) {
     const [w, h] = renderSize();
     const args = [
@@ -1969,6 +1985,8 @@
     ];
     // Settings > Updates: the web version updates by reloading, so it offers no installer
     args.push('+set', '_godnotic_platform', 'web');
+    // Before the menu starts, so the first frame is already the touch one.
+    if (webCoarseOnly()) args.push('+set', 'vid_touchscreen', '1');
     if (state.sampleRate) args.push('+snd_speed', String(state.sampleRate));
     const languages = browserLanguages();
     if (languages) args.push('+set', '_menu_system_languages', languages);
@@ -2006,6 +2024,11 @@
     }
     // Normally done by the engine's startup command buffer (sys_wasm.c).
     try { Module._xt_web_hook_maps(); } catch (e) { /* older engine */ }
+    // The touch screen the engine cannot detect for itself, at start and when the first real touch
+    // arrives (a hybrid laptop that was used with a mouse until then).
+    reportTouch();
+    window.addEventListener('touchstart', reportTouch, { once: true, capture: true, passive: true });
+    window.addEventListener('pointerdown', (ev) => { if (ev.pointerType === 'touch') reportTouch(); }, { capture: true, passive: true });
     dataStart();
     settleLater();
     refit();
@@ -2444,6 +2467,9 @@
   // For the dev console and automated tests: xt.command('map stormkeep')
   window.xt = {
     command: (text) => Module.ccall('xt_web_command', null, ['string'], [text]),
+    touch: (on, coarse) => Module.ccall('xt_web_touch', null, ['number', 'number'], [on ? 1 : 0, coarse ? 1 : 0]),
+    // A cvar's value, for the dev console and tests (sys_wasm.c reads it).
+    cvar: (name) => Module.ccall('xt_web_cvar_string', 'string', ['string'], [name]),
     log: () => logTail.slice(),
     state,
     maps,
