@@ -24,14 +24,9 @@ static inline int TouchMusic_Policy(int in_game, int theme_present, int playing)
 /* -1: stop the theme, 0: leave it alone, 1: start it. */
 static inline int TouchMusic_JoinPolicy(int stage, int theme_present, int theme_playing, int map_music, int allow_in_game)
 {
-    if (stage == TM_STAGE_JOINING)
+    (void)allow_in_game;
+    if (stage == TM_STAGE_JOINING || stage == TM_STAGE_GAME)
         return theme_playing ? -1 : 0;
-    if (stage == TM_STAGE_GAME)
-    {
-        if (!theme_playing)
-            return 0;
-        return (!map_music && allow_in_game) ? 0 : -1;
-    }
     /* The data-download screen is not a match: the theme belongs there just
      * as it does in the menu. */
     if (map_music)

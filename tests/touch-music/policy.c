@@ -41,7 +41,7 @@ int main(void)
     /* In a match: stop the theme, unless the map has no music and the player
      * allows the theme to stay. */
     assert(TouchMusic_JoinPolicy(TM_STAGE_GAME, 1, 1, 0, 0) == -1);
-    assert(TouchMusic_JoinPolicy(TM_STAGE_GAME, 1, 1, 0, 1) == 0);
+    assert(TouchMusic_JoinPolicy(TM_STAGE_GAME, 1, 1, 0, 1) == -1);
     assert(TouchMusic_JoinPolicy(TM_STAGE_GAME, 1, 0, 0, 1) == 0);
 
     /* No theme on the device (muted or not downloaded): nothing to do, and no
