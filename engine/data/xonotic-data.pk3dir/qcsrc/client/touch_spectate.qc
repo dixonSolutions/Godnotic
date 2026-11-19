@@ -180,11 +180,11 @@ int Touch_Spec_AssignRole(vector p)
 		if (Touch_PointInCircle(p, Touch_Spec_FlyCenter(false), r))
 			return TOUCH_ROLE_SPEC_DOWN;
 		// The stick flies the camera while observing; following, the view is theirs.
-		if (Touch_InMoveZone(p)
-			|| (autocvar_touch_move_visible && Touch_HitCircle(p, autocvar_touch_move_x, autocvar_touch_move_y, autocvar_touch_move_size, 1.0)))
+		if (!cvar("vid_keyboard_detected") && (Touch_InMoveZone(p)
+			|| (autocvar_touch_move_visible && Touch_HitCircle(p, autocvar_touch_move_x, autocvar_touch_move_y, autocvar_touch_move_size, 1.0))))
 			return Touch_RoleOwned(TOUCH_ROLE_MOVE) ? TOUCH_ROLE_IGNORED : TOUCH_ROLE_MOVE;
 	}
-	return Touch_RoleOwned(TOUCH_ROLE_LOOK) ? TOUCH_ROLE_IGNORED : TOUCH_ROLE_LOOK;
+	return cvar("vid_mouse_confirmed") || Touch_RoleOwned(TOUCH_ROLE_LOOK) ? TOUCH_ROLE_IGNORED : TOUCH_ROLE_LOOK;
 }
 
 bool Touch_Spec_FingerFrame(int role, bool first)
@@ -252,7 +252,7 @@ bool Touch_Spec_DrawOverlay(float alpha)
 		return false;
 	if (Touch_Spec_Flying(st))
 	{
-		if (autocvar_touch_move_visible)
+		if (autocvar_touch_move_visible && !cvar("vid_keyboard_detected"))
 			Touch_DrawMoveStick(alpha);
 		float r = Touch_Spec_FlyRadius();
 		Touch_Widget_Button(Touch_Spec_FlyCenter(true), r, "UP", touch_spec_key_up, alpha * 0.9, TOUCH_C_ACCENT);
