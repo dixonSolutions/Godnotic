@@ -14,3 +14,4 @@ trap 'rm -rf "$out"' EXIT
 "$CC" -std=c99 -Wall -Wextra -Werror -Wno-unused-function \
     -I"$ROOT/engine/darkplaces" -o "$out/spectate_test" "$dir/spectate_test.c"
 "$out/spectate_test"
+python3 "$dir/hints_check.py" "$ROOT"

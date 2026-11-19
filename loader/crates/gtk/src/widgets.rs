@@ -890,7 +890,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
         // at most two lines, ending in an ellipsis: a card in a sideways strip has a
         // fixed height, and a third line was cut through the middle of its letters
         let l = label(&s, &["dim-label"]);
-        l.set_lines(2);
+        l.set_lines(if n.id == "home/tiles/mp" { 3 } else { 2 });
         l.set_ellipsize(gtk::pango::EllipsizeMode::End);
         t.append(&l);
     }
@@ -916,7 +916,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
                 if l.has_css_class("gn-card-title") {
                     l.set_wrap(false);
                 } else {
-                    l.set_lines(2);
+                    l.set_lines(if n.id == "home/tiles/mp" { 3 } else { 2 });
                 }
                 l.set_ellipsize(gtk::pango::EllipsizeMode::End);
             }
@@ -1506,8 +1506,10 @@ fn list(app: &App, store: &Store, n: &Node) -> gtk::Widget {
         model.splice(&godnotic_core::bridge::Splice { position: 0, removed: 0, added: w.total() });
     }
     let lv = Rc::new(RefCell::new(ListView {
+        id: n.id.clone(),
         source: source.clone(),
         model: model.clone(),
+        selection: None,
         sort: n.str("sort"),
         desc: n.bool("desc").unwrap_or(false),
         filter: n.str("filter").unwrap_or_default(),
@@ -1586,6 +1588,7 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
         sel.set_autoselect(false);
         sel.set_can_unselect(true);
         sel.set_selected(gtk::INVALID_LIST_POSITION);
+        lv.borrow_mut().selection = Some(sel.clone());
         gtk::ColumnView::new(Some(sel))
     } else {
         gtk::ColumnView::new(Some(gtk::NoSelection::new(Some(model))))

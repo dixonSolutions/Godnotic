@@ -142,7 +142,7 @@ TYPES = {
     "field": {**CONTROL, "value": S,
               "kind": enum("text", "name", "number", "password", "url", "search", "address"),
               "placeholder": S, "maxLength": I, "private": B, "hasValue": B, "submit": ref("action")},
-    "button": {"action": ref("action"), "style": STYLE},
+    "button": {"action": ref("action"), "style": STYLE, "width": enum("xs", "s", "m", "l", "fill")},
     "colour": {**CONTROL, "value": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                "palette": {"type": "array", "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                            "maxItems": 64}, "preview": IMG},

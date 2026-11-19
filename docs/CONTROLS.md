@@ -350,9 +350,33 @@ servers) draw the same strip with the same grip.
 
 Settings → Mobile → HUD has the size, both position sliders and visibility.
 
+### Controls follow the input devices that are present
+
+The system's device list is re-read live (hot-plug), and both HUDs, the
+hints and the shoot helpers follow it:
+
+| Present | Controls |
+|---------|----------|
+| touch only | the full touch HUD |
+| keyboard, no mouse | no move stick (the keyboard moves); aim/look touch, FIRE, ALT and the rest stay |
+| mouse, no keyboard | the stick stays; no look area, FIRE or ALT (the mouse aims and fires); the rest stays |
+| keyboard and mouse | desktop behaviour (the section below) |
+
+`vid_keyboard_detected` and `vid_mouse_confirmed` (a mouse or touchpad the
+system lists, with pens, folded-away covers and tablet-internal pads already
+left out) are the two signals; the HUDs release held fingers when either
+changes. Spectator and observer hints name a keyboard key only when a keyboard
+is present; on a touch device without one they name the on-screen control
+(`< FREE >`, `JOIN`) or are hidden when the bar already offers the action. On a
+public server the stock keyboard prompts and the pressed-keys panel are hidden
+for a touch spectator without a keyboard (`TouchHUD_HideStockKeyPanel`).
+Auto-shoot and aim assist run with touch and with a keyboard only; with a mouse
+present they stay off unless `cl_accessibility_desktop` (Settings →
+Accessibility) is on. `scripts/test-touch-input-devices.sh` covers all of it.
+
 ### With a keyboard and mouse attached
 
-When a keyboard is attached to a touchscreen device, Dynamic mode hides the
+When a keyboard and a mouse are both attached to a touchscreen device, Dynamic mode hides the
 touch controls (`vid_touchscreen 0`) and the mouse aims, as on a desktop. The
 screen is still a touchscreen, so what a finger can usefully reach stays:
 
@@ -711,13 +735,12 @@ These run in the engine client (`engine/darkplaces/touch_aim.c`, with the
 weapon knowledge in `touch_weapons.h`), not in the CSQC, so they work the same
 on a public server (where the client runs the server's own CSQC and the engine
 draws the HUD) and in a local match. They only run while the touch controls
-are shown: with a physical keyboard attached (Dynamic) the engine clears
+are shown: with a keyboard and a mouse attached (Dynamic) the engine clears
 `vid_touchscreen` and all of this switches off, whatever the cvars say. They
-also stand down while a mouse aims next to the touch controls
-(`vid_touchscreen_mouselook`): a listed mouse or touchpad aims once it has been
-moved or clicked, and hands the aim back to the fingers after 5 seconds of
-touch without it. One that is only listed (a tablet's built-in touchpad, a
-phone browser reporting a fine pointer) never does. These cvars are archived in
+also stand down while a mouse is present (`vid_mouse_confirmed`), touch controls
+or not, unless `cl_accessibility_desktop` (Settings → Accessibility) is on; a
+keyboard alone does not stop them. A mouse the system only lists as a tablet's
+folded-away or built-in pad does not count as present. These cvars are archived in
 `config.cfg`, not in the touch layout file. Settings → Mobile → **Aim** and
 **Auto-shoot** hold the main ones; every one can be set from the console. The
 target ring (`cl_touch_aim_ring`) is drawn at the crosshair so the helpers can
