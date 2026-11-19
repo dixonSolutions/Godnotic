@@ -10,7 +10,8 @@ fixtures = root / 'tests/input-presence/fixtures'
 touch = (fixtures / 'phone-touch-only.txt').read_text()
 keyboard, mouse = (fixtures / 'desktop-usb-keyboard-mouse-pad.txt').read_text().split('\n\n')[:2]
 variants = {'keyboard': touch + '\n\n' + keyboard + '\n', 'mouse': touch + '\n\n' + mouse + '\n',
-            'both': touch + '\n\n' + keyboard + '\n\n' + mouse + '\n', 'touch2': touch}
+            'both': touch + '\n\n' + keyboard + '\n\n' + mouse + '\n', 'touch2': touch,
+            'mouse_acc': touch + '\n\n' + mouse + '\n'}
 env = os.environ.copy(); env.update(SDL_VIDEODRIVER='offscreen', SDL_AUDIODRIVER='dummy')
 env.pop('DISPLAY', None); env.pop('WAYLAND_DISPLAY', None)
 with tempfile.TemporaryDirectory(prefix='spec-device-match-') as tmp:
@@ -29,12 +30,14 @@ with tempfile.TemporaryDirectory(prefix='spec-device-match-') as tmp:
             time.sleep(.1)
         else: raise RuntimeError('dedicated server did not spawn')
         cfg = [f'connect 127.0.0.1:{port}', 'defer 26 "togglemenu 0; cmd join"',
-               'defer 33 "echo SNAP_touch; touch_hud_state rects"']
-        for n, name in enumerate(('keyboard', 'mouse', 'both', 'touch2')):
+               'defer 33 "echo SNAP_touch; touch_hud_state rects; cl_touch_aim_input"']
+        for n, name in enumerate(('keyboard', 'mouse', 'both', 'touch2', 'mouse_acc')):
             sec = 35 + n * 7
-            cfg += [f'defer {sec} "echo SWITCH_{name}"', f'defer {sec+2} "vid_touchscreen_rescan"',
-                    f'defer {sec+4} "echo SNAP_{name}; touch_hud_state rects"']
-        cfg += ['defer 65 "quit"']
+            # the last stage: a mouse again, with auto-shoot and aim assist asked for in Accessibility
+            extra = '; set cl_accessibility_desktop 1' if name == 'mouse_acc' else ''
+            cfg += [f'defer {sec} "echo SWITCH_{name}{extra}"', f'defer {sec+2} "vid_touchscreen_rescan"',
+                    f'defer {sec+4} "echo SNAP_{name}; touch_hud_state rects; cl_touch_aim_input"']
+        cfg += ['defer 72 "quit"']
         (t / 'client/data/test.cfg').write_text('\n'.join(cfg) + '\n')
         cmd = ['bwrap', '--bind', '/', '/', '--dev-bind', '/dev', '/dev', '--ro-bind', str(device), '/proc/bus/input/devices',
                'taskset', '-c', '8-11', str(engine), '-xonotic', '-basedir', base, '-userdir', str(t / 'client'),
@@ -54,11 +57,17 @@ with tempfile.TemporaryDirectory(prefix='spec-device-match-') as tmp:
                 sections[current].append(line)
         rc = proc.wait(timeout=120)
         expected = {'touch': (True, True, True), 'keyboard': (False, True, True),
-                    'mouse': (True, False, True), 'both': (False, False, False), 'touch2': (True, True, True)}
+                    'mouse': (True, False, True), 'both': (False, False, False), 'touch2': (True, True, True),
+                    'mouse_acc': (True, False, True)}
+        # auto-shoot and aim assist: touch and keyboard-only on, a mouse off unless Accessibility asks
+        aim = {'touch': 1, 'keyboard': 1, 'mouse': 0, 'both': 0, 'touch2': 1, 'mouse_acc': 1}
         failures = []
         for name, want in expected.items():
             text = ''.join(sections.get(name, []))
             found = (bool(re.search(r'TOUCHRECT c stick ', text)), bool(re.search(r'TOUCHRECT c FIRE ', text)), bool(re.search(r'TOUCHRECT .* HOP ', text)))
+            m = re.search(r'cl_touch_aim_input(?:\x1b\[[0-9;]*m)? is "(\d)"', text)
+            if not m or int(m.group(1)) != aim[name]:
+                failures.append(f'{name}: auto-shoot/aim assist {m and m.group(1)}, wanted {aim[name]}')
             if 'TOUCHHUD mode=playing' not in text or found != want:
                 failures.append(f'{name}: rectangles {found}, wanted {want}; ' + ' | '.join(x.strip() for x in sections.get(name, []) if 'TOUCH' in x))
         if rc or failures:

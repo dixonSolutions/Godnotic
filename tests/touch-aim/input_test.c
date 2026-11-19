@@ -5,13 +5,11 @@ typedef int qbool;
 
 int main(void)
 {
-	/* Touch works as before; desktop and mouse-on-touch require opt-in. */
-	assert(TouchAim_EnabledForInput(1, 0, 0));
-	assert(TouchAim_EnabledForInput(1, 0, 1));
-	assert(!TouchAim_EnabledForInput(0, 0, 0));
-	assert(TouchAim_EnabledForInput(0, 0, 1));
-	assert(!TouchAim_EnabledForInput(1, 1, 0));
-	assert(TouchAim_EnabledForInput(1, 1, 1));
+	/* Touch and keyboard-only work; a mouse requires opt-in. */
+	assert(TouchAim_EnabledForInput(0, 0));
+	assert(TouchAim_EnabledForInput(0, 1));
+	assert(!TouchAim_EnabledForInput(1, 0));
+	assert(TouchAim_EnabledForInput(1, 1));
 	/* Simulate an idle HUD, mouse acquisition and motion, and both buttons. */
 	assert(!TouchAim_InputActive(0, 1, 0, 0, 0));
 	assert(TouchAim_InputActive(0, 1, 1, 0, 0));
