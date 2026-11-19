@@ -99,6 +99,7 @@ if [[ " $PHASES " == *" 1 "* || " $PHASES " == *" 2 "* ]]; then
 7 fdown 2 0.5788 0.1417
 7.4 fup 2 0.5788 0.1417
 10 cmd touch_vote_state
+11 cmd screenshot vote-create-list.jpg
 12 glide 3 0.30 0.65 0.30 0.30 0.8 up
 14 cmd touch_vote_state
 16 glide 4 0.30 0.30 0.30 0.65 0.8 up
@@ -106,9 +107,11 @@ if [[ " $PHASES " == *" 1 "* || " $PHASES " == *" 2 "* ]]; then
 20 fdown 5 0.30 0.49
 20.4 fup 5 0.30 0.49
 23 cmd touch_vote_state
+24 cmd screenshot vote-map-picker.jpg
 25 fdown 6 0.30 0.255
 25.4 fup 6 0.30 0.255
 29 cmd touch_vote_state
+30 cmd screenshot vote-own-called.jpg
 34 cmd touch_vote_state
 60 cmd touch_vote_state
 62 cmd quit"
