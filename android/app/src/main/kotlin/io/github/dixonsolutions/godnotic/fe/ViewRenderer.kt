@@ -388,8 +388,8 @@ class ViewRenderer(
             }
             (sv.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.height = if (modal) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT; sv.layoutParams = lp }
             if (modal) { bar.setPadding(dp(8f), 0, dp(8f), dp(4f)); body.setPadding(dp(8f), dp(4f), dp(8f), dp(8f)); bottom.setPadding(dp(8f), dp(8f), dp(8f), dp(4f)) }
-            // the pause menu sits on a scrim over the frozen game frame: the player sees the match
-            root.setBackgroundColor(if (p.str("kind") == "game") 0xB3000000.toInt() else if (modal) Color.TRANSPARENT else Theme.BG)
+            // Dim only a paused local game; an online match remains visible.
+            root.setBackgroundColor(if (p.str("kind") == "game") { MenuBackdrop.color(p.bool("menu_paused")) } else if (modal) Color.TRANSPARENT else Theme.BG)
             // Home has no header (the banner is its title): the space goes to the banner and cards
             bar.visibility = if (p["header"].obj().bool("hidden") || (kindHome && p["actions"].list().isEmpty())) View.GONE else View.VISIBLE
             body.fit = kindHome && !modal

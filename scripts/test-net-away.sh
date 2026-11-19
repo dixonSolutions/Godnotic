@@ -10,10 +10,21 @@
 #                         here): the server drops it; on return the client
 #                         notices within seconds and joins again by itself
 #   newaddress            the client's address changes in a match (Wi-Fi to
-#                         mobile data): it notices and joins again by itself
+#                         mobile data) for good: once the server has gone quiet
+#                         it gives the connection up and joins again by itself
+#   addrflap              the address changes for 2.5 s and comes back: the
+#                         same connection plays on, no reconnect
+#   freeze-svhitch        stopped 8 s, then the server hitches 4 s: no reconnect
+#   stall-signon,         one 40 s frame on the main thread (touch_net_stall: a
+#   stall-match           slow tablet's CSQC_Init or shader compile) during the
+#                         join / in a match: the server keeps the player, no
+#                         reconnect (KEEP=0: net_keepalive_thread 0, must fail)
+#   slow-join             the whole join at SLOW_RUN/(SLOW_RUN+SLOW_STOP) of the
+#                         client's speed (tests/net/throttle.py): no drop
 #   away                  touch_away 1 (Android's background): spectator after
 #                         net_away_spectate (5 s here), back into the game on return
 #   loss-freeze60         freeze60 with 2% loss
+#   proxy-stall           freeze the client and interrupt its packets without tc
 #   download              an HTTP pack download (2 MB/s cap) stopped for 10 s
 #                         midway: it completes and the file is intact
 #   reconnect-away        frozen past the server's timeout, joined again by
@@ -35,7 +46,7 @@
 # NET_TRACE=1|2 logs the packets of a join (2: all) on both sides (touch_net_trace).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENGINE="${ENGINE:-$ROOT/build/bin/xonotic}"
+ENGINE="${ENGINE:-$ROOT/engine/darkplaces/darkplaces-sdl}"
 SERVER="${SERVER:-$ROOT/engine/darkplaces/darkplaces-dedicated}"
 BASEDIR="${BASEDIR:?set BASEDIR}"
 MAP="${MAP:-stormkeep}"
@@ -61,7 +72,7 @@ ip link set sv0 netns "$NSPID"
 ip addr add 10.88.0.1/24 dev cl0
 ip link set cl0 up
 nsenter -t "$NSPID" -n sh -c 'ip link set lo up; ip addr add 10.88.0.2/24 dev sv0; ip link set sv0 up'
-insv() { nsenter -t "$NSPID" -n "$@"; }
+insv() { exec nsenter -t "$NSPID" -n "$@"; }
 
 # start NAME "client cfg lines" "server args" -> CLPID, SVPID, logs in $WORK/NAME
 start() {
@@ -82,7 +93,7 @@ start() {
 }
 finish() { # the client quits by itself; the server goes with it
 	wait "$CLPID" 2> /dev/null
-	pkill -f -- "-userdir $WORK/[a-z0-9-]*/sv" 2> /dev/null
+	kill "$SVPID" 2> /dev/null
 	wait "$SVPID" 2> /dev/null
 	sleep 0.5
 }
@@ -175,19 +186,29 @@ playing() {
 # through by the first one (a join while playing does nothing)
 JOIN='alias _j "togglemenu 0; cmd join"\nconnect 10.88.0.2:26000\ndefer 10 _j\ndefer 20 _j\ndefer 28 _j'
 
-freeze_case() { # name seconds when(match|signon) netem
+freeze_case() { # name seconds when(match|signon) proxy-loss
 	local name=$1 secs=$2 when=$3
-	start "$name" "$JOIN\ndefer $((secs + 45)) quit" ""
-	[ -n "${4:-}" ] && tc qdisc replace dev cl0 root netem $4
+	local join="$JOIN" proxy_pid=
+	if [ -n "${4:-}" ]; then
+		mkdir -p "$WORK/$name"
+		echo "0.02 0.02 0" > "$WORK/$name/proxy.control"
+		python3 "$ROOT/tests/net/udp_proxy.py" --listen 26001 --server 10.88.0.2:26000 --control "$WORK/$name/proxy.control" > "$WORK/$name/proxy.log" 2>&1 & proxy_pid=$!
+		join=${join//10.88.0.2:26000/127.0.0.1:26001}
+	fi
+	start "$name" "$join\ndefer $((secs + 90)) quit" ""
 	if [ "$when" = signon ]; then
 		wait_for "$WORK/$name/client.log" "Connection established" 30
 	elif ! wait_for "$WORK/$name/server.log" "Bench.*is now playing" 60; then
-		bad "$name: the client never got into the game (an overloaded machine?)"; finish; return
+		bad "$name: the client never got into the game (see client and server logs)"; kill "$CLPID" 2>/dev/null; finish; return
 	fi
 	sleep 1
 	kill -STOP "$CLPID"; sleep "$secs"; kill -CONT "$CLPID"
+	# Give the connection time to recover; do not wait for a deferred quit,
+	# whose game-time clock may stop while the process is frozen.
+	sleep 12
+	kill "$CLPID" 2>/dev/null
 	finish
-	tc qdisc del dev cl0 root 2> /dev/null
+	[ -z "$proxy_pid" ] || { kill "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null; }
 	local est again
 	est=$(count "$WORK/$name/client.log" "Connection established")
 	again=$(count "$WORK/$name/client.log" "joining .* again")
@@ -202,12 +223,86 @@ freeze_case() { # name seconds when(match|signon) netem
 	[ "$when" = signon ] && { [ "$(count "$WORK/$name/server.log" "^Bench connected")" -ge 1 ] && ok "$name: the join completed" || bad "$name: the join did not complete"; }
 }
 
+# A join on a slow device (the owner's tablet showed "Reconnecting ... attempt
+# 1 of 5" over its precache): the client runs at run/(run+stop) of its speed
+# from the moment it has a connection until it is in the game. The server
+# drops a client that has not begun after net_connecttimeout (15 s) of
+# silence, so the join must keep it hearing from us however slowly it loads,
+# and must never start over.
+slow_join_case() { # name run_ms stop_ms
+	local name=$1 run=$2 stop=$3 tpid
+	start "$name" "connect 10.88.0.2:26000\ndefer 400 quit" "${SLOW_SV:-}"
+	wait_for "$WORK/$name/client.log" "Connection accepted\|Connection established" 30 || { bad "$name: no connection"; kill "$CLPID" 2>/dev/null; finish; return; }
+	python3 "$ROOT/tests/net/throttle.py" "$CLPID" --run "$run" --stop "$stop" --seconds 300 --until-file "$WORK/$name/in" & tpid=$!
+	local t0; t0=$(date +%s)
+	if wait_for "$WORK/$name/server.log" "^Bench.*is now \(playing\|spectating\|observing\)\|Bench.* entered the game\|^Bench connected" 300; then :; fi
+	: > "$WORK/$name/in"; wait "$tpid" 2>/dev/null
+	sleep 3
+	local secs=$(( $(date +%s) - t0 )) svlog; svlog=$(grep -av NETTRACE "$WORK/$name/server.log")
+	kill "$CLPID" 2>/dev/null; finish
+	if grep -aq 'Bench.*\(timed out\|dropped\)' <<< "$svlog"; then
+		bad "$name: the server dropped the slow joiner ($(grep -a 'Bench.*\(timed out\|dropped\)' <<< "$svlog" | head -1))"
+	else ok "$name: the server kept the slow joiner for its whole ${secs} s join"; fi
+	if grep -aq 'joining .* again\|Reconnecting' "$WORK/$name/client.log"; then
+		bad "$name: the client started the join over ($(grep -a 'joining .* again' "$WORK/$name/client.log" | head -1))"
+	else ok "$name: no reconnect during the slow join"; fi
+	[ "$(count "$WORK/$name/server.log" "^Bench connected")" = 1 ] && ok "$name: in the game on the first connection" || bad "$name: $(count "$WORK/$name/server.log" "^Bench connected") connections to get in"
+}
+
+# One frame that takes 40 s on the main thread (touch_net_stall: CSQC_Init or
+# a driver's shader compile on a slow tablet), with nothing else stopped: the
+# server (net_connecttimeout / net_messagetimeout 30) must keep hearing from
+# us. KEEP=0 runs it with net_keepalive_thread 0, which must fail.
+stall_case() { # name signon|match
+	local name=$1 when=$2 keep=${KEEP:-1} stalled
+	if [ "$when" = signon ]; then
+		start "$name" "set net_keepalive_thread $keep\ntouch_net_stall 40 join\nconnect 10.88.0.2:26000\ndefer 150 quit" ""
+	else
+		start "$name" "set net_keepalive_thread $keep\n$JOIN\ndefer 150 quit" ""
+		playing "$name" || { kill "$CLPID" 2>/dev/null; finish; return; }
+		once "$WORK/$name/cl/data/poll.cfg" "touch_net_stall 40"
+	fi
+	wait_for "$WORK/$name/client.log" "Stalling the main thread" 60 || { bad "$name: no stall"; kill "$CLPID" 2>/dev/null; finish; return; }
+	stalled=$(grep -ao "Stalling the main thread .*" "$WORK/$name/client.log" | head -1)
+	# the stall, then time for the client to hear it was dropped and join again
+	sleep 70
+	local svlog; svlog=$(grep -av NETTRACE "$WORK/$name/server.log")
+	kill "$CLPID" 2>/dev/null; finish
+	echo "note $name: $stalled (net_keepalive_thread $keep)"
+	case "$when:$stalled" in signon:*"signon 0 of"*|signon:*"signon 4 of 4"*) bad "$name: the stall came after the signon (the test did not stall a join)" ;; esac
+	if grep -aq 'Bench.*\(timed out\|dropped\)' <<< "$svlog"; then
+		bad "$name: the server dropped the stalled client ($(grep -a 'Bench.*\(timed out\|dropped\)' <<< "$svlog" | head -1))"
+	else ok "$name: the server kept the client through a 40 s frame"; fi
+	if grep -aq 'joining .* again' "$WORK/$name/client.log"; then
+		bad "$name: the client reconnected ($(grep -a 'joining .* again' "$WORK/$name/client.log" | head -1))"
+	else ok "$name: no reconnect"; fi
+	[ "$(count "$WORK/$name/client.log" "Connection established")" = 1 ] && [ "$(grep -ac "^Bench connected" <<< "$svlog")" = 1 ] && ok "$name: in the game on the first connection" || bad "$name: not in the game on the first connection"
+}
+
 run() {
 	case $1 in
 		freeze5) freeze_case freeze5 5 match ;;
+		proxy-stall)
+			mkdir -p "$WORK/proxy-stall"
+			echo "0.02 0.02 0" > "$WORK/proxy-stall/proxy.control"
+			python3 "$ROOT/tests/net/udp_proxy.py" --listen 26001 --server 10.88.0.2:26000 --control "$WORK/proxy-stall/proxy.control" > "$WORK/proxy-stall/proxy.log" 2>&1 & proxy_pid=$!
+			proxy_join=${JOIN//10.88.0.2:26000/127.0.0.1:26001}
+			start proxy-stall "$proxy_join\ndefer 90 quit" ""
+			if playing proxy-stall; then
+				echo "0.02 0.02 12" > "$WORK/proxy-stall/proxy.control"
+				sleep 1
+				kill -STOP "$CLPID"; sleep 6; kill -CONT "$CLPID"
+				sleep 11
+				[ "$(count "$WORK/proxy-stall/client.log" "Connection established")" = 1 ] && ! grep -q 'joining .* again' "$WORK/proxy-stall/client.log" && [ "$(sv_state proxy-stall)" = player ] && ok "proxy-stall: survived a freeze, 12 s interruption and 2% loss in the same slot" || bad "proxy-stall: connection or player slot lost"
+			fi
+			kill "$CLPID" 2>/dev/null; finish
+			kill "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null ;;
 		freeze60) freeze_case freeze60 60 match ;;
 		loss-freeze60) freeze_case loss-freeze60 60 match "delay 20ms loss 2%" ;;
 		freeze-signon) freeze_case freeze-signon 5 signon ;;
+		stall-signon) stall_case stall-signon signon ;;
+		stall-match) stall_case stall-match match ;;
+		slow-join) slow_join_case slow-join "${SLOW_RUN:-40}" "${SLOW_STOP:-460}" ;;
 		timeout)
 			start timeout "$JOIN\ndefer 130 quit" "+set net_messagetimeout 40"
 			wait_for "$WORK/timeout/server.log" "Bench.*is now playing" 60 || bad "timeout: the client never got into the game"; sleep 1
@@ -219,14 +314,41 @@ run() {
 			[ "$(count "$WORK/timeout/client.log" "Connection established")" -ge 2 ] && [ "$(count "$WORK/timeout/server.log" "^Bench connected")" -ge 2 ] \
 				&& ok "timeout: back, the client noticed ($(grep -o 'Lost connection[^:]*' "$WORK/timeout/client.log" | head -1)) and joined again by itself" \
 				|| bad "timeout: no automatic reconnect ($(grep -a 'Lost\|again\|Reconnect' "$WORK/timeout/client.log" | head -3 | tr '\n' ' '))" ;;
-		newaddress)
+		newaddress) # a lasting change: the server cannot reach us, so join again soon
 			start newaddress "$JOIN\ndefer 70 quit" ""
 			wait_for "$WORK/newaddress/server.log" "Bench.*is now playing" 40; sleep 2
 			ip addr add 10.88.0.9/24 dev cl0; ip addr del 10.88.0.1/24 dev cl0
 			finish
 			ip addr add 10.88.0.1/24 dev cl0 2> /dev/null; ip addr del 10.88.0.9/24 dev cl0 2> /dev/null
 			grep -q "address changed (10.88.0.1 -> 10.88.0.9)" "$WORK/newaddress/client.log" && ok "newaddress: the client saw its address change" || bad "newaddress: change not seen"
+			grep -q "Lost connection to server (this device.s address changed, nothing from it" "$WORK/newaddress/client.log" && ok "newaddress: gave up the old connection once the server went quiet" || bad "newaddress: did not give up the dead connection"
 			[ "$(count "$WORK/newaddress/server.log" "^Bench connected")" -ge 2 ] && ok "newaddress: joined again from 10.88.0.9 by itself" || bad "newaddress: no reconnect" ;;
+		freeze-svhitch) # frozen 8 s (well inside the server's 30 s), then the server hitches 4 s (a busy server, a mobile network gap): no reason to reconnect
+			start freeze-svhitch "$JOIN\ndefer 80 quit" ""
+			if playing freeze-svhitch; then
+				sleep 1
+				kill -STOP "$CLPID"; sleep 8; kill -CONT "$CLPID"
+				sleep 0.5
+				kill -STOP "$SVPID"; sleep 4; kill -CONT "$SVPID"
+				sleep 8
+				[ "$(sv_state freeze-svhitch)" = player ] && ok "freeze-svhitch: still a player" || bad "freeze-svhitch: lost the player slot"
+			fi
+			kill "$CLPID" 2>/dev/null; finish
+			grep -aq 'joining .* again' "$WORK/freeze-svhitch/client.log" && bad "freeze-svhitch: reconnected ($(grep -a 'joining .* again' "$WORK/freeze-svhitch/client.log" | head -1))" || ok "freeze-svhitch: no reconnect"
+			[ "$(count "$WORK/freeze-svhitch/server.log" "^Bench connected")" = 1 ] && ok "freeze-svhitch: one connection" || bad "freeze-svhitch: $(count "$WORK/freeze-svhitch/server.log" "^Bench connected") connections" ;;
+		addrflap) # Wi-Fi drops for 2 s and comes back with the same address: the same connection plays on
+			start addrflap "$JOIN\ndefer 60 quit" ""
+			if playing addrflap; then
+				sleep 2
+				ip addr add 10.88.0.9/24 dev cl0; ip addr del 10.88.0.1/24 dev cl0
+				sleep 2.5
+				ip addr add 10.88.0.1/24 dev cl0; ip addr del 10.88.0.9/24 dev cl0
+				sleep 8
+				[ "$(sv_state addrflap)" = player ] && ok "addrflap: still a player after the flap" || bad "addrflap: lost the player slot"
+			fi
+			kill "$CLPID" 2>/dev/null; finish
+			grep -aq 'joining .* again\|Lost connection' "$WORK/addrflap/client.log" && bad "addrflap: reconnected over a 2.5 s address flap ($(grep -a 'Lost connection' "$WORK/addrflap/client.log" | head -1))" || ok "addrflap: no reconnect over a 2.5 s address flap"
+			[ "$(count "$WORK/addrflap/server.log" "^Bench connected")" = 1 ] && ok "addrflap: one connection" || bad "addrflap: $(count "$WORK/addrflap/server.log" "^Bench connected") connections" ;;
 		away)
 			start away "$JOIN\nset net_away_spectate 5\ndefer 30 \"touch_away 1\"\ndefer 45 \"touch_away 0\"\ndefer 60 quit" ""
 			finish
@@ -316,26 +438,31 @@ EOF
 		restart-signon) # connect again during the signon while nothing reaches the server (the disconnect is lost)
 			# _rs connects again once, however often poll.cfg runs (the
 			# client may be stuck in a long map-loading frame meanwhile)
-			start restart-signon "alias _rs \"echo RESTART; connect 10.88.0.2:26000; alias _rs echo\"\nconnect 10.88.0.2:26000\ndefer 90 quit" ""
+			mkdir -p "$WORK/restart-signon"
+			echo "0 0 0" > "$WORK/restart-signon/proxy.control"
+			python3 "$ROOT/tests/net/udp_proxy.py" --listen 26001 --server 10.88.0.2:26000 --control "$WORK/restart-signon/proxy.control" > "$WORK/restart-signon/proxy.log" 2>&1 & proxy_pid=$!
+			start restart-signon "alias _rs \"echo RESTART; connect 127.0.0.1:26001; alias _rs echo\"\nconnect 127.0.0.1:26001\ndefer 90 quit" ""
 			wait_for "$WORK/restart-signon/client.log" "Connection established" 30 || { bad "restart-signon: no connection"; finish; return; }
 			sleep 0.5 # the server has heard from this connection (acks, keepalives)
-			tc qdisc replace dev cl0 root netem loss 100%
+			echo "1 0 0" > "$WORK/restart-signon/proxy.control"
+			sleep 0.2
 			c0=$(count "$WORK/restart-signon/server.log" "^Bench connected")
 			echo "_rs" > "$WORK/restart-signon/cl/data/poll.cfg"
 			wait_for "$WORK/restart-signon/client.log" "^RESTART" 30 || bad "restart-signon: the client did not run the restart"
 			sleep 1.5
-			tc qdisc del dev cl0 root
+			echo "0 0 0" > "$WORK/restart-signon/proxy.control"
 			[ "$c0" = 0 ] || echo "note restart-signon: the first signon had reached spawn before the restart"
 			if wait_for "$WORK/restart-signon/server.log" "joined again during its signon" 15; then ok "restart-signon: the server saw the restart and started the connection over"; else bad "restart-signon: the server answered with a duplicate accept on the old connection"; fi
 			for _ in $(seq 1 60); do [ "$(count "$WORK/restart-signon/server.log" "^Bench connected")" -gt "$c0" ] && break; sleep 0.5; done
 			if [ "$(count "$WORK/restart-signon/server.log" "^Bench connected")" -gt "$c0" ]; then ok "restart-signon: the join completed after the restart"; else bad "restart-signon: the join hangs after the restart ($(grep 'Bench" dropped' "$WORK/restart-signon/server.log" | tr '\n' ' '))"; fi
 			kill "$CLPID" 2> /dev/null
-			finish ;;
+			finish
+			kill "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null ;;
 		*) bad "unknown case $1" ;;
 	esac
 }
 
-[ $# -gt 0 ] || set -- freeze5 freeze-signon away newaddress timeout download freeze60 loss-freeze60 reconnect-away svfreeze-away away-freeze mapchange-away manual-away connect-again restart-signon
+[ $# -gt 0 ] || set -- freeze5 proxy-stall freeze-signon stall-signon stall-match freeze-svhitch addrflap away newaddress timeout download freeze60 loss-freeze60 reconnect-away svfreeze-away away-freeze mapchange-away manual-away connect-again restart-signon
 for c in "$@"; do run "$c"; done
 [ $fail = 0 ] && echo "all away tests passed" || echo "some away tests FAILED"
 exit $fail
