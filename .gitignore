@@ -79,3 +79,4 @@ android/local.properties
 
 # Agent worktrees are local to one machine
 .claude/worktrees/
+relay/godnotic-relay

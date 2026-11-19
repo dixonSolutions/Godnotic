@@ -15,6 +15,8 @@
 # DEDICATED darkplaces-dedicated built with the bridge (make sv-release)
 # PUBLIC=1  list and briefly join real public servers through the relay
 #           (needs UDP to the internet) instead of the local ones
+# RELAY_BIN the standalone relay (relay/godnotic-relay: make -C relay) instead of
+#           a dedicated server with bridge_relay 1
 # CHROME    the browser (default: Playwright's Chromium in ~/.cache)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -68,4 +70,4 @@ cdp="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); pr
 pids+=($!)
 for _ in $(seq 150); do curl -sf "http://127.0.0.1:$cdp/json/version" >/dev/null && break; sleep 0.1; done
 node "$here/join-e2e.mjs" --cdp "$cdp" --url "http://127.0.0.1:$port/" --broker "$BROKER" \
-    --dedicated "$dedicated" --basedir "$out/base" --out "$out" ${MAP:+--map "$MAP"} ${PUBLIC:+--public}
+    --dedicated "$dedicated" --basedir "$out/base" --out "$out" ${MAP:+--map "$MAP"} ${PUBLIC:+--public} ${RELAY_BIN:+--relay-bin "$RELAY_BIN"}

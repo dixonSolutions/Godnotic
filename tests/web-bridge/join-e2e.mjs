@@ -34,6 +34,8 @@ const map = opt('map', 'stormkeep');
 // --public: the relay asks the real public masters (its defaults) instead of
 // the local fake one, and the browser lists and briefly joins a public server.
 const pub = args.includes('--public');
+// --relay-bin: the standalone relay (relay/godnotic-relay) instead of a dedicated server with bridge_relay 1.
+const relayBin = opt('relay-bin', '');
 // A topic of its own per run: on a public broker the test relay must not be
 // offered to real players, nor real relays to the test.
 const topic = opt('topic', `godnotic/test/${process.pid}-${Date.now()}`);
@@ -104,9 +106,20 @@ let gameUp = pub;
 for (let i = 0; i < 150 && !gameUp; i++) { gameUp = !!(await udpQuery(gamePort, 'getinfo up')); if (!gameUp) await sleep(200); }
 if (!pub) check(gameUp, `the game server answers on 127.0.0.1:${gamePort}`);
 
-const relay = startDedicated('relay', relayPort, [...(pub ? [] : ['+bridge_allow_loopback', '1', '+sv_master1', `127.0.0.1:${masterPort}`,
-  '+sv_masterextra1', '""', '+sv_masterextra2', '""', '+sv_masterextra3', '""']),
-  '+bridge_relay_brokers', broker, '+bridge_relay_topic', topic, '+bridge_relay_stun', '""', '+bridge_relay', '1', '+map', map]);
+let relay;
+if (relayBin) {
+  const logPath = path.join(out, 'relay.log');
+  const log = fs.openSync(logPath, 'w');
+  const p = spawn(relayBin, ['--broker', broker, '--topic', topic, '--stun', '',
+    ...(pub ? [] : ['--allow-loopback', '--master', `127.0.0.1:${masterPort}`])], {stdio: ['ignore', log, log]});
+  children.push(p);
+  relay = {proc: p, logPath, text: () => fs.readFileSync(logPath, 'utf8'),
+    say: (line) => { if (line === 'bridge_relay 0') p.kill('SIGTERM'); }};
+} else {
+  relay = startDedicated('relay', relayPort, [...(pub ? [] : ['+bridge_allow_loopback', '1', '+sv_master1', `127.0.0.1:${masterPort}`,
+    '+sv_masterextra1', '""', '+sv_masterextra2', '""', '+sv_masterextra3', '""']),
+    '+bridge_relay_brokers', broker, '+bridge_relay_topic', topic, '+bridge_relay_stun', '""', '+bridge_relay', '1', '+map', map]);
+}
 const online = await waitLog(relay, /web relay ([0-9a-f]{16}) online on/, 60000);
 check(!!online, `1. the relay announces itself on ${broker}${online ? ' as ' + online[1] : ''}`);
 
@@ -329,7 +342,7 @@ check(masters === `127.0.0.1:${masterPort}`, '2b. the relay\'s master list reach
 // 6. Relay gone: the page tells the player.
 await command('disconnect');
 relay.say('bridge_relay 0');
-await waitLog(relay, /web relay: off/, 10000);
+await waitLog(relay, /web relay: off|godnotic-relay: stopped/, 10000);
 await sleep(1500);
 await evaluate('Module.godnoticNet.close(); Module.godnoticNet.retryAt = 0');
 await command('net_slist');
