@@ -17,6 +17,39 @@ import java.io.File
  * them (-Puib.fixtures=<dir>), and from the json files of the app assets directory fe.
  */
 class UiBridgeTest {
+    @Test fun serverDetailMapPictureFitsPortraitAndLandscape() {
+        assertEquals(640, ServerDetails.imageMaxHeightPx(1200, 1920))
+        assertEquals(400, ServerDetails.imageMaxHeightPx(1920, 1200))
+        assertEquals(0, ServerDetails.imageMaxHeightPx(100, 0))
+    }
+
+    @Test fun serverDetailFactsUseWholeNumbersAndShowUnknownPing() {
+        assertEquals("stormkeep · CA · 6/16 · 362 ms", ServerDetails.facts(mapOf(
+            "map" to "stormkeep", "mode" to "ca", "players" to 6.0, "max" to 16.0, "ping" to 362.0)))
+        assertEquals("0 · – ms", ServerDetails.facts(emptyMap()))
+    }
+
+    @Test fun homeServerPreviewUpdatesWithoutChangingItsOpenAction() {
+        val rec = Recorder()
+        val sent = ArrayList<String>()
+        val client = UibClient(rec) { sent.add(it) }
+        fun card(text: String, map: String) = mapOf("id" to "home/tiles/mp", "type" to "card", "props" to mapOf(
+            "title" to "Multiplayer", "subtitle" to text, "image" to "pk3:maps/$map",
+            "primary" to mapOf("id" to "mp", "label" to "Open")))
+        client.receive(mapOf("t" to "snapshot", "rev" to 1, "nodes" to listOf(
+            mapOf("id" to "app", "type" to "app", "props" to mapOf("stack" to listOf("home")), "children" to listOf("home")),
+            mapOf("id" to "home", "type" to "screen", "props" to emptyMap<String, Any>(), "children" to listOf("home/tiles/mp")),
+            card("Alpha · stormkeep · 2/16\nBeta · xoylent · 1/8", "stormkeep"))))
+        client.receive(mapOf("t" to "diff", "base" to 1, "rev" to 2,
+            "set" to listOf(card("Alpha · stormkeep · 3/16\nBeta · xoylent · 1/8", "stormkeep"))))
+        val props = client.store.node("home/tiles/mp")!!.props
+        assertTrue(props.str("subtitle").contains("3/16"))
+        assertEquals("pk3:maps/stormkeep", props.str("image"))
+        assertEquals("mp", props["primary"].obj().str("id"))
+        assertTrue(rec.ops.contains("update home/tiles/mp"))
+        assertTrue(sent.isEmpty())
+    }
+
     /** Records renderer operations as lines. */
     class Recorder : UiRenderer {
         val ops = ArrayList<String>()
@@ -31,7 +64,8 @@ class UiBridgeTest {
         override fun navigate(screen: String, transition: String) { ops.add("navigate $screen $transition") }
         override fun dialog(id: String?) { ops.add("dialog ${id ?: "-"}") }
         override fun toast(text: String, kind: String) { ops.add("toast $text") }
-        override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>) { ops.add("rows $source $offset ${rows.size}/$total"); this.rows[source] = total }
+        override fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long) { ops.add("rows $source $offset ${rows.size}/$total/$rev"); this.rows[source] = total }
+        override fun sourceChanged(source: String, total: Int, rev: Long) { ops.add("source $source $total/$rev") }
         override fun imageReady(ref: String, path: String) { ops.add("image $ref") }
     }
 
@@ -41,6 +75,17 @@ class UiBridgeTest {
     }
 
     private fun load(f: File) = Json.parse(f.readText()).obj()
+
+    /** A filtered empty answer must not be read as a notice: only a notice re-windows. */
+    @Test fun emptyWindowAndSourceNoticeRemainDistinct() {
+        val rec = Recorder()
+        val client = UibClient(rec) {}
+        client.receive(mapOf("t" to "rows", "source" to "servers", "rev" to 11.0, "re" to 7.0, "offset" to 0.0, "total" to 0.0, "rows" to emptyList<Any>()))
+        val reply = rec.ops.last()
+        assertTrue("a window reply is not a source notice", reply.startsWith("rows "))
+        client.receive(mapOf("t" to "source", "source" to "servers", "rev" to 12.0, "total" to 3.0))
+        assertTrue("the notice is its own operation", rec.ops.last() != reply && rec.ops.last() == "source servers 3/12")
+    }
 
     @Test fun serverListStateSurvivesRefreshAndRebuild() {
         val state = ServerListState()
@@ -125,6 +170,30 @@ class UiBridgeTest {
         assertTrue(sent.last().contains("\"t\":\"sync\""))
     }
 
+    @Test fun desktopAccessibilitySwitchRoundTripsThroughBridge() {
+        val rec = Recorder()
+        val sent = ArrayList<String>()
+        val client = UibClient(rec) { sent.add(it) }
+        val id = "settings/accessibility/desktop/assist"
+        fun switch(value: Boolean) = mapOf("id" to id, "type" to "switch",
+            "props" to mapOf("label" to "Enable auto shoot and aim assist",
+                "bind" to "cvar:cl_accessibility_desktop", "value" to value))
+        client.receive(mapOf("t" to "snapshot", "rev" to 1, "nodes" to listOf(
+            mapOf("id" to "app", "type" to "app", "props" to mapOf("stack" to listOf("settings")), "children" to listOf("settings")),
+            mapOf("id" to "settings", "type" to "screen", "props" to emptyMap<String, Any>(), "children" to listOf(id)),
+            switch(false))))
+        assertEquals("switch", rec.created[id])
+        assertFalse(client.store.node(id)!!.bool("value"))
+        client.event("value", mapOf("node" to id, "value" to true))
+        val event = Json.parse(sent.single()).obj()
+        assertEquals("value", event["ev"])
+        assertEquals(id, event["node"])
+        assertEquals(true, event["value"])
+        client.receive(mapOf("t" to "diff", "base" to 1, "rev" to 2, "set" to listOf(switch(true))))
+        assertTrue(client.store.node(id)!!.bool("value"))
+        assertTrue(rec.ops.contains("update $id"))
+    }
+
     @Test fun navigationPushPopAndToast() {
         val rec = Recorder()
         val c = UibClient(rec) {}
@@ -195,6 +264,67 @@ class UiBridgeTest {
             {"id":"pause","type":"screen","props":{"title":"Paused","kind":"game"},"children":[]},
             {"id":"dialog.quit","type":"screen","props":{"title":"Quit?","presentation":"dialog"},"children":[]}]}""").obj())
         assertFalse(quit.overGame)
+    }
+
+    /** The join card is the one join screen, also when a native screen launched the join. */
+    @Test fun joinCardIsNotDroppedForAVisibleNativeScreen() {
+        assertFalse(JoinFlow.settled(0, 299))
+        assertTrue(JoinFlow.settled(0, 300))
+        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true))
+        assertTrue(JoinFlow.card("preview", joinDialog = false, settled = true))
+        assertFalse(JoinFlow.card("preview", joinDialog = true, settled = true))
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true))
+        assertTrue(JoinFlow.transparent("preview"))
+        assertFalse(JoinFlow.transparent("loading"))
+    }
+
+    /**
+     * The owner's "too many flashing logos": the join card is built once and
+     * kept for the whole join (every rebuild painted the black page and the
+     * banner again), and the banner is up only until the preview.
+     */
+    @Test fun joinLogoAppearsOnceAndOnlyUntilThePreview() {
+        // built once, once it has settled...
+        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true, hasCard = false))
+        // ...then kept through the stages that follow, settled or not
+        for (stage in listOf("downloading", "loading", "signon", "preview")) {
+            assertTrue(JoinFlow.card(stage, joinDialog = false, settled = false, hasCard = true))
+        }
+        // the join is over, or the dialog is the join screen: the card goes
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true, hasCard = true))
+        assertFalse(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
+
+        // the logo is for the wait before the preview, once
+        assertFalse(JoinFlow.banner("connecting", previewSeen = false))
+        assertFalse(JoinFlow.banner("signon", previewSeen = false))
+        assertFalse(JoinFlow.banner("preview", previewSeen = false))
+        assertFalse(JoinFlow.banner("signon", previewSeen = true))
+        assertFalse(JoinFlow.banner("loading", previewSeen = true))
+
+        // and the preview, once seen, stays the background
+        assertTrue(JoinFlow.preview("preview", previewSeen = false))
+        assertTrue(JoinFlow.preview("signon", previewSeen = true))
+        assertFalse(JoinFlow.preview("signon", previewSeen = false))
+        assertTrue(JoinFlow.transparent("preview", previewSeen = false))
+        assertTrue(JoinFlow.transparent("signon", previewSeen = true))
+        assertFalse(JoinFlow.transparent("signon", previewSeen = false))
+    }
+
+    /** The map's picture shows at once: before the settle wait, before any server, until the world draws. */
+    @Test fun joinShowsTheMapPictureImmediately() {
+        assertTrue(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = false))
+        assertFalse(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = true))
+        assertFalse(JoinFlow.showShot("", world = false))
+        // a local start: first snapshot, no settle wait, no card yet
+        assertFalse(JoinFlow.card("loading", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false, shot = true))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, shot = true))
+        assertFalse(JoinFlow.card("idle", joinDialog = false, settled = false, shot = true))
+        // the picture counts as the preview: the logo never shows
+        assertTrue(JoinFlow.preview("loading", previewSeen = false, shot = true))
+        assertFalse(JoinFlow.banner("loading", previewSeen = true))
     }
 
     @Test fun joinLinks() {

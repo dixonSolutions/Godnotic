@@ -55,6 +55,11 @@ final class ProcessState {
         publish(context.getApplicationContext());
     }
 
+    /** The stage last set: boot, game, provider, none. */
+    static String stage() {
+        return stage;
+    }
+
     /** The engine is up (or went away): the game's own thread is running. */
     static void engine(Context context, boolean running) {
         engine = running;

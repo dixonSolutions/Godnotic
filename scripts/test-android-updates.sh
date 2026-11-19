@@ -27,19 +27,34 @@ javac -Xlint:all -Werror -d "$tmp" -cp "$junit" \
 	android/app/src/main/java/$pkg/CrashReport.java \
 	android/app/src/main/java/$pkg/ProcessStateText.java \
 	android/app/src/main/java/$pkg/PackageReplace.java \
+	android/app/src/main/java/$pkg/PollLoop.java \
+	android/app/src/main/java/$pkg/HostProcess.java \
+	android/app/src/main/java/$pkg/ReplaceSequence.java \
+	android/app/src/main/java/$pkg/SwapTrial.java \
+	android/app/src/main/java/$pkg/LiveSwapGuard.java \
 	android/app/src/test/java/$pkg/AndySUStateTest.java \
 	android/app/src/test/java/$pkg/AppUpdateStateTest.java \
 	android/app/src/test/java/$pkg/UpdateRetryTest.java \
 	android/app/src/test/java/$pkg/UpdateBackgroundTest.java \
 	android/app/src/test/java/$pkg/CrashReportTest.java \
 	android/app/src/test/java/$pkg/ProcessStateTextTest.java \
-	android/app/src/test/java/$pkg/PackageReplaceTest.java
+	android/app/src/test/java/$pkg/PackageReplaceTest.java \
+	android/app/src/test/java/$pkg/PollLoopTest.java \
+	android/app/src/test/java/$pkg/HostProcessTest.java \
+	android/app/src/test/java/$pkg/ReplaceSequenceTest.java \
+	android/app/src/test/java/$pkg/SwapTrialTest.java \
+	android/app/src/test/java/$pkg/LiveSwapGuardTest.java
 java -cp "$tmp:$junit:$hamcrest" org.junit.runner.JUnitCore \
 	io.github.dixonsolutions.godnotic.AndySUStateTest io.github.dixonsolutions.godnotic.AppUpdateStateTest \
 	io.github.dixonsolutions.godnotic.UpdateRetryTest io.github.dixonsolutions.godnotic.UpdateBackgroundTest \
 	io.github.dixonsolutions.godnotic.CrashReportTest \
 	io.github.dixonsolutions.godnotic.ProcessStateTextTest \
-	io.github.dixonsolutions.godnotic.PackageReplaceTest
+	io.github.dixonsolutions.godnotic.PackageReplaceTest \
+	io.github.dixonsolutions.godnotic.PollLoopTest \
+	io.github.dixonsolutions.godnotic.HostProcessTest \
+	io.github.dixonsolutions.godnotic.ReplaceSequenceTest \
+	io.github.dixonsolutions.godnotic.SwapTrialTest \
+	io.github.dixonsolutions.godnotic.LiveSwapGuardTest
 
 # Manual update actions must dispatch directly even on metered connections.
 python3 - <<'PYTEST'

@@ -42,10 +42,96 @@ final class AndySUState {
         return since < 0 || since >= AUTO_RESTART_WINDOW_MS;
     }
 
+    /** A trial this process has run for this long without dying is a healthy release. */
+    static final long TRIAL_STABLE_MS = 60_000;
+
+    /**
+     * Whether an unconfirmed trial may be confirmed by the app itself: the process has been up
+     * long enough that a release which would crash at start has already done so. The engine
+     * normally reports healthy first; this keeps menu-only use from dead-ending updates.
+     */
+    static boolean trialStable(boolean trial, long uptimeMs) {
+        return trial && uptimeMs >= TRIAL_STABLE_MS;
+    }
+
+    static String applyProblem(boolean stateKnown, boolean trial, String pending, String attempted) {
+        if (!stateKnown) return "Could not read the AndySU update state.";
+        if (pending == null || pending.isEmpty()) return "";
+        if (trial) return applyRefusedMessage();
+        if (pending.equals(attempted)) return "AndySU did not apply the update; try Apply now again.";
+        return "";
+    }
+
+    /** Host API 4 refused to restart because the running release is still a trial. */
+    static String applyRefusedMessage() {
+        return "Still confirming the current version; try again after the game starts.";
+    }
+
+    /** How long the engine must stay idle before the apply policy goes back to the player's choice. */
+    static final long BUSY_HOLD_MS = 30_000;
+
+    /**
+     * The apply policy the host should have. The player's switch ({@code liveEnabled}) is the one
+     * source; a busy engine (match, join, download) only holds it at next_start, and for
+     * {@link #BUSY_HOLD_MS} after the last busy reading, because the net state file reads idle for
+     * a poll between map changes and used to flip the policy every two seconds.
+     */
+    static String desiredPolicy(boolean liveEnabled, boolean busy, long now, long lastBusyAt) {
+        if (!liveEnabled) return "next_start";
+        if (busy) return "next_start";
+        return lastBusyAt != 0 && now - lastBusyAt < BUSY_HOLD_MS ? "next_start" : "live";
+    }
+
+    /** The engine must have read safe for this long before an update may restart or swap it. */
+    static final long IDLE_BEFORE_APPLY_MS = 5_000;
+
+    /**
+     * Whether the app may replace, restart or swap the engine for an update right now. Only from
+     * the menu: never while a match is running or being joined or loaded (stage game/joining, the
+     * engine reports busy, or touch_update_game_state is not "safe"), never in the background (a
+     * match may be running there), and not until the engine has been idle for
+     * {@link #IDLE_BEFORE_APPLY_MS}. Anything else defers to the menu or the next start.
+     *
+     * @param stage     ProcessState stage: boot, game, joining, provider, none, ""
+     * @param engineBusy KeepAliveService.engineBusy (connected, joining or downloading)
+     * @param gameState contents of touch_update_game_state, null when unreadable
+     * @param idleMs    time since the engine last read busy
+     */
+    static boolean safeToApplyNow(String stage, boolean engineBusy, String gameState,
+                                  boolean foreground, long idleMs) {
+        if (!foreground || engineBusy || !"safe".equals(gameState)) return false;
+        if ("joining".equals(stage) || "loading".equals(stage)) return false;
+        return idleMs >= IDLE_BEFORE_APPLY_MS;
+    }
+
+    /**
+     * Whether a staged release may be applied without the player tapping Apply now: only when the
+     * player left automatic updates on. A host in check_only (automatic off, or Wi-Fi only on a
+     * metered connection) never applies by itself; a release staged earlier waits for the tap, or
+     * for the switch.
+     */
+    static boolean mayApplyUnasked(boolean autoSwitch, boolean userAsked) {
+        return autoSwitch || userAsked;
+    }
+
+    /** False for the release whose automatic apply already failed or was refused. */
+    static boolean mayAnnounce(String version, String blocked) {
+        return blocked == null || blocked.isEmpty() || !blocked.equals(version);
+    }
+
     /** Unknown policy is held; null means the host has no policy API. */
     static boolean shouldAutoApply(String state, boolean inMatch, String policy) {
         return "staged".equals(state) && !inMatch
                 && (policy == null || "live".equals(policy) || "restart".equals(policy));
+    }
+
+    /**
+     * Whether a staged release can be swapped in without restarting: live apply is the policy, the
+     * process is not in a match, and the release changes only native code and content. Anything
+     * else has to wait for the player or restart, and Settings says why.
+     */
+    static boolean shouldApplyLive(String state, boolean inMatch, String policy, boolean nativeLive) {
+        return "staged".equals(state) && !inMatch && "live".equals(policy) && nativeLive;
     }
 
 
@@ -87,7 +173,7 @@ final class AndySUState {
     static boolean endsCheck(String state) {
         switch (state) {
             case "uptodate": case "available": case "staged": case "shell-update":
-            case "deferred": case "error":
+            case "deferred": case "error": case "apply_refused":
                 return true;
             default:
                 return false;
@@ -122,13 +208,15 @@ final class AndySUState {
      */
     static String targetMode(boolean auto, boolean wifiOnly, boolean metered, boolean staged,
                              boolean foreground, boolean downloading) {
+        // One rule, whether or not the app is on screen: the host's mode follows only the
+        // player's switches and the connection. Leaving the app used to drop it to check_only
+        // (and the return took it back), a silent change nobody asked for.
         if (!auto) return MODE_CHECK_ONLY;
         if (!wifiOnly) return MODE_AUTO;
-        if (foreground) return metered ? MODE_CHECK_ONLY : MODE_AUTO;
-        // In the background a staged release still applies at the next start, which the host only
-        // does in auto mode; a download in flight keeps going, but only on an unmetered connection.
-        if (staged) return MODE_AUTO;
-        return (!metered && downloading) ? MODE_AUTO : MODE_CHECK_ONLY;
+        if (!metered) return MODE_AUTO;
+        // Metered: Wi-Fi only stops it, except that in the background a staged release stays
+        // promotable at the next start (the host only does that in auto mode).
+        return (!foreground && staged) ? MODE_AUTO : MODE_CHECK_ONLY;
     }
 
     /**

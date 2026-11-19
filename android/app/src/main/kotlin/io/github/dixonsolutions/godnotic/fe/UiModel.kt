@@ -152,8 +152,8 @@ class UibClient(private val renderer: UiRenderer, private val send: (String) -> 
                 applyChanges(changed, deleted)
                 onChanged?.invoke()
             }
-            "rows" -> if (!ignoreRows) renderer.listRows(m.str("source"), m.int("offset"), m.int("total"), m["rows"].list().map { it.obj() })
-            "source" -> if (!ignoreRows) renderer.listRows(m.str("source"), 0, m.int("total"), emptyList())
+            "rows" -> if (!ignoreRows) renderer.listRows(m.str("source"), m.int("offset"), m.int("total"), m["rows"].list().map { it.obj() }, m.num("rev").toLong())
+            "source" -> if (!ignoreRows) renderer.sourceChanged(m.str("source"), m.int("total"), m.num("rev").toLong())
             "image" -> renderer.imageReady(m.str("ref"), m.str("path"))
             "error" -> if (m.str("code") == "not_found") m.str("ref").takeIf { it.isNotEmpty() }?.let { renderer.imageReady(it, "") }
             "hello", "ack", "pong", "bye" -> {}

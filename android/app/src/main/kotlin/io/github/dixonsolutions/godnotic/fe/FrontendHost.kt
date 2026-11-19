@@ -236,7 +236,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
         showReconnect(a.str("reconnect"))
-        if (state != "loading" && state != "connecting" && loadingStrip != null) onConnect(mapOf("stage" to "idle"))
+        // No synthesized `idle` here: the engine publishes the connect stage
+        // itself, and a card torn down by this guess was rebuilt by the next
+        // stage 300 ms later, logo and all (the flashing screens during a join).
         onJoinFail(a)
         val note = a.str("reconnect_note")
         if (note != lastReconnectNote) { lastReconnectNote = note; if (note.isNotEmpty() && note.startsWith("Disconnected")) toast(note, "warning") }
@@ -292,6 +294,15 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var loadingBanner: View? = null
     private var loadingCardView: View? = null
     private var previewStrip = false
+    /** The preview (or the levelshot before it) showed on this join: the logo stays away. */
+    private var previewSeen = false
+    private var joinStage = ""
+    private var joinStageAt = 0L
+    /** The map's picture file the card shows (engine connect `levelshot`), decoded once per file. */
+    private var shotPath = ""
+    private var shotBitmap: android.graphics.Bitmap? = null
+    /** The picture is the generic stand-in: dimmed and blurred behind the card. */
+    private var shotGeneric = false
 
     /**
      * A join or a map load: the engine publishes its progress from inside the
@@ -313,15 +324,43 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // password prompt and the Could not join dialog that come after
         if (c.str("address").isNotEmpty()) { joinAddress = c.str("address"); joinLabel = c.str("label") }
         val stage = c.str("stage")
+        val now = SystemClock.elapsedRealtime()
+        if (stage != joinStage) { joinStage = stage; joinStageAt = now }
         // preview: the engine draws the join's world (touch_joinpreview.c); the
         // page below becomes a strip at the bottom instead of a full screen
-        val busy = stage in setOf("connecting", "downloading", "loading", "signon", "preview") && !failed
-        if (!busy || root.visibility == View.VISIBLE) {
+        val busy = JoinFlow.isBusy(stage) && !failed
+        // The preview is for the rest of this join: a stage that reports back as
+        // a load does not put the logo (or the black page) back over the world.
+        val shot = c.str("levelshot")
+        val showShot = JoinFlow.showShot(shot, c.bool("world"))
+        previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
+        val generic = JoinFlow.generic(c.str("levelshot_kind"))
+        if (shot != shotPath) {
+            shotPath = shot; shotBitmap = null; shotGeneric = generic
+            if (shot.isNotEmpty()) Images.load(shot, 1024) { bmp ->
+                if (shotPath == shot && bmp != null) {
+                    // a stand-in picture is blurred: drawn from a thumbnail scaled back up
+                    shotBitmap = if (shotGeneric) android.graphics.Bitmap.createScaledBitmap(bmp, maxOf(1, bmp.width / 14), maxOf(1, bmp.height / 14), true) else bmp
+                    applyLook(JoinFlow.showShot(shotPath, lastWorld))
+                }
+            }
+        }
+        shotGeneric = generic
+        lastWorld = c.bool("world")
+        // The join dialog is the one join screen; the card goes when it opens.
+        val joinDialog = client?.modal?.lastOrNull() == "join"
+        if (!JoinFlow.card(stage, joinDialog, JoinFlow.settled(joinStageAt, now), loadingStrip != null, showShot)) {
             loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
             loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
             loadingBanner = null; loadingCardView = null; previewStrip = false
+            previewSeen = false
+            shotPath = ""; shotBitmap = null; lastWorld = false
             return
         }
+        // A join starts from a native screen. That screen was left visible by
+        // the old code, which is why the engine's preview stayed behind an
+        // opaque page: the join card belongs over the engine's surface.
+        if (root.visibility == View.VISIBLE) setVisible(false)
         if (loadingStrip == null) {
             // one presentation of a join or a load: an opaque Android screen over
             // the engine's own loading screen and status text (they stay in the
@@ -363,36 +402,31 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadingCardView = card
         }
         // the world is on screen now: the page becomes a strip at the bottom that
-        // lets it show, and comes back opaque if the preview stops
-        previewStyle(stage == "preview")
-        val pct = when (stage) {
-            "downloading" -> c.num("download_progress")
-            "loading", "preview" -> c.num("load_progress")
-            else -> 0.0
-        }
+        // lets it show. Once it is, it stays: no stage after the preview may put
+        // the black page and the logo back over the live world.
+        lastTransparent = JoinFlow.transparent(stage, previewSeen)
+        applyLook(showShot)
+        val pct = JoinFlow.progress(stage, c.num("download_progress"), c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt())
         val map = app.str("map")
         loadingTitle?.text = when {
             c.bool("local") -> if (map.isNotEmpty()) "Starting ${map.replaceFirstChar { it.uppercase() }}" else "Starting the match"
             c.str("address").isNotEmpty() -> "Joining ${serverLabel(c.str("address"))}"
             else -> "Joining"
         }
-        val load = c.str("load")
-        val what = when (stage) {
-            "connecting" -> "Waiting for the server"
-            "downloading" -> {
-                val kib = c.num("speed") / 1024.0
-                "Downloading ${c.str("file").substringAfterLast('/')}" + if (kib > 0) "  ·  ${kib.toInt()} KiB/s" else ""
-            }
-            "signon" -> "Entering the game"
-            // the engine's step names are file names ("progs/bolt.mdl", "*1"): say it plainly
-            else -> when {
-                load.isEmpty() || load.startsWith("*") -> "Loading the map"
-                load.contains('/') -> "Loading " + load.substringAfterLast('/').substringBeforeLast('.')
-                else -> load.replaceFirstChar { it.uppercase() }
+        val what = JoinFlow.detail(
+            stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
+            c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(),
+        )
+        loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
+        // a real bar: the engine's own progress band is not drawn under the card
+        loadingBar?.let { bar ->
+            if (pct < 0) bar.isIndeterminate = true
+            else {
+                if (bar.isIndeterminate) bar.isIndeterminate = false
+                bar.max = 1000
+                bar.progress = (pct * 1000).toInt()
             }
         }
-        // the engine reports 1% for most of a map load: a number only once it says something
-        loadingText?.text = if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
     }
 
     /**
@@ -402,17 +436,31 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
      * the card goes to the game. Any other stage puts the opaque page back (a
      * download, a signon the preview is still waiting for).
      */
-    private fun previewStyle(on: Boolean) {
+    private var lastWorld = false
+    private var lastTransparent = false
+
+    /**
+     * The card's look: the map's picture while the world is not drawable (the logo never
+     * shows once a picture or the world has), the live world through a transparent strip,
+     * else the opaque page. The strip sits at the bottom whenever a picture or the world is behind.
+     */
+    private fun applyLook(showShot: Boolean) {
         val screen = loadingStrip ?: return
-        if (previewStrip == on) return
-        previewStrip = on
-        loadingBanner?.visibility = if (on) View.GONE else View.VISIBLE
-        screen.setBackgroundColor(if (on) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK)
-        screen.isClickable = !on
-        screen.gravity = if (on) Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM else Gravity.CENTER_HORIZONTAL
+        val bmp = shotBitmap
+        val strip = showShot || lastTransparent
+        previewStrip = strip
+        loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE
+        when {
+            showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
+            showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash
+            lastTransparent -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            else -> screen.setBackgroundColor(android.graphics.Color.BLACK)
+        }
+        screen.isClickable = !(lastTransparent && !showShot)
+        screen.gravity = if (strip) Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM else Gravity.CENTER_HORIZONTAL
         (loadingCardView?.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let {
-            it.bottomMargin = Theme.dp(activity, if (on) 16f else 48f)
-            loadingCardView?.layoutParams = it
+            val m = Theme.dp(activity, if (strip) 16f else 48f)
+            if (it.bottomMargin != m) { it.bottomMargin = m; loadingCardView?.layoutParams = it }
         }
     }
 
@@ -833,7 +881,12 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private fun applyInsets(insets: WindowInsets) {
         var l = 0; var t = 0; var r = 0; var b = 0
         if (Build.VERSION.SDK_INT >= 28) insets.displayCutout?.let { c -> l = c.safeInsetLeft; t = c.safeInsetTop; r = c.safeInsetRight; b = c.safeInsetBottom }
-        if (Build.VERSION.SDK_INT >= 30) b = maxOf(b, insets.getInsets(WindowInsets.Type.ime()).bottom)
+        if (Build.VERSION.SDK_INT >= 30) {
+            b = maxOf(b, insets.getInsets(WindowInsets.Type.ime()).bottom)
+            // visible system bars (a tablet's navigation bar) are not part of the screen the layout may use
+            val bars = insets.getInsets(WindowInsets.Type.systemBars())
+            l = maxOf(l, bars.left); t = maxOf(t, bars.top); r = maxOf(r, bars.right); b = maxOf(b, bars.bottom)
+        }
         // the screens keep clear of cutouts; the pinned bottom bar rides above the keyboard
         screenLayer.setPadding(l, t, r, b)
         dialogLayer.setPadding(l, t, r, b)

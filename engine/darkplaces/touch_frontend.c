@@ -41,6 +41,7 @@ Everything works on the desktop too, without a sink, for headless tests
 #include "libcurl.h"
 #include "touch_frontend.h"
 #include "touch_joinpreview.h" // Touch: the "preview" join stage
+#include "touch_joinpreview_logic.h" // Touch: picture kinds, precache step
 #include "touch_music.h"
 #include "touch_datafetch.h"
 #include "touch_loadfs.h" // Touch: the theme pack may land after start-up
@@ -51,6 +52,7 @@ Everything works on the desktop too, without a sink, for headless tests
 #include "touch_lua.h"
 #include "touch_net.h"
 #include "touch_joinname.h"
+#include "touch_uib_int.h" // Touch: shared server player details formatter
 
 extern uint8_t serverlist_querystage; // netconn.c
 
@@ -423,12 +425,15 @@ static void watch_status(void)
 		fe_event("disconnected", "reason", s + 12, NULL, NULL);
 }
 
+static qbool image_file(const char *ref, char *full, size_t fullsize);
+
 static void publish_connect(qbool force)
 {
 	jb_t b = {0};
 	char addr[128] = "", label[200];
 	int n = 0, i;
-	double bytes = 0, speed = 0, progress = 0;
+	double bytes = 0, speed = 0, progress = 0, dlbytes = 0;
+	int dlindex = -1;
 	Curl_downloadinfo_t *dl;
 	const char *stage = "idle";
 	if (cls.connect_trying)
@@ -442,11 +447,16 @@ static void publish_connect(qbool force)
 			continue;
 		progress = dl[i].progress;
 		speed += dl[i].speed;
+		if (dlindex < 0)
+		{
+			dlindex = i; // the first running download is the one the card names
+			dlbytes = TouchNet_CurlBytes(i);
+		}
 	}
 	if (cls.connect_trying)
 		stage = "connecting";
-	else if (TouchJoinPreview_Active())
-		stage = "preview"; // Touch: the world is what shows, the load is a bar (touch_joinpreview.c)
+	else if (TouchJoinPreview_Active() || TouchJoinPreview_Waiting())
+		stage = "preview"; // Touch: the world (or its levelshot) is what shows, the load is a bar (touch_joinpreview.c)
 	else if (cls.state == ca_connected && cls.signon < SIGNONS)
 		stage = n > 0 ? "downloading" : (scr_loading ? "loading" : "signon");
 	else if (scr_loading)
@@ -467,10 +477,51 @@ static void publish_connect(qbool force)
 		jb_kstr(&b, "file", dl[0].filename);
 		jb_knum(&b, "download_progress", progress);
 		jb_knum(&b, "speed", speed); // bytes per second
+		// the card's "x of y MB": bytes so far and the file's size (0 until known)
+		jb_knum(&b, "download_bytes", dlbytes);
+		jb_knum(&b, "download_total", dlbytes > 0 && progress > 0 && progress <= 1 ? dlbytes / progress : 0);
+	}
+	// the precache step ("models 12/40"): what the engine's loading band showed
+	{
+		int kind = TouchJoinPreview_PrecacheKind(cl.loadbegun, cl.loadfinished, cl.loadmodel_current, cl.loadmodel_total, cl.loadsound_current, cl.loadsound_total);
+		jb_kstr(&b, "precache", kind == 1 ? "models" : kind == 2 ? "sounds" : "");
+		jb_kint(&b, "precache_n", kind == 1 ? cl.loadmodel_current : kind == 2 ? cl.loadsound_current : 0);
+		jb_kint(&b, "precache_total", kind == 1 ? cl.loadmodel_total : kind == 2 ? cl.loadsound_total : 0);
 	}
 	jb_kstr(&b, "load", scr_loading ? fe.load_msg : "");
 	jb_knum(&b, "load_progress", scr_loading ? fe.load_fraction : 0);
-	jb_kbool(&b, "local", sv.active);
+	jb_kbool(&b, "local", sv.active || TouchJoinPreview_LocalLoading());
+	// the map's picture for the native card, from the first moment of a join until the
+	// world draws: the map's own, else what the server list's map name finds, else a
+	// generic map picture (levelshot_kind says which; the card dims and blurs the last)
+	{
+		char map[MAX_QPATH], shot[MAX_OSPATH] = "", pic[MAX_QPATH];
+		static char shot_name[MAX_QPATH], shot_path[MAX_OSPATH];
+		static int shot_kind;
+		qbool known = TouchJoinPreview_MapName(map, sizeof(map));
+		if (cls.connect_trying || cls.state == ca_connected || TouchJoinPreview_LocalLoading())
+		{
+			int kind = TouchJoinPreview_Picture(pic, sizeof(pic));
+			if (strcmp(shot_name, pic) || shot_kind != kind)
+			{
+				dp_strlcpy(shot_name, pic, sizeof(shot_name));
+				shot_kind = kind;
+				shot_path[0] = 0;
+				if (pic[0])
+				{
+					char ref[MAX_QPATH + 4];
+					dpsnprintf(ref, sizeof(ref), "pk3:%s", pic);
+					if (!image_file(ref, shot_path, sizeof(shot_path)))
+						shot_path[0] = 0;
+				}
+			}
+			dp_strlcpy(shot, shot_path, sizeof(shot));
+		}
+		jb_kstr(&b, "join_map", known ? map : "");
+		jb_kstr(&b, "levelshot", shot);
+		jb_kstr(&b, "levelshot_kind", !shot[0] ? "" : shot_kind == TJP_PIC_MAP ? "map" : shot_kind == TJP_PIC_LIST ? "list" : "generic");
+		jb_kbool(&b, "world", TouchJoinPreview_Active());
+	}
 	jb_raw(&b, "}");
 	if (dl)
 		Z_Free(dl);
@@ -595,6 +646,11 @@ static void publish_servers(qbool force)
 		jb_kint(&b, "x", in->maxplayers);
 		jb_kint(&b, "pr", in->protocol);
 		jb_kstr(&b, "q", in->qcstatus);
+		// The getstatus player block is empty when the server only sent getinfo.
+		jb_kstr(&b, "player_status", in->players);
+		char player_details[2800];
+		TouchSrvInfo_PlayerDetails(in->players, player_details, sizeof(player_details));
+		jb_kstr(&b, "player_details", player_details);
 		jb_kbool(&b, "l", strstr(va(clean, sizeof(clean), "%s:", in->qcstatus), ":L1:") != NULL);
 		jb_kbool(&b, "f", in->isfavorite);
 		jb_kbool(&b, "lan", private_address(in->cname));
@@ -815,13 +871,13 @@ static void publish_maps(void)
 // extension (.jpg, then .png: what Android decodes), or a bare map name for
 // its preview (maps/<name>). Answered on the queue as an "image" message
 // {ref, path}, path "" when there is none.
-static void publish_image(const char *ref)
+static qbool image_file(const char *ref, char *full, size_t fullsize)
 {
 	static const char *exts[] = {"", ".jpg", ".png", NULL};
-	jb_t b = {0};
-	char base[MAX_QPATH], path[MAX_QPATH], out[MAX_QPATH], full[MAX_OSPATH] = "", safe[MAX_QPATH];
+	char base[MAX_QPATH], path[MAX_QPATH], out[MAX_QPATH], safe[MAX_QPATH];
 	const char *p;
 	int i, n = 0;
+	full[0] = 0;
 	if (!strncmp(ref, "pk3:", 4))
 		dp_strlcpy(base, ref + 4, sizeof(base));
 	else
@@ -838,7 +894,7 @@ static void publish_image(const char *ref)
 			continue; // a bare path is only taken as it is when Android can decode it
 		dpsnprintf(path, sizeof(path), "%s%s", base, exts[i]);
 		dpsnprintf(out, sizeof(out), "fe_cache/%s%s", safe, exts[i]);
-		if (FS_SysFileExists(va(full, sizeof(full), "%s%s", fs_gamedir, out)))
+		if (FS_SysFileExists(va(full, fullsize, "%s%s", fs_gamedir, out)))
 			break;
 		data = FS_LoadFile(path, tempmempool, true, &size);
 		if (!data)
@@ -848,11 +904,19 @@ static void publish_image(const char *ref)
 		}
 		FS_WriteFile(out, data, size);
 		Mem_Free(data);
-		dpsnprintf(full, sizeof(full), "%s%s", fs_gamedir, out);
+		dpsnprintf(full, fullsize, "%s%s", fs_gamedir, out);
 		break;
 	}
 	if (!exts[i])
 		full[0] = 0;
+	return full[0] != 0;
+}
+
+static void publish_image(const char *ref)
+{
+	jb_t b = {0};
+	char full[MAX_OSPATH];
+	image_file(ref, full, sizeof(full));
 	jb_raw(&b, "{");
 	jb_kstr(&b, "ref", ref);
 	jb_kstr(&b, "path", full);
@@ -1605,7 +1669,7 @@ void TouchMusic_Update(void)
         stage = TM_STAGE_DOWNLOAD;
     else
         stage = TM_STAGE_MENU;
-    if (stage != TM_STAGE_GAME && !theme_playing && bgmvolume.value > 0 && host.realtime >= next_check)
+    if (stage != TM_STAGE_GAME && stage != TM_STAGE_JOINING && !theme_playing && bgmvolume.value > 0 && host.realtime >= next_check)
     {
         next_check = TouchMusic_NextCheck(host.realtime, 0);
         // a theme pk3dir the launcher wrote, or a pk3 the app renamed into

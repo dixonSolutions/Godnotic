@@ -171,7 +171,7 @@ below show no download on any join to a Godnotic server.
 - **Parallel ranges for one large pack** (`touch_curl.h`, included by
   `libcurl.c`). Half a second after the server answered a download, if it
   would still take more than 3 s, what is left is split into up to
-  `curl_segments` (4) pieces of at least `curl_segment_size` (2 MB): the
+  `curl_segments` (6) pieces of at least `curl_segment_size` (2 MB): the
   stock transfer keeps the first, extra connections fetch the others with
   `Range:` requests into `<file>.partN`. The stock transfer is cut short at
   its piece's end only once every extra connection has answered `206 Partial
@@ -345,6 +345,24 @@ when its server answers. `net_slist_fast 1` (the default; `touch_srvlist.c`)
 keeps the protocol packet for packet (`getserversExt` to the masters,
 `getstatus` with the timestamp challenge to the servers) and changes when
 things are sent and what is shown meanwhile:
+
+### Live previews in the server list
+
+The server-list query protocol has no image or world-frame response. `getinfo`
+returns server metadata; `getstatus` adds text player rows (score, ping, team
+and name). DarkPlaces builds those responses in
+`engine/darkplaces/netconn.c:NetConn_BuildStatusResponse`, and the client
+parses only those fields into `serverlist_info_t`. A live scene is delivered
+later by the regular connection and sign-on protocol, after the client has
+started joining and received the server's world state. The existing join
+preview uses that world while the match finishes loading.
+
+Starting that connection merely to show a selected server would begin a join,
+which can download game data and enter the match; it is not a passive server
+query. The selection panel therefore shows the cached map picture immediately
+and does not try to start a join for a live view. Adding live server-list
+previews would require an explicit server-side protocol and client support;
+the current `getinfo`/`getstatus` protocol cannot provide them.
 
 - **The saved list.** Every server that answered is kept with what its row
   shows (`touch_serverlist_info.txt` in the user directory: address, name,
@@ -630,7 +648,7 @@ build; these runs were a desktop build of the same network code).
 | `net_signon_fast` | 1 | wake up for packets and answer at once during a signon; 0 = stock timing |
 | `touch_net_trace` | 0 | print every packet of a join (`NETTRACE` lines); 2 = every packet, in the game too |
 | `net_mtu` | 0 | path MTU for clients' datagrams; 0 = the route's MTU to each client, asked from the system every 10 s (see LAN.md, Playing over a VPN) |
-| `curl_segments` | 4 | connections one large HTTP download may use; 1 = stock |
+| `curl_segments` | 6 | connections one large HTTP download may use; 1 = stock |
 | `curl_segment_size` | 2097152 | smallest piece worth its own connection |
 | `net_reliable_status` | | windowed connections: window, in flight, SRTT, RTO, retransmits |
 | `net_reconnect` | 1 | join the same server again when the connection is lost |
@@ -891,3 +909,12 @@ and the server's own work, instead of after `prespawn` is due; and the
 first-frame lazy loads (`touch_preload`) could run during the signon's
 waits, which on a real network are 3-4 round trips of idle client time
 (0.3-0.8 s at 100-200 ms RTT) that are pure waiting today.
+
+### Segments: 4 to 6 (measured)
+
+`scripts/bench-download.sh -s 24 capped::1024` (a host serving 1 MiB/s per connection, no
+other shaping; `tc` is not installed on the build machine, so no netem rows), one run each:
+1 connection 24.2 s, `curl_segments 4` 6.6 s, 6 4.7 s, 8 3.7 s. The default is 6: a
+server that throttles per connection is the common case for a map pack on a plain web
+host, and more than 6-8 connections to one host starts to trip per-IP connection limits
+(a rejected piece fails the download), so 8 stays an opt-in.

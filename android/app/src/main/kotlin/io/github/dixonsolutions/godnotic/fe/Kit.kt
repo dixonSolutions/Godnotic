@@ -389,6 +389,28 @@ object Images {
     }
 }
 
+/** A picture that covers its bounds (centre crop): the join card's map picture. */
+class ShotDrawable(private val bitmap: Bitmap, dim: Float = 1f) : android.graphics.drawable.Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).also {
+        if (dim < 1f) { val v = (dim * 255).toInt().coerceIn(0, 255); it.colorFilter = android.graphics.LightingColorFilter((v shl 16) or (v shl 8) or v, 0) }
+    }
+    override fun draw(c: Canvas) {
+        val b = bounds
+        if (b.isEmpty) return
+        val f = maxOf(b.width() / bitmap.width.toFloat(), b.height() / bitmap.height.toFloat())
+        val w = bitmap.width * f
+        val h = bitmap.height * f
+        c.save()
+        c.clipRect(b)
+        c.drawBitmap(bitmap, null, RectF(b.left + (b.width() - w) / 2, b.top + (b.height() - h) / 2, b.left + (b.width() + w) / 2, b.top + (b.height() + h) / 2), paint)
+        c.restore()
+    }
+    override fun setAlpha(a: Int) { paint.alpha = a }
+    override fun setColorFilter(f: android.graphics.ColorFilter?) { if (f != null) paint.colorFilter = f }
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity() = android.graphics.PixelFormat.OPAQUE
+}
+
 /** A picture with rounded corners that fills its box (centre crop), shimmering until it has one. */
 class RoundImage(ctx: Context, private val radiusDp: Float = 12f) : FrameLayout(ctx) {
     private val shimmer = Kit.Shimmer(ctx)

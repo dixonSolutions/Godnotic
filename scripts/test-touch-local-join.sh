@@ -22,10 +22,12 @@ set vid_touchscreen 1
 set touch_join_dialog_auto 2
 set sv_spectate 1
 fe play $mode $map 4
-defer 12 "togglemenu 0; touch_hud_state"
-defer 13 "touch_join auto"
-defer 15 "touch_hud_state"
-defer 17 "quit"
+alias _lj_wait0 "defer 0.1 _lj_wait"
+alias _lj_wait1 "togglemenu 0; touch_hud_state; defer 1 _lj_join"
+alias _lj_wait "_lj_wait\$_touch_loadtime_game"
+alias _lj_join "touch_join auto; defer 2 _lj_check"
+alias _lj_check "touch_hud_state; quit"
+_lj_wait
 CFG
     timeout 90 "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$work/$mode" \
         +vid_fullscreen 0 +vid_width 640 +vid_height 360 +set _touch_assets_ready 1 \

@@ -24,6 +24,7 @@
 #include "snd_main.h"
 #include "touch_net.h" // Touch: download size and time left
 #include "touch_joinpreview.h" // Touch: the world while a join loads
+#include "touch_joinpreview_logic.h" // Touch: the engine band rule
 #include "touch_uib.h" // Touch: one loading presentation
 
 cvar_t scr_viewsize = {CF_CLIENT | CF_ARCHIVE, "viewsize","100", "how large the view should be, 110 disables inventory bar, 120 disables status bar"};
@@ -1594,13 +1595,11 @@ static void SCR_DrawTouchscreenOverlay(void)
 		DrawQ_Fill(0, 0, vid_conwidth.integer, vid_conheight.integer, 0.02f, 0.04f, 0.08f, shade, 0);
 	}
 
-	// The keys cover the HUD chat panel and the line being typed on it: show
-	// that line again just above them. Drawn before the keys so a hold popup
-	// on the top row lands over it.
+	// Draw the chat input near the top, clear of either keyboard.
 	if (kd == key_message && scr_numtouchscreenareas > 0 && TouchUI_ChatKeysTop() > 0)
 	{
 		float size = bound(14.0f, vid_conheight.value * 0.035f, 24.0f);
-		float top = TouchUI_ChatKeysTop() - size - 12.0f;
+		float top = TouchUI_ChatInputTop(vid_conheight.value); // Touch: keep the input near the top
 		DrawQ_Fill(0, top, vid_conwidth.integer, size + 12.0f, 0.02f, 0.04f, 0.08f, 0.85f, 0);
 		Con_DrawChatInputAt(8.0f, top + 6.0f, size);
 	}
@@ -1862,6 +1861,8 @@ static void SCR_DrawScreen (void)
 		// Touch: the world renders behind it now, so only the progress stays
 		if (TouchJoinPreview_Active())
 			SCR_DrawLoadingStack();
+		else if (TouchJoinPreview_DrawLevelshot()) // Touch: the map's levelshot until its world is there
+			SCR_DrawLoadingStack(); // Touch: the bar stays over it
 		else
 		// connect_status replaces any dummy_status
 		if ((!loadingscreenstack || loadingscreenstack->msg[0] == '\0') && cl_connect_status[0] != '\0')
@@ -2099,7 +2100,7 @@ static void SCR_DrawLoadingStack(void)
 
 	if (!TouchUIB_LoadingCardUp()) // Touch: the step's text is on the front end's loading card
 	SCR_DrawLoadingStack_r(loadingscreenstack, vid_conheight.integer, scr_loadingscreen_barheight.value);
-	if(loadingscreenstack)
+	if(TouchJoinPreview_DrawEngineBand(TouchUIB_LoadingCardUp(), loadingscreenstack != NULL)) // Touch: the bar is the card's progress bar (load_progress)
 	{
 		// height = 32; // sorry, using the actual one is ugly
 		GL_BlendFunc(GL_SRC_ALPHA, GL_ONE);

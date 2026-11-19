@@ -71,6 +71,48 @@ final class CrashReport {
         }
     }
 
+    /**
+     * Whether a death becomes a report: interesting, and not the update handover.
+     *
+     * <p>An apply relaunches the app, and the old process leaves by itself (or is asked to) in the
+     * {@code quiet} or {@code replacing} phase. Its state line says so, and the next version reads
+     * the exit. That is the handover, not a crash: writing it as a report shows the player "Godnotic
+     * exited by itself" after every successful update. A crash, native crash or ANR in the same
+     * phase is still a report — only a self-exit is handover, and the state is checked as well as
+     * the version change so a real quiet-phase crash is not filtered with it.
+     */
+    static boolean shouldReport(int reason, boolean aroundUpdate, String state,
+                                boolean versionChanged) {
+        if (!interesting(reason, aroundUpdate)) {
+            return false;
+        }
+        String phase = phase(state);
+        boolean handoverPhase = "quiet".equals(phase) || "replacing".equals(phase);
+        if (reason == REASON_SIGNALED) {
+            // The host's relaunch can end the old process with a signal rather than a self-exit
+            // (owner's tablet, 1.2.290 -> 1.2.292: "signaled (2)", phase=replacing). The state
+            // line is the proof it was deliberate; without it a signal stays a report.
+            return !handoverPhase;
+        }
+        if (reason != REASON_EXIT_SELF && reason != REASON_USER_REQUESTED) {
+            return true;
+        }
+        return !(handoverPhase || versionChanged);
+    }
+
+    /** The {@code phase=...} field of a process state summary, or "" when it has none. */
+    static String phase(String state) {
+        if (state == null) {
+            return "";
+        }
+        for (String field : state.trim().split("\\s+")) {
+            if (field.startsWith("phase=")) {
+                return field.substring("phase=".length());
+            }
+        }
+        return "";
+    }
+
     /** How the system spells the reason, for the file name and the first line. */
     static String reasonName(int reason) {
         switch (reason) {
@@ -199,9 +241,82 @@ final class CrashReport {
         return ours.size() <= keep ? ours : new ArrayList<>(ours.subList(0, keep));
     }
 
+    /** How long the banner stays up before it puts itself away. */
+    static final long BANNER_MS = 8_000;
+
     /** Show the banner when a report is newer than the one the player last shared or dismissed. */
     static boolean shouldBanner(long newestReportMs, long seenMs) {
         return newestReportMs > 0 && newestReportMs > seenMs;
+    }
+
+    /** The value of a {@code key: value} header line of a report, "" when it has none. */
+    static String header(String report, String key) {
+        if (report == null) {
+            return "";
+        }
+        for (String line : report.split("\n", 40)) {
+            if (line.startsWith(key + ":")) {
+                return line.substring(key.length() + 1).trim();
+            }
+            if (line.startsWith("--- ")) {
+                break;
+            }
+        }
+        return "";
+    }
+
+    /** The {@code key=value} field of a process state summary, "" when it has none. */
+    static String stateField(String state, String key) {
+        if (state == null) {
+            return "";
+        }
+        for (String field : state.trim().split("\\s+")) {
+            if (field.startsWith(key + "=")) {
+                return field.substring(key.length() + 1);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * Whether a report was recorded in the version running now or by the start right after the
+     * crash. The report's {@code app:}/{@code payload:} are the versions that read it, so they match
+     * the current ones when the crash happened and was read by this version, or by the first start
+     * after it; the {@code state:} line holds the versions the dead process ran. Crashes of older
+     * versions, read hours later by an update, match neither.
+     */
+    static boolean currentVersion(String report, String appNow, String payloadNow) {
+        if (appNow == null || appNow.isEmpty()) {
+            return false;
+        }
+        String state = header(report, "state");
+        String diedApp = stateField(state, "app");
+        String diedPayload = stateField(state, "payload");
+        boolean diedNow = appNow.equals(diedApp)
+                && (diedPayload.isEmpty() || payloadNow == null || diedPayload.equals(payloadNow));
+        boolean readNow = appNow.equals(header(report, "app"))
+                && (payloadNow == null || payloadNow.isEmpty()
+                    || payloadNow.equals(header(report, "payload")));
+        return diedNow || readNow;
+    }
+
+    /**
+     * Where the banner's top edge sits (dp, under the status bar and cutout): below a screen's
+     * header (14 dp padding + 76 dp minimum height), so it never covers a title.
+     */
+    static final int BANNER_TOP_DP = 96;
+
+    /** The header's bottom edge in dp (see the native screens' bar). */
+    static final int HEADER_BOTTOM_DP = 90;
+
+    /**
+     * The banner's whole rule: only in the main menu (never in or entering a match), only for a
+     * report newer than the last one dismissed, and only one of this app/payload version.
+     */
+    static boolean shouldShowBanner(boolean inMenu, long newestReportMs, long seenMs, String report,
+                                    String appNow, String payloadNow) {
+        return inMenu && shouldBanner(newestReportMs, seenMs)
+                && currentVersion(report, appNow, payloadNow);
     }
 
     /** A stack trace as text, for the handler's file. */

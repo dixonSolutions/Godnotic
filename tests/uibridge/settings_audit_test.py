@@ -51,7 +51,11 @@ check("case \"vm:touch.preset\":" in settings, "and the preset has a handler tha
 # 2. every section in the tab list has a content builder
 sec_key = settings[settings.index("string UIB_SecKey"):settings.index("string UIB_SecLabel")]
 keys = re.findall(r'case \d+: return "([a-z]+)";', sec_key)
-check(len(keys) == 12, f"twelve settings sections ({len(keys)})")
+check(len(keys) == 13, f"thirteen settings sections ({len(keys)})")
+accessibility = settings[settings.index("void UIB_SecAccessibility()"):settings.rindex("void UIB_SecContent(string k)\n{")]
+check('UIB_Section("desktop", _("Desktop"), true)' in accessibility and
+      'UIB_Switch("assist", _("Enable auto shoot and aim assist"), "cvar:cl_accessibility_desktop"' in accessibility,
+      "Accessibility exposes the desktop opt-in through the shared settings tree")
 content_start = settings.rindex("void UIB_SecContent(string k)\n{")
 content = settings[content_start:]
 for k in keys:

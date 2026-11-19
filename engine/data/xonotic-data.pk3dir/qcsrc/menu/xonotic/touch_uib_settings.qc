@@ -2,7 +2,7 @@
 #include "touch_uib_screens.qh"
 #include "touch_uib_touch.qh" // Touch HUD: the join popup, Touch controls settings
 
-// Godnotic UI bridge: Settings. Twelve sections, each bound to the cvars players change;
+// Godnotic UI bridge: Settings. Sections are bound to the cvars players change;
 // "Advanced" opens the stock dialogs for the long tail. Mods is a top-level section:
 // client and server mods, a mod's detail with the permissions the engine reports,
 // install from a file or a link, "How to make a mod", and pages mods contribute.
@@ -23,7 +23,7 @@ string UIB_Opts4(string v1, string l1, string v2, string l2, string v3, string l
 }
 
 // The sections: key, label, icon, one-line summary
-const int UIB_NSECTIONS = 12;
+const int UIB_NSECTIONS = 13;
 string UIB_SecKey(int i)
 {
 	switch (i)
@@ -31,6 +31,7 @@ string UIB_SecKey(int i)
 		case 0: return "video"; case 1: return "audio"; case 2: return "game"; case 3: return "input";
 		case 4: return "touch"; case 5: return "esp"; case 6: return "player"; case 7: return "privacy";
 		case 8: return "updates"; case 9: return "data"; case 10: return "menu"; case 11: return "mods";
+		case 12: return "accessibility";
 	}
 	return "video";
 }
@@ -43,6 +44,7 @@ string UIB_SecLabel(string k)
 		case "input": return _("Input"); case "touch": return _("Controls"); case "esp": return _("ESP");
 		case "player": return _("Player"); case "privacy": return _("Privacy"); case "updates": return _("Updates");
 		case "data": return _("Data"); case "menu": return _("Menu"); case "mods": return _("Mods");
+		case "accessibility": return _("Accessibility");
 	}
 	return k;
 }
@@ -74,6 +76,7 @@ string UIB_SecHelp(string k)
 		case "data": return _("Game data and downloads");
 		case "menu": return _("Size and layout");
 		case "mods": return _("Client and server mods, pages from mods");
+		case "accessibility": return _("Desktop assistance");
 	}
 	return "";
 }
@@ -452,8 +455,9 @@ void UIB_SecTouch()
 	UIB_Close();
 	if (UIB_SubTab("aim", _("Aim")))
 	{
-		UIB_Switch("assist", _("Aim assist"), "cvar:cl_touch_aimassist", _("Aim slows over an enemy and is pulled toward one while you aim"));
-		UIB_Slider("strength", _("Pull"), "cvar:cl_touch_aimassist_strength", 0, 1, 0.05, "percent", "");
+		UIB_Switch("assist", _("Aim assist"), "cvar:cl_touch_aimassist", _("Aim slows over an enemy and snaps to the selected living target while aiming"));
+		UIB_VMSet("touch.snap", cvar("cl_touch_aimassist_strength") > 0 ? "1" : "0");
+		UIB_Switch("strength", _("Snap to target"), "vm:touch.snap", _("Snap immediately to the selected aim point while assist is active"));
 		UIB_Switch("ring", _("Show the target ring"), "cvar:cl_touch_aim_ring", "");
 	}
 	UIB_Close();
@@ -695,7 +699,7 @@ void UIB_SecUpdatesAndySU()
 	if (staged != "")
 	{
 		UIB_Section("staged", sprintf(_("Version %s is ready"), staged), false);
-			UIB_Text("about", _("Downloaded and checked. It applies the next time Godnotic starts, or now (the game may restart)."), "caption");
+			UIB_Text("about", _("Downloaded and checked. It applies live in a few seconds; if this release cannot be swapped in, the game restarts."), "caption");
 			UIB_Button("apply", _("Apply now"), UIB_A("updates.apply", _("Apply now"), "check"), "primary");
 		UIB_Close();
 	}
@@ -725,6 +729,8 @@ void UIB_SecUpdatesAndySU()
 	UIB_UpdSwitch("auto", _("Automatic updates"), _("Download and apply updates by themselves"));
 	UIB_UpdSwitch("wifi", _("Update on Wi-Fi only"), _("Downloads wait for Wi-Fi or another unmetered network"));
 	UIB_UpdSwitch("live", _("Apply live"), _("Swap updates in while you play; off: at the next start"));
+	string liveWhy = TouchAndySU_extra("live_reason");
+	if (liveWhy != "") UIB_Text("livewhy", liveWhy, "caption");
 
 	UIB_CrashReportsSection();
 }
@@ -983,6 +989,13 @@ void UIB_SecMods()
 	UIB_Close();
 }
 
+void UIB_SecAccessibility()
+{
+	UIB_Section("desktop", _("Desktop"), true);
+		UIB_Switch("assist", _("Enable auto shoot and aim assist"), "cvar:cl_accessibility_desktop", _("Uses the enabled mobile auto-shoot and aim assist settings"));
+	UIB_Close();
+}
+
 void UIB_SecContent(string k)
 {
 	switch (k)
@@ -999,6 +1012,7 @@ void UIB_SecContent(string k)
 		case "data": UIB_SecData(); return;
 		case "menu": UIB_SecMenuSettings(); return;
 		case "mods": UIB_SecMods(); return;
+		case "accessibility": UIB_SecAccessibility(); return;
 	}
 }
 
@@ -1282,6 +1296,10 @@ bool UIB_SettingsValue(string node, string value)
 			UIB_VMSet("video.preset", value);
 			localcmd(sprintf("\nexec effects-%s.cfg\n", value));
 			UIB_RebuildAll();
+			return true;
+		case "vm:touch.snap":
+			cvar_set("cl_touch_aimassist_strength", (value == "1" || value == "true") ? "1" : "0");
+			UIB_VMSet("touch.snap", (value == "1" || value == "true") ? "1" : "0");
 			return true;
 		case "vm:input.invert":
 			UIB_VMSet("input.invert", value);

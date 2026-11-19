@@ -947,6 +947,12 @@ static void test_targets(void)
 	c.has_name = true;
 	c.drawn = true;
 	CHECK_EQ(TOUCH_AIM_TARGET_OK, TouchAim_TargetCheck(&c), "targets: a live enemy is a target");
+	CHECK_EQ(7, TouchAim_RetainedSeen(3, &c, 3, 3, 3), "retained: live player keeps lock, fire and rocket");
+	CHECK_EQ(1, TouchAim_RetainedSeen(3, &c, 3, 4, 5), "retained: only the matching lock is seen");
+	CHECK_EQ(2, TouchAim_RetainedSeen(4, &c, 3, 4, 5), "retained: only the matching fire target is seen");
+	CHECK_EQ(4, TouchAim_RetainedSeen(5, &c, 3, 4, 5), "retained: only the matching rocket target is seen");
+	CHECK_EQ(0, TouchAim_RetainedSeen(0, &c, 0, 0, 0), "retained: absent slots never count as players");
+	CHECK_EQ(0, TouchAim_RetainedSeen(3, NULL, 3, 3, 3), "retained: disappeared entity drops all paths");
 
 	// the Freeze Tag case: the enemy is alive, solid, drawn -- and frozen
 	c.frozen = true;
@@ -962,6 +968,7 @@ static void test_targets(void)
 
 	c.dead = true;
 	CHECK_EQ(TOUCH_AIM_TARGET_DEAD, TouchAim_TargetCheck(&c), "targets: a dead enemy is not a target");
+	CHECK_EQ(0, TouchAim_RetainedSeen(3, &c, 3, 3, 3), "retained: death drops lock, fire and rocket");
 	c.dead = false;
 
 	c.spectator = true;
@@ -974,6 +981,7 @@ static void test_targets(void)
 
 	c.drawn = false;
 	CHECK_EQ(TOUCH_AIM_TARGET_UNDRAWN, TouchAim_TargetCheck(&c), "targets: a body with no model or nodraw is not");
+	CHECK_EQ(0, TouchAim_RetainedSeen(3, &c, 3, 3, 3), "retained: undrawn player drops all paths");
 	c.drawn = true;
 	c.alpha = -1;
 	CHECK_EQ(TOUCH_AIM_TARGET_UNDRAWN, TouchAim_TargetCheck(&c), "targets: an unfaded-out -1 alpha is not");
@@ -996,8 +1004,23 @@ static void test_targets(void)
 	CHECK(!TouchAim_AnimFrozen(0), "targets: idle is not frozen");
 }
 
+static void test_snap(void)
+{
+	float yaw, pitch;
+	TouchAim_Snap(0, 30, -12, &yaw, &pitch);
+	CHECK_NEAR(30, yaw, 1e-6, "snap: full yaw on first frame");
+	CHECK_NEAR(-12, pitch, 1e-6, "snap: full pitch on first frame");
+	TouchAim_Snap(179, -179, 100, &yaw, &pitch);
+	CHECK_NEAR(181, yaw, 1e-6, "snap: shortest path across yaw boundary");
+	CHECK_NEAR(89, pitch, 1e-6, "snap: pitch stays in view limits");
+	TouchAim_Snap(yaw, -170, -100, &yaw, &pitch);
+	CHECK_NEAR(190, yaw, 1e-6, "snap: moving target followed in one frame");
+	CHECK_NEAR(-89, pitch, 1e-6, "snap: lower pitch limit");
+}
+
 int main(void)
 {
+	test_snap();
 	test_intercept();
 	test_accel();
 	test_ballistic();

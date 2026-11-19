@@ -18,9 +18,8 @@ package io.github.dixonsolutions.godnotic.fe
  *   the window did not send again `stale` (drawn dimmed) and keeps them for
  *   [graceRefreshes] completed queries (and at most [graceMillis] from the
  *   first one they missed), then removes them;
- * - a window's rows are ordered by the chosen column with ties broken by
- *   address, so equal pings never swap between refreshes, and not at all
- *   while [hold] (a finger on the list) is set;
+ * - the initial window and explicit column choices are ordered with ties
+ *   broken by address; later replies update rows without moving them;
  * - a row first seen after the first listing is marked `fresh` (fades in).
  *
  * Plain Kotlin with no Android classes, so it runs in JVM unit tests.
@@ -47,6 +46,8 @@ internal class ServerListState(
 
     /** Display position -> address; null is a row asked for but not here yet. */
     private val slots = ArrayList<String?>()
+    /** Address -> display position, so accepting 600 rows is not 600 linear scans. */
+    private val at = HashMap<String, Int>()
 
     /** The query running (or the one that ran last): 0 before anything was listed. */
     private var query = 0
@@ -80,6 +81,24 @@ internal class ServerListState(
     /** Chips the player has flipped: theirs beats any later value from the engine. */
     private val chosen = HashSet<String>()
     private var laggyMs = 150.0
+    private var search = ""
+    private var searchTotal: Int? = null
+    /** The unfiltered source count: a pending search must not turn the list into zero rows. */
+    private var sourceTotal = 0
+    /** The newest source revision seen; a window older than it is a stale reply. */
+    private var sourceRev = 0L
+
+    /** Apply the bridge's search to cached rows as well as newly fetched windows. */
+    fun setSearch(value: String) {
+        if (search == value) return
+        search = value
+        rebuildShown()
+        searchTotal = null
+        // Keep the source's count while the filtered window is in flight. A filtered
+        // cached page is not the source: using its size here made the list say "no
+        // servers" (and stop asking) whenever the first page had no match.
+        want = maxOf(size, sourceTotal)
+    }
 
     /** The row chosen in the list (its address), kept across refreshes. */
     private var selectedKey = ""
@@ -159,6 +178,7 @@ internal class ServerListState(
      */
     private fun matches(row: Map<String, Any?>): Boolean {
         val cells = row["cells"].obj()
+        if (search.isNotEmpty() && cells.values.none { it is String && it.contains(search, ignoreCase = true) }) return false
         if (include("lan") && cells.str("net") == "internet") return false
         val players = cells.num("players")
         val humans = players - cells.num("bots")
@@ -180,6 +200,8 @@ internal class ServerListState(
     fun choose(column: String, descending: Boolean) {
         sort = column
         desc = descending
+        if (!hold) sortWindow(0, slots.size)
+        rebuildShown()
     }
 
     /**
@@ -202,7 +224,16 @@ internal class ServerListState(
      * ends. Two notices in a row (the engine sends one per change) change
      * nothing that is drawn.
      */
-    fun begin(total: Int) {
+    fun begin(total: Int, rev: Long = 0L) {
+        if (rev > 0) {
+            if (rev < sourceRev) return // an older notice cannot undo a newer one
+            sourceRev = rev
+        }
+        sourceTotal = total
+        // A previous search window legitimately had zero matches. A new source
+        // revision can match the same search, so ask for its window again instead
+        // of keeping that zero forever (the spinner ran with no request in flight).
+        if (search.isNotEmpty() && total > 0 && searchTotal == 0) searchTotal = null
         received = true
         query++
         running = true
@@ -210,7 +241,7 @@ internal class ServerListState(
         to = -1
         whole = false
         for (item in items.values) item.answered = false
-        want = total
+        want = if (search.isNotEmpty()) searchTotal ?: total else total
         resize(total)
         rebuildShown()
     }
@@ -219,11 +250,20 @@ internal class ServerListState(
      * A window of rows from the bridge: merged by address into the positions it
      * covers. Rows already on screen are never dropped here, whatever the total.
      */
-    fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
+    fun accept(offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long = 0L) {
+        val firstListing = items.isEmpty()
+        if (rev > 0) {
+            // The engine may answer a request made before a source notice: its rows
+            // (often an empty filtered page) must not replace the new revision.
+            if (rev < sourceRev) return
+            sourceRev = rev
+        }
         received = true
-        if (!running) begin(total)
+        if (!running) begin(total, rev)
         resize(maxOf(total, offset + rows.size))
+        if (search.isEmpty()) sourceTotal = maxOf(sourceTotal, total)
         want = maxOf(total, offset + rows.size)
+        if (search.isNotEmpty()) searchTotal = want
         for ((i, row) in rows.withIndex()) {
             val key = keyOf(row)
             if (key.isEmpty()) continue
@@ -233,7 +273,7 @@ internal class ServerListState(
                 put(offset + i, key) // a new row takes its window position when that is free
             } else {
                 if (item.row != row) item.row = row // same address, new ping/players: rebound in place
-                if (slots.indexOf(key) < 0) put(offset + i, key) // known but never drawn: put it in
+                if (key !in at) put(offset + i, key) // known but never drawn: put it in
             }
             items.getValue(key).also { it.answered = true; it.lost = false; it.missed = 0; it.lostAt = 0L }
         }
@@ -244,7 +284,7 @@ internal class ServerListState(
             from = minOf(from, offset)
             to = maxOf(to, offset + rows.size - 1)
         }
-        if (!hold) sortWindow(offset, rows.size)
+        if (firstListing && !hold) sortWindow(offset, rows.size)
         rebuildShown()
     }
 
@@ -299,6 +339,8 @@ internal class ServerListState(
         if (!gone) return
         // close the gaps the removed rows left: the rest keep their order
         slots.removeAll { it == null || !items.containsKey(it) }
+        at.clear()
+        for ((i, key) in slots.withIndex()) if (key != null) at[key] = i
         rebuildShown()
     }
 
@@ -360,21 +402,22 @@ internal class ServerListState(
      * else the first free position, else the end.
      */
     private fun put(position: Int, key: String) {
-        if (key.isEmpty() || slots.indexOf(key) >= 0) return
+        if (key.isEmpty() || key in at) return
         val free = if (position >= 0 && position < slots.size && slots[position] == null) position else slots.indexOfFirst { it == null }
-        if (free >= 0) slots[free] = key else slots.add(key)
+        if (free >= 0) { slots[free] = key; at[key] = free } else { at[key] = slots.size; slots.add(key) }
     }
 
     /** Orders one window by the chosen column; ties by address, so it repeats exactly. */
     private fun sortWindow(offset: Int, count: Int) {
         if (sort.isEmpty() || count < 2) return
-        val keys = (offset until minOf(offset + count, slots.size)).mapNotNull { slots[it] }
+        val positions = (offset until minOf(offset + count, slots.size)).filter { slots[it] != null }
+        val keys = positions.mapNotNull { slots[it] }
         if (keys.size < 2) return
         val rows = keys.mapNotNull { items[it]?.row }
         if (rows.size != keys.size) return
         val ordered = rows.sortedWith { a, b -> compare(a, b) }.map { keyOf(it) }
         if (ordered == keys) return
-        for ((i, key) in ordered.withIndex()) slots[offset + i] = key
+        for ((i, key) in ordered.withIndex()) { slots[positions[i]] = key; at[key] = positions[i] }
     }
 
     private fun compare(a: Map<String, Any?>, b: Map<String, Any?>): Int {
@@ -407,7 +450,7 @@ internal class ServerListState(
          * saying so covered a list that was about to fill.
          */
         fun showEmpty(state: String, total: Int, drawn: Int = 0) =
-            state == "error" || (state == "ready" && total == 0 && drawn == 0)
+            drawn == 0 && (state == "error" || (state == "ready" && total == 0))
 
         /**
          * The screen's "N servers · M players" with what this list actually

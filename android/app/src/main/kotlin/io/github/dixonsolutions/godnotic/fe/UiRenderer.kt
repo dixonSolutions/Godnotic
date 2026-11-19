@@ -25,8 +25,17 @@ interface UiRenderer {
     /** Show a created root as a modal dialog or sheet; null closes the open one. */
     fun dialog(id: String?)
     fun toast(text: String, kind: String)
-    /** Rows [offset, offset + rows.size) of data source [source] of [total] rows. */
-    fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>)
+    /**
+     * Rows [offset, offset + rows.size) of data source [source] of [total] rows.
+     * [rev] is the source revision the window was read at (0 when the producer has none).
+     */
+    fun listRows(source: String, offset: Int, total: Int, rows: List<Map<String, Any?>>, rev: Long = 0L)
+    /**
+     * A data source changed: [total] rows at revision [rev], no window yet. This is
+     * not a zero-row reply: an empty window is the answer to a filter and must not
+     * trigger a new request, while a notice must.
+     */
+    fun sourceChanged(source: String, total: Int, rev: Long) {}
     /** A picture asked for with [UiEvents.image] is on disk at [path] ("" if there is none). */
     fun imageReady(ref: String, path: String)
 }

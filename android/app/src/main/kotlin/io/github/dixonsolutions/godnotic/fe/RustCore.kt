@@ -53,7 +53,8 @@ class RustCore private constructor(private val renderer: UiRenderer, private val
                 "navigate" -> renderer.navigate(op.str("screen"), op.str("transition", "replace"))
                 "dialog" -> renderer.dialog(op["id"] as? String)
                 "toast" -> renderer.toast(op.str("text"), op.str("kind", "info"))
-                "rows" -> renderer.listRows(op.str("source"), op.int("offset"), op.int("total"), op["rows"].list().map { it.obj() })
+                "rows" -> renderer.listRows(op.str("source"), op.int("offset"), op.int("total"), op["rows"].list().map { it.obj() }, op.num("rev").toLong())
+                "source" -> renderer.sourceChanged(op.str("source"), op.int("total"), op.num("rev").toLong())
                 "image" -> renderer.imageReady(op.str("ref"), op.str("path"))
             }
         }

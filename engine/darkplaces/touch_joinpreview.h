@@ -38,6 +38,27 @@ qbool TouchJoinPreview_Camera(void);
 // True once after a preview frame was drawn; read by the load trace
 // (touch_loadtime.c) after the video swap.
 qbool TouchJoinPreview_Drew(void);
+// True while a join names a map but its world is not drawable yet: the map's
+// levelshot is what to show (cl_screen.c) instead of the loading picture.
+qbool TouchJoinPreview_Waiting(void);
+// Draws that levelshot full screen, scaled to fit; false when there is none
+// (no map name yet, a missing levelshot, or the world is drawable already).
+qbool TouchJoinPreview_DrawLevelshot(void);
+
+// R_Modules_NewMap begins (true) or ends (false): no preview frame in between,
+// the renderer is half reset (r_modules.c, touch_joinpreview_logic.h).
+void TouchJoinPreview_NewMap(qbool begin);
+
+// The map a local game is starting, named by SV_SpawnServer before any client
+// exists; the levelshot shows from then until the loading plaque ends.
+void TouchJoinPreview_SetMap(const char *map);
+qbool TouchJoinPreview_LocalLoading(void);
+// The picture behind the join: TJP_PIC_* (touch_joinpreview_logic.h), its file in name
+// ("maps/foo.jpg", "" for none): the map's own, else what the server list's map name
+// finds, else a dim generic map picture. Asked again while the map's own is missing.
+int TouchJoinPreview_Picture(char *name, int size);
+// The map of the join or local start in progress, "foo" ("" and false when unknown).
+qbool TouchJoinPreview_MapName(char *buf, int size);
 
 void TouchJoinPreview_Init(void);
 

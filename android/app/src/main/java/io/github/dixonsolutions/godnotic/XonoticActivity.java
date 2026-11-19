@@ -126,10 +126,8 @@ public final class XonoticActivity extends SDLActivity {
         modImport.start();
         watchNetState();
         DataService.start(this); // Touch: the rest of the split data set, behind the game (docs/DATA_FETCH.md)
-        // A crash report the player has not seen yet: one line over the main menu, which is what
-        // the game shows first. Reading the system's exit reasons happens on its own thread at
-        // start (CrashStore.start); this only shows what it found.
-        CrashBanner.showIfNeeded(this);
+        // A crash report the player has not seen yet is shown once from pollUpdates, when the
+        // engine says it is in the menu (never in a match), and leaves again by itself.
     }
 
     /**
@@ -490,44 +488,68 @@ public final class XonoticActivity extends SDLActivity {
                     // too; this is the path that does not wait for the screen to finish.
                     return;
                 }
-                if (tick++ % 30 == 0) {
-                    bridge.refresh();
-                }
+                final boolean refresh = tick++ % 30 == 0;
+                // An uncaught exception on this thread reaches Android's default handler, which
+                // kills the whole process: one bad status or one broken resource would be the
+                // "app has a bug" crash during an update. The loop carries on instead.
+                PollLoop.once(() -> pollUpdates(bridge, updater, crashRequest, refresh),
+                        error -> Log.w("Godnotic", "Update poll failed; the loop continues", error));
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                String request = bridge.takeRequest();
-                if (request != null) {
-                    serveUpdateRequest(bridge, updater, request);
-                }
-                AndySUBridge payloadBridge = andysuBridge;
-                if (payloadBridge != null) {
-                    String payloadRequest = payloadBridge.takeRequest();
-                    if (payloadRequest != null) payloadBridge.serve(payloadRequest);
-                    payloadBridge.publish();
-                    payloadBridge.autoApply(updateGameBusy(), inFront);
-                }
-                final String crash = CrashStore.takeRequest(crashRequest);
-                if (crash != null) {
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
-                        }
-                        if ("share".equals(crash)) {
-                            CrashStore.shareNewest(this);
-                        } else {
-                            CrashStore.showList(this);
-                        }
-                    });
-                }
             }
         }, "xonotic-update-service");
         updateService.setDaemon(true);
         updateService.start();
         autoDownloadIfDue();
+    }
+
+    private boolean bannerTried;
+
+    /** One poll of the menu's requests, the payload bridge and the crash-report request. */
+    private void pollUpdates(UpdateBridge bridge, AppUpdater updater, File crashRequest, boolean refresh) {
+        if (refresh) {
+            bridge.refresh();
+        }
+        String request = bridge.takeRequest();
+        if (request != null) {
+            serveUpdateRequest(bridge, updater, request);
+        }
+        AndySUBridge payloadBridge = andysuBridge;
+        if (payloadBridge != null) {
+            String payloadRequest = payloadBridge.takeRequest();
+            if (payloadRequest != null) payloadBridge.serve(payloadRequest);
+            payloadBridge.publish();
+            payloadBridge.autoApply(updateGameBusy(), inFront);
+        }
+        final boolean inMenu = !updateGameBusy();
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            if (!inMenu) {
+                CrashBanner.hide();
+            } else if (!bannerTried) {
+                bannerTried = true; // once per start: the next one is the next start's
+                CrashBanner.showIfNeeded(this);
+            }
+        });
+        final String crash = CrashStore.takeRequest(crashRequest);
+        if (crash != null) {
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                if ("share".equals(crash)) {
+                    CrashStore.shareNewest(this);
+                } else {
+                    CrashStore.showList(this);
+                }
+            });
+        }
     }
 
     /** Missing or partially written engine state is unsafe until the engine publishes it. */
@@ -922,6 +944,7 @@ public final class XonoticActivity extends SDLActivity {
                 // connected, joining or downloading while away: keep the radio out of power save
                 LanLocks.connected(this, !idle && !front);
                 KeepAliveService.engineBusy = !idle;
+                if (andysuBridge != null) andysuBridge.onEngineBusy(!idle);
                 // A map change, a reconnect or a finished download can read idle
                 // for a poll; the service could not be started again from the
                 // background (Android 12+), so it stays 60 s after the last busy

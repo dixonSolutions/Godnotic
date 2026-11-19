@@ -11,10 +11,10 @@ Android/iOS, where touch is present; Linux tablets need a real scan.
 
 | User-facing | Cvar | Meaning |
 |-------------|------|---------|
-| Dynamic / Touch / Keyboard & mouse | `vid_touchscreen_mode` (1 / 2 / 0) | Whether the on-screen controls are drawn. Dynamic (default) follows what the system lists; Touch always, Keyboard & mouse never. Touch and mouse input work in all three. Archived. |
+| Dynamic / Touch / Keyboard & mouse | `vid_touchscreen_mode` (1 / 2 / 0) | Whether the on-screen controls are drawn. Dynamic (default) follows the hardware in use; Touch always, Keyboard & mouse never. Touch and mouse input work in all three. Archived. |
 | Switch mid-game | `vid_touchscreen_live` | Dynamic only. On (default): follow a keyboard being plugged in or out. Off: decide once at launch, keep it until the game restarts. Archived. |
 | Announce switches | `vid_touchscreen_notify` | On (default): a toast when the controls switch by themselves. Off: switch silently. Archived. |
-| Touch-only devices | `vid_touchscreen_touchonly` | Dynamic: on (default), hide the controls while a physical keyboard is attached; off, show them on any touchscreen |
+| Touch-only devices | `vid_touchscreen_touchonly` | Dynamic: on (default), hide the controls while a physical keyboard is attached and the listed mouse has been used; off, show them on any touchscreen. A keyboard alone, or a listed pad nobody has moved, keeps them |
 
 Settings → Mobile → Controls → Input mode. **Rescan hardware** runs `vid_touchscreen_rescan`
 (with Switch mid-game off, it also takes the launch decision again).
@@ -232,9 +232,11 @@ base usually drives its pad from a second controller. Disabled devices
 (`isEnabled()`, Android 8.1+) count for nothing. No permission is involved.
 
 The Android build no longer forces Always. It starts with the controls on,
-and Auto keeps them on unless a real keyboard is attached or one is
-actually played on with a mouse to aim; a touch brings them straight back. Old builds
-archived `vid_touchscreen_mode 2`. `vid_touchscreen_mode_rev` moves that
+and Auto keeps them on unless a real keyboard is attached and a mouse has
+actually been used; a listed pad the player never moved (a Galaxy Tab's
+sec_touchpad) does not count, so a keyboard alone keeps the controls and
+a touch brings them straight back. Old builds archived
+`vid_touchscreen_mode 2`. `vid_touchscreen_mode_rev` moves that
 to Auto once, and an Always the player picks later sticks. Relative mouse
 mode (pointer capture, Android 8+) is enabled so keyboard-and-mouse play
 has mouselook. iOS still forces Always.

@@ -220,13 +220,14 @@ impl Driver {
             "rows" => {
                 if !self.ignore_rows {
                     b.ops.push(json!({"op": "rows", "source": str_of(&m, "source"), "offset": int_of(&m, "offset"),
-                        "total": int_of(&m, "total"), "rows": m.get("rows").cloned().unwrap_or(json!([]))}));
+                        "total": int_of(&m, "total"), "rev": int_of(&m, "rev"), "re": int_of(&m, "re"),
+                        "rows": m.get("rows").cloned().unwrap_or(json!([]))}));
                 }
                 return b;
             }
             "source" => {
                 if !self.ignore_rows {
-                    b.ops.push(json!({"op": "rows", "source": str_of(&m, "source"), "offset": 0, "total": int_of(&m, "total"), "rows": []}));
+                    b.ops.push(json!({"op": "source", "source": str_of(&m, "source"), "total": int_of(&m, "total"), "rev": int_of(&m, "rev")}));
                 }
                 return b;
             }
@@ -595,6 +596,18 @@ mod tests {
             {"id":"uid2name/no","type":"button","props":{"label":"No","action":{"id":"uid2name.no"}},"children":[]}]}"#);
         assert!(ops(&b).contains(&"dialog uid2name".to_string()));
         assert_eq!(d.state()["overGame"], true);
+    }
+
+    #[test]
+    fn empty_window_and_source_notice_preserve_identity_and_revision() {
+        let mut d = Driver::new();
+        let notice = d.feed(r#"{"uib":1,"t":"source","source":"servers","rev":12,"total":3}"#);
+        let reply = d.feed(r#"{"uib":1,"t":"rows","source":"servers","rev":11,"re":7,"offset":0,"total":0,"rows":[]}"#);
+        assert_eq!(notice.ops[0]["op"], "source");
+        assert_eq!(notice.ops[0]["rev"], 12);
+        assert_eq!(reply.ops[0]["op"], "rows");
+        assert_eq!(reply.ops[0]["rev"], 11);
+        assert_eq!(reply.ops[0]["re"], 7);
     }
 
     #[test]

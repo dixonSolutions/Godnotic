@@ -31,6 +31,16 @@ static int failures;
 
 int main(void)
 {
+	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFromCsqc(-1, TOUCHSPEC_NONE), "dead to observer with stale scoreboard");
+	CHECK_INT(TOUCHSPEC_FOLLOWING, TouchSpec_StateFromCsqc(4, TOUCHSPEC_OBSERVING), "observer to following");
+	CHECK_INT(TOUCHSPEC_NONE, TouchSpec_StateFromCsqc(0, TOUCHSPEC_OBSERVING), "spectator joins with stale scoreboard");
+	CHECK_INT(TOUCHSPEC_OUT_FREE, TouchSpec_StateFromCsqc(-1, TOUCHSPEC_OUT), "out-of-round observer");
+	CHECK_INT(1, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 0, 1), "foreign touch spectator hints hidden");
+	CHECK_INT(1, TouchSpec_HideStockPanel("HUD_PressedKeys", 1, 1, 0, 1), "foreign touch spectator keys hidden");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 1, 1), "keyboard retains foreign prompts");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 1, 1, 0, 0), "playing retains foreign messages");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_InfoMessages", 0, 1, 0, 1), "bundled prompts use touch labels");
+	CHECK_INT(0, TouchSpec_HideStockPanel("HUD_Chat", 1, 1, 0, 1), "chat is unaffected");
 	// The state from the scoreboard marker, the view and the health stat
 	// (values as seen on 0.8.2, 0.8.5, 0.8.6 and git servers).
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 3, 16, -666), "spectator marker, own view, observer health: free-fly");
@@ -49,6 +59,12 @@ int main(void)
 	CHECK_INT(TOUCHSPEC_NONE, TouchSpec_StateFrom(-616, 3, 3, 16, 100), "the same for the out-of-round marker");
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 0, 16, -666), "a view entity that is no player counts as our own");
 	CHECK_INT(TOUCHSPEC_OBSERVING, TouchSpec_StateFrom(-666, 3, 40, 16, -666), "nor one beyond the player slots");
+	// The scoreboard is freed with the level; a round end or map change leaves
+	// realplayerentity set for a moment. No reader may index it then.
+	CHECK_INT(-1, TouchSpec_ScoreIndex(0, 16, 1), "no local player: no scoreboard slot");
+	CHECK_INT(-1, TouchSpec_ScoreIndex(3, 16, 0), "no scores array: no scoreboard slot");
+	CHECK_INT(-1, TouchSpec_ScoreIndex(3, 0, 1), "no client slots: no scoreboard slot");
+	CHECK_INT(2, TouchSpec_ScoreIndex(3, 16, 1), "a valid local player: its slot");
 
 	touchspec_join_t j;
 	int state, part, jumped;
@@ -139,6 +155,30 @@ int main(void)
 	CHECK_INT(0, TouchSpec_JoinShown(TOUCHSPEC_OUT), "join out of the round");
 	CHECK_INT(0, TouchSpec_JoinShown(TOUCHSPEC_OUT_FREE), "join out free");
 	CHECK_INT(0, TouchSpec_JoinShown(TOUCHSPEC_NONE), "join playing");
+
+	// The bar's hit test: the desk strip and the HUD both use it, so a finger
+	// on < / > / FREE runs the same action the bar shows.
+	{
+		touchspec_bar_rect_t r[TOUCHSPEC_BAR_PARTS];
+		TouchSpec_BarLayout(1920, 1080, 1650, 950, 30, 2.0f, 1, r);
+		int prev = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_PREV].cx, r[TOUCHSPEC_BAR_PREV].cy);
+		int main_part = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_MAIN].cx, r[TOUCHSPEC_BAR_MAIN].cy);
+		int next = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_NEXT].cx, r[TOUCHSPEC_BAR_NEXT].cy);
+		int join = TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_JOIN].cx, r[TOUCHSPEC_BAR_JOIN].cy);
+		CHECK_INT(TOUCHSPEC_BAR_PREV, prev, "bar hit: previous");
+		CHECK_INT(TOUCHSPEC_BAR_MAIN, main_part, "bar hit: main");
+		CHECK_INT(TOUCHSPEC_BAR_NEXT, next, "bar hit: next");
+		CHECK_INT(TOUCHSPEC_BAR_JOIN, join, "bar hit: join");
+		CHECK_INT(TOUCHSPEC_ACT_PREV, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, prev), "hit previous runs previous player");
+		CHECK_INT(TOUCHSPEC_ACT_FREE, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, main_part), "hit main runs free-fly");
+		CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, next), "hit next runs next player");
+		CHECK_INT(TOUCHSPEC_ACT_JOIN, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, join), "hit join runs the join");
+		// An edge of the bar is still on it (fat fingers), the screen corner is not.
+		CHECK_INT(TOUCHSPEC_BAR_NEXT, TouchSpec_BarPartAt(r, 1, r[TOUCHSPEC_BAR_NEXT].cx + r[TOUCHSPEC_BAR_NEXT].hx, r[TOUCHSPEC_BAR_NEXT].cy + r[TOUCHSPEC_BAR_NEXT].hy), "bar hit: its own edge");
+		CHECK_INT(-1, TouchSpec_BarPartAt(r, 1, 5, 5), "bar hit: far away");
+		// JOIN is only part of the row when it is offered.
+		CHECK_INT(-1, TouchSpec_BarPartAt(r, 0, r[TOUCHSPEC_BAR_JOIN].cx, r[TOUCHSPEC_BAR_JOIN].cy), "no join part: no hit");
+	}
 
 	// nothing sent, nothing held
 	memset(&j, 0, sizeof(j));

@@ -28,12 +28,22 @@ nade or turn.
 #ifndef TOUCH_SPECTATE_H
 #define TOUCH_SPECTATE_H
 
+#include <string.h>
+
 // Spectator states (TouchUI_SpectatorState).
 #define TOUCHSPEC_NONE      0
 #define TOUCHSPEC_OBSERVING 1
 #define TOUCHSPEC_FOLLOWING 2
 #define TOUCHSPEC_OUT       3   // out of the round, following a player
 #define TOUCHSPEC_OUT_FREE  4   // out of the round, free-flying
+
+// The scoreboard slot for the local player, or -1. The scores array is freed
+// with the level and cl.realplayerentity can still point at the old one while a
+// map changes or a round ends; every Touch reader goes through this first.
+static inline int TouchSpec_ScoreIndex(int me, int maxclients, int have_scores)
+{
+	return have_scores && me >= 1 && me <= maxclients ? me - 1 : -1;
+}
 
 // The state from what the client knows of itself: its scoreboard frags (the
 // server marks a spectator -666 and a player out of the round -616, -669
@@ -58,6 +68,24 @@ static inline int TouchSpec_StateFrom(int frags, int me, int viewentity, int max
 	if (health > 0)
 		return TOUCHSPEC_NONE;
 	return out ? TOUCHSPEC_OUT_FREE : TOUCHSPEC_OBSERVING;
+}
+
+// CSQC receives the server's spectator status directly. The scoreboard can
+// lag a death-to-spectator transition and retain the dead player's frags.
+static inline int TouchSpec_StateFromCsqc(int status, int fallback)
+{
+	int out = fallback == TOUCHSPEC_OUT || fallback == TOUCHSPEC_OUT_FREE;
+	if (!status)
+		return TOUCHSPEC_NONE;
+	if (status < 0)
+		return out ? TOUCHSPEC_OUT_FREE : TOUCHSPEC_OBSERVING;
+	return out ? TOUCHSPEC_OUT : TOUCHSPEC_FOLLOWING;
+}
+
+static inline int TouchSpec_HideStockPanel(const char *name, int foreign, int touch, int keyboard, int spectating)
+{
+	return foreign && touch && !keyboard && spectating &&
+		(!strcmp(name, "HUD_InfoMessages") || !strcmp(name, "HUD_PressedKeys"));
 }
 
 // The spectator bar's parts, left to right.
@@ -310,6 +338,31 @@ static inline void TouchSpec_BarLayout(float w, float h, float want_x, float wan
 		out[part].cy = cy;
 		out[part].hy = hy;
 	}
+}
+
+static inline float TouchSpec_Abs(float v)
+{
+	return v < 0 ? -v : v;
+}
+
+// Which part of a laid-out bar is under a point, or -1. The HUD draws and
+// hit-tests with the same rectangles and the same forgiveness (12% of the
+// half-height sideways, 15% up and down), including the desk strip whose
+// parts take a finger when the touch controls are off.
+static inline int TouchSpec_BarPartAt(const touchspec_bar_rect_t *r, int join, float px, float py)
+{
+	int part;
+	for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
+	{
+		if (part == TOUCHSPEC_BAR_JOIN && !join)
+			continue;
+		if (r[part].hy <= 0)
+			continue;
+		if (TouchSpec_Abs(px - r[part].cx) <= r[part].hx + r[part].hy * 0.12f
+			&& TouchSpec_Abs(py - r[part].cy) <= r[part].hy * 1.15f)
+			return part;
+	}
+	return -1;
 }
 
 #endif

@@ -227,7 +227,7 @@ void Touch_DrawRespawn(float alpha)
 {
 	vector c = Touch_WidgetCenter(autocvar_touch_jump_x, autocvar_touch_jump_y, autocvar_touch_jump_size);
 	vector half = Touch_WidgetHalfExtents(autocvar_touch_jump_size, autocvar_touch_jump_aspect * 1.25);
-	Touch_Widget_Capsule(c, half, "RESPAWN", Touch_RoleOwned(TOUCH_ROLE_RESPAWN), false, alpha, TOUCH_C_SUCCESS);
+	Touch_Widget_Capsule(c, half, TOUCH_LABEL_RESPAWN, Touch_RoleOwned(TOUCH_ROLE_RESPAWN), false, alpha, TOUCH_C_SUCCESS);
 }
 
 float Touch_ChromeAlpha(float alpha)
@@ -283,5 +283,45 @@ bool Touch_MatchEndChatKey(int type, float key)
 	for (int i = 0; i < count; ++i)
 		if (key == stof(argv(i)))
 			return true;
+	return false;
+}
+
+bool Touch_MapVote_DrawMissingPicture(string pic, vector pos, vector img_size, float alpha)
+{
+	if (pic != "" && drawgetimagesize(pic) != '0 0 0')
+		return false;
+	drawfill(pos, img_size, '0.5 0.5 0.5', 0.25 * alpha, DRAWFLAG_NORMAL);
+	float side = min(img_size.x, img_size.y) * 0.4;
+	vector isize = vec2(side, side);
+	drawpic(pos + (img_size - isize) * 0.5, draw_UseSkinFor("nopreview_map"), isize, '1 1 1', 0.35 * alpha, DRAWFLAG_NORMAL);
+	return true;
+}
+
+bool Touch_MapVote_HasPicture(string pic)
+{
+	return pic != "" && drawgetimagesize(pic) != '0 0 0';
+}
+
+bool Touch_MapVote_CheckFallback(string pic, int id)
+{
+	string map_pic = strcat("maps/", mv_entries[id]);
+	if (map_pic != pic && PreviewExists(map_pic))
+	{
+		strfree(mv_pics[id]);
+		mv_pics[id] = strzone(map_pic);
+		mv_preview[id] = true;
+		return true;
+	}
+	for (int d = 0; d < mv_ssdirs_count; ++d)
+	{
+		string alt = strcat(mv_ssdirs[d], "/", mv_entries[id]);
+		if (mv_ssdirs[d] != "" && alt != pic && PreviewExists(alt))
+		{
+			strfree(mv_pics[id]);
+			mv_pics[id] = strzone(alt);
+			mv_preview[id] = true;
+			return true;
+		}
+	}
 	return false;
 }

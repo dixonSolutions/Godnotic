@@ -25,6 +25,26 @@ class ServerListStateTest {
     private fun keys(s: ServerListState = state): List<String?> = (0 until s.size).map { s.keyAt(it) }
 
     @Test
+    fun selectionDoesNotRestoreRowsExcludedBySearch() {
+        val window = ListWindow("mp/servers")
+        state.accept(0, 2, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta")))
+        screen(state, window)
+        state.setSearch("ALP")
+        // A filtered bridge window follows a previously unfiltered listing.
+        state.begin(1)
+        state.accept(0, 1, listOf(row("a:1", name = "Alpha")))
+        state.select("a:1")
+        assertEquals(listOf("a:1"), keys())
+        // A later source notice has the unfiltered source count.
+        state.begin(2)
+        screen(state, window)
+        assertEquals("the nonmatching cached row is not drawn", 1, window.total)
+        state.setSearch("")
+        assertEquals(listOf("a:1", "b:2"), keys())
+    }
+
+
+    @Test
     fun cachedRowsArePublishedWhenTheScreenOpens() {
         state.accept(0, 3, listOf(row("a"), row("b"), row("c")))
         val window = ListWindow("mp/servers")
@@ -50,6 +70,7 @@ class ServerListStateTest {
         assertFalse(ServerListState.showEmpty("loading", 0))
         assertFalse(ServerListState.showEmpty("ready", 2))
         assertTrue(ServerListState.showEmpty("ready", 0))
+        assertFalse("network errors must not cover saved rows", ServerListState.showEmpty("error", 0, 3))
     }
 
     @Test
@@ -150,7 +171,24 @@ class ServerListStateTest {
         state.hold = false
         state.begin(3)
         state.accept(0, 3, listOf(row("c:3", 50), row("a:1", 50), row("b:2", 50)))
+        assertEquals(listOf("c:3", "a:1", "b:2"), keys())
+        state.choose("ping", false)
         assertEquals(listOf("a:1", "b:2", "c:3"), keys())
+    }
+
+    @Test
+    fun changingPingsDoNotMoveRowsOrSelectionDuringRefresh() {
+        state.choose("ping", false)
+        state.accept(0, 2, listOf(row("a", 10), row("b", 20)))
+        state.select("a")
+        state.begin(2)
+        state.accept(0, 2, listOf(row("b", 5), row("a", 90)))
+        assertEquals(listOf("a", "b"), keys())
+        assertEquals("a", state.selected)
+        assertEquals(90, state.row(0)!!["cells"].obj().int("ping"))
+        state.choose("ping", false)
+        assertEquals(listOf("b", "a"), keys())
+        assertEquals("a", state.selected)
     }
 
     @Test
@@ -440,6 +478,58 @@ class ServerListStateTest {
         assertEquals("b is gone: no row to join", "", state.selected)
         val engine = mapOf("selection" to "single", "selected" to emptyList<Any?>())
         assertEquals(emptyList<Any?>(), state.merge(engine)["selected"])
+    }
+
+    /**
+     * A window requested before a source notice can arrive after it. An empty filtered
+     * reply from the old revision must not erase the rows the new revision has.
+     */
+    @Test
+    fun anOldEmptyWindowCannotEraseANewerSource() {
+        state.accept(0, 2, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta")), rev = 1)
+        state.begin(4, rev = 2)
+        state.accept(0, 0, emptyList(), rev = 1) // the in-flight reply of revision 1
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+        assertEquals("the newer notice keeps the source count", 4, window.total)
+        assertFalse(ServerListState.showEmpty("ready", window.total, state.size))
+    }
+
+    /**
+     * A search with no matches is a real zero-row window, not an empty source. When
+     * the source then changes, its count must win again: otherwise the list stays at
+     * zero, asks for nothing and the spinner runs forever.
+     */
+    @Test
+    fun aZeroSearchResultRecoversWhenTheSourceRefills() {
+        val window = ListWindow("mp/servers", 50)
+        state.begin(100)
+        state.setSearch("beta")
+        state.accept(0, 0, emptyList())
+        screen(state, window)
+        assertEquals("the filtered window is empty", 0, window.total)
+
+        state.begin(101) // a new server can match the unchanged search
+        screen(state, window)
+        assertFalse("the source has rows", ServerListState.showEmpty("ready", window.total, state.size))
+        assertEquals("the list asks for the new window", 0..49, window.missing(0, 20))
+    }
+
+    /**
+     * While a filtered window is in flight the list keeps the source's count, so the
+     * empty message cannot flash and the list does not reset to a zero-height page.
+     */
+    @Test
+    fun aSearchKeepsTheSourceCountUntilItsWindowAnswers() {
+        state.accept(0, 3, listOf(row("a:1", name = "Alpha"), row("b:2", name = "Beta"), row("c:3", name = "Alphabet")))
+        state.setSearch("Beta")
+        assertEquals("only the matching cached row is drawn", listOf<String?>("b:2"), keys())
+
+        val window = ListWindow("mp/servers", 50)
+        screen(state, window)
+        assertEquals("the source still holds three rows", 3, window.total)
+        assertFalse("a pending search is not an empty source", ServerListState.showEmpty("ready", window.total, state.size))
+        assertEquals("the filtered page can be requested", 0..2, window.missing(0, 20))
     }
 
     /**

@@ -151,11 +151,36 @@ class VirtualList(
      */
     fun rows(offset: Int, total: Int, rows: List<Map<String, Any?>>) {
         val before = window.total
+        val old = if (before >= 0) rows.indices.map { window.row(offset + it) } else emptyList()
         window.accept(mapOf("offset" to offset.toDouble(), "total" to total.toDouble(), "rows" to rows))
         if (before < 0) { adapter.notifyDataSetChanged(); return } // the first listing
         if (total > before) adapter.notifyItemRangeInserted(before, total - before)
         else if (total < before) adapter.notifyItemRangeRemoved(maxOf(0, total), before - total)
-        if (rows.isNotEmpty()) adapter.notifyItemRangeChanged(offset, rows.size, PAYLOAD_ROW)
+        // A source notice republishes every cached row four times a second. Rebinding
+        // only the rows whose cells actually changed keeps that off the UI thread's
+        // layout path (600 rows became 600 rebinds per notice).
+        var start = -1
+        for (i in rows.indices) {
+            val changed = old.getOrNull(i) != rows[i]
+            if (changed && start < 0) start = i
+            if (!changed && start >= 0) { adapter.notifyItemRangeChanged(offset + start, i - start, PAYLOAD_ROW); start = -1 }
+        }
+        if (start >= 0) adapter.notifyItemRangeChanged(offset + start, rows.size - start, PAYLOAD_ROW)
+    }
+
+    /**
+     * A new query (search, chips, sort) over the same list: drop cached rows of the
+     * old query at once, so a non-matching row is never drawn, but keep the list's
+     * height and scroll anchor. The matching cached rows are published immediately
+     * after this by ServerListState.
+     */
+    fun requery(total: Int) {
+        val before = window.total
+        window.invalidate()
+        window.accept(mapOf("offset" to 0.0, "total" to total.toDouble(), "rows" to emptyList<Any>()))
+        if (before != total) adapter.notifyDataSetChanged()
+        else if (total > 0) adapter.notifyItemRangeChanged(0, total, PAYLOAD_ROW)
+        window.missing(0, window.pageSize)?.let { request(it) }
     }
 
     /** All rows at once (a small inline list), diffed against what is shown by key. */

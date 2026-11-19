@@ -29,5 +29,12 @@ if [ ! -x "$ENGINE" ] || [ ! -d "${BASEDIR:-/nonexistent}/data" ]; then
 	exit 0
 fi
 command -v python3 > /dev/null || { echo "SKIP: end to end (no python3)"; exit 0; }
+if [ "$(uname -s)" = Linux ]; then
+	"${CC:-cc}" -shared -fPIC -Wall -Wextra -Werror "$ROOT/tests/srvlist/loopback_only.c" -o "$WORK/loopback_only.so" -ldl || exit 1
+	export SRVLIST_TEST_PRELOAD="$WORK/loopback_only.so"
+else
+	echo "SKIP: end to end needs Linux loopback isolation"
+	exit 0
+fi
 python3 "$ROOT/tests/srvlist/test_srvlist.py" --engine "$ENGINE" --basedir "$BASEDIR" --work "$WORK/e2e" --libs "${LIBS:-}" --port $((27960 + RANDOM % 500))
 exit $?

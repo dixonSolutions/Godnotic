@@ -12,6 +12,24 @@ import java.util.List;
 
 /** CrashReport: which deaths count, how many are kept, what a report says. Plain JVM. */
 public class CrashReportTest {
+    /**
+     * The owner's tablet after 1.2.267 -> 1.2.270 applied: the old process leaving for the
+     * handover, reported as a crash. Kept verbatim so the test proves this exact report is not one.
+     */
+    private static final String UPDATE_HANDOVER_REPORT =
+            "Godnotic crash report\n"
+            + "when: 2026-11-18 07:42:50 (1794948170117)\n"
+            + "reason: exit-self (1)\n"
+            + "app: 1.2.270\n"
+            + "payload: 1.2.270\n"
+            + "previous version: 1.2.267\n"
+            + "host: api=3 mode=download_only status={\"trigger\":\"open\",\"state\":\"checking\"}\n"
+            + "process: io.github.dixonsolutions.godnotic (pid 8281)\n"
+            + "state: app=1.2.267 payload=1.2.267 host=present:download_only stage=game engine=1 phase=quiet\n"
+            + "importance: 100\n"
+            + "pss: unknown\n"
+            + "--- trace ---\n"
+            + "(none)\n";
 
     @Test public void crashesAndAnrsAlwaysCount() {
         for (int reason : new int[] { CrashReport.REASON_CRASH, CrashReport.REASON_CRASH_NATIVE,
@@ -34,6 +52,51 @@ public class CrashReportTest {
                 CrashReport.REASON_PACKAGE_UPDATED }) {
             assertFalse(CrashReport.reasonName(reason), CrashReport.interesting(reason, true));
         }
+    }
+
+    @Test public void anUpdateHandoverIsNotReportedAsACrash() {
+        String report = UPDATE_HANDOVER_REPORT;
+        String state = header(report, "state:");
+        assertEquals("1.2.270", header(report, "app:"));
+        assertEquals("1.2.267", header(report, "previous version:"));
+        assertEquals("quiet", CrashReport.phase(state));
+        // The fixture is the old process leaving on purpose: exit-self, phase=quiet, and the
+        // version changed from the one it died in to the one reading the report.
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, true));
+        // The same exit outside an update is not interesting either.
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, false, state, false));
+        // A real crash in the same quiet phase is still reported: the filter is only for the
+        // process leaving for the handover.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true, state, true));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH_NATIVE, true, state, true));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_ANR, true, state, true));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true,
+                "app=1.2.270 stage=game engine=0 phase=replacing", true));
+        // A self-exit in another phase, with no version change, is still the signal it was.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true,
+                "app=1.2.270 stage=game engine=1 phase=checking", false));
+    }
+
+    @Test public void aSignaledReplaceIsNotReportedButARealSignalIs() {
+        // The owner's 1.2.290 -> 1.2.292 banner: signaled (2), phase=replacing, same app version.
+        String replacing = "app=1.2.289 payload=1.2.290 host=present:check_only stage=game engine=0 phase=replacing";
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, replacing, false));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true,
+                "app=1.2.289 stage=game phase=quiet", false));
+        // Killed in any other phase around an update is still a report.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true,
+                "app=1.2.289 stage=game engine=1 phase=checking", false));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, "", true));
+        // A crash while replacing is still a crash.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true, replacing, false));
+    }
+
+    @Test public void thePhaseComesOutOfTheStateLine() {
+        assertEquals("quiet", CrashReport.phase("app=1.2.267 host=present stage=game phase=quiet"));
+        assertEquals("replacing", CrashReport.phase(" phase=replacing "));
+        assertEquals("", CrashReport.phase("app=1.2.267 stage=game"));
+        assertEquals("", CrashReport.phase("(none)"));
+        assertEquals("", CrashReport.phase(null));
     }
 
     @Test public void reasonNamesAreStableForFileNames() {
@@ -151,9 +214,51 @@ public class CrashReportTest {
         assertFalse(key.equals(CrashReport.key(4243, 1723456789012L, CrashReport.REASON_CRASH, "crash")));
     }
 
+    /** One top-level line of a report, without the key. */
+    private static String header(String report, String key) {
+        for (String line : report.split("\n")) {
+            if (line.startsWith(key)) {
+                return line.substring(key.length()).trim();
+            }
+        }
+        throw new AssertionError("no " + key + " line in the report");
+    }
+
     @Test public void headerValuesStayOnOneLine() {
         assertEquals("a b c", CrashReport.oneLine(" a\nb\r c "));
         assertEquals("", CrashReport.oneLine(null));
         assertTrue(CrashReport.oneLine(new String(new char[500]).replace('\0', 'y')).endsWith("…"));
+    }
+
+    private static String report(String app, String payload, String diedApp) {
+        return "Godnotic crash report\nwhen: x (1)\nreason: crash (4)\napp: " + app + "\npayload: " + payload
+                + "\nstate: app=" + diedApp + " payload=" + diedApp + " phase=run\n--- trace ---\n(none)\n";
+    }
+
+    @Test public void bannerOnlyInTheMenuForANewCurrentVersionReport() {
+        String now = report("1.2.286", "1.2.286", "1.2.286");
+        assertTrue(CrashReport.shouldShowBanner(true, 500, 100, now, "1.2.286", "1.2.286"));
+        // in a match: never
+        assertFalse(CrashReport.shouldShowBanner(false, 500, 100, now, "1.2.286", "1.2.286"));
+        // already dismissed
+        assertFalse(CrashReport.shouldShowBanner(true, 500, 500, now, "1.2.286", "1.2.286"));
+        assertFalse(CrashReport.shouldShowBanner(true, 0, 0, now, "1.2.286", "1.2.286"));
+    }
+
+    @Test public void aCrashOfAnOlderVersionIsNotShown() {
+        String old = report("1.2.270", "1.2.270", "1.2.267");
+        assertFalse(CrashReport.shouldShowBanner(true, 500, 100, old, "1.2.286", "1.2.286"));
+        // died in the old version, read by the first start of the new one
+        String after = report("1.2.286", "1.2.286", "1.2.285");
+        assertTrue(CrashReport.currentVersion(after, "1.2.286", "1.2.286"));
+        assertFalse(CrashReport.currentVersion(old, "", ""));
+    }
+
+    @Test public void bannerSitsBelowTheScreenHeader() {
+        assertTrue(CrashReport.BANNER_TOP_DP >= CrashReport.HEADER_BOTTOM_DP);
+    }
+
+    @Test public void bannerLeavesAfterAboutEightSeconds() {
+        assertEquals(8000, CrashReport.BANNER_MS);
     }
 }

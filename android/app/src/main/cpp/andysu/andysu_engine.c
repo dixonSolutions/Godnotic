@@ -130,6 +130,14 @@ void Andysu_RestoreState(void)
 	andysu_loader->emit(ev);
 }
 
+static void Andysu_ReportHealthy(void)
+{
+	andysu_in_trial = false;
+#ifndef ANDYSU_NO_HEALTHY // test variant (build.sh ":nohealthy"): never reports healthy
+	andysu_loader->mark_healthy();
+#endif
+}
+
 // ------------------------------------------------------------------ per frame
 
 void Andysu_FrameHook(void)
@@ -147,6 +155,8 @@ void Andysu_FrameHook(void)
 		return;
 	}
 	frames++;
+	if (healthy_gate_tick(&healthy_gate, Sys_DirtyTime()))
+		Andysu_ReportHealthy();
 	if (frames % 120 == 0)
 	{
 		dpsnprintf(ev, sizeof ev, "{\"event\":\"engine_frames\",\"build_id\":\"" ANDYSU_BUILD_ID "\",\"frames\":%u}", frames);
@@ -163,12 +173,7 @@ void Andysu_FrameHook(void)
 void Andysu_DrawnFrame(double now, int menu, int world)
 {
 	if (andysu_loader && healthy_gate_frame(&healthy_gate, now, menu, world))
-	{
-		andysu_in_trial = false;
-#ifndef ANDYSU_NO_HEALTHY // test variant (build.sh ":nohealthy"): never reports healthy
-		andysu_loader->mark_healthy();
-#endif
-	}
+		Andysu_ReportHealthy();
 }
 
 void Andysu_AbortStart(const char *why)

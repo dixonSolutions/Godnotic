@@ -12,6 +12,30 @@ import java.util.Map;
 
 /** The Updates screen's decisions on an AndySU install (AndySUState): plain JVM, no Android. */
 public class AndySUStateTest {
+    @org.junit.Test public void liveAppliesOnlyWhenNativeAndOutOfAMatch() {
+        assertTrue(AndySUState.shouldApplyLive("staged", false, "live", true));
+        assertFalse("in a match", AndySUState.shouldApplyLive("staged", true, "live", true));
+        assertFalse("restart policy", AndySUState.shouldApplyLive("staged", false, "restart", true));
+        assertFalse("next start", AndySUState.shouldApplyLive("staged", false, "next_start", true));
+        assertFalse("a Java release cannot be swapped", AndySUState.shouldApplyLive("staged", false, "live", false));
+        assertFalse("not staged yet", AndySUState.shouldApplyLive("available", false, "live", true));
+    }
+
+    @org.junit.Test public void applyProblemsExplainBlockedAndFailedRestarts() {
+        assertEquals("Could not read the AndySU update state.", AndySUState.applyProblem(false, false, "", ""));
+        assertEquals(AndySUState.applyRefusedMessage(), AndySUState.applyProblem(true, true, "270", ""));
+        assertEquals("AndySU did not apply the update; try Apply now again.", AndySUState.applyProblem(true, false, "270", "270"));
+        assertTrue(AndySUState.endsCheck("apply_refused"));
+        assertEquals("", AndySUState.applyProblem(true, false, "270", "269"));
+        assertEquals("", AndySUState.applyProblem(true, true, "", "270"));
+    }
+
+    @Test public void stableTrialConfirmsAfterAMinuteOfUptime() {
+        assertFalse(AndySUState.trialStable(true, 59_999));
+        assertTrue(AndySUState.trialStable(true, 60_000));
+        assertFalse("no trial, nothing to confirm", AndySUState.trialStable(false, 3_600_000));
+    }
+
     @Test public void stagedRestartRespectsMatchAndPolicy() {
         String[] states = { "idle", "checking", "downloading", "staged", "uptodate" };
         String[] policies = { null, "live", "restart", "next_start", "unknown" };
@@ -36,6 +60,7 @@ public class AndySUStateTest {
         assertFalse(AndySUState.busy("staged"));
         assertTrue(AndySUState.endsCheck("uptodate"));
         assertTrue(AndySUState.endsCheck("deferred"));
+        assertTrue(AndySUState.endsCheck("apply_refused"));
         assertFalse(AndySUState.endsCheck("checking"));
         assertFalse(AndySUState.endsCheck("idle"));
     }
@@ -64,12 +89,41 @@ public class AndySUStateTest {
     }
 
     @Test
-    public void wifiOnlyInTheBackgroundKeepsAStagedReleaseApplying() {
-        // the host promotes a staged release at the next start only in auto mode
-        assertEquals("auto", AndySUState.targetMode(true, true, true, true, false));
-        assertEquals("auto", AndySUState.targetMode(true, true, false, true, false));
-        // nothing staged: the host's periodic job runs on any network, so only check
-        assertEquals("check_only", AndySUState.targetMode(true, true, false, false, false));
+    public void backgroundDoesNotChangeTheMode() {
+        // the 20:18:15 auto -> check_only: leaving the app must not move the host
+        for (boolean staged : new boolean[] { false, true })
+            for (boolean downloading : new boolean[] { false, true }) {
+                assertEquals("auto", AndySUState.targetMode(true, true, false, staged, false, downloading));
+                assertEquals("auto", AndySUState.targetMode(true, true, false, staged, true, downloading));
+                assertEquals("auto", AndySUState.targetMode(true, false, true, staged, false, downloading));
+            }
+        assertEquals("check_only", AndySUState.targetMode(true, true, true, false, false, false));
+    }
+
+    @Test
+    public void backgroundMeteredStagedStaysAuto() {
+        assertEquals("auto", AndySUState.targetMode(true, true, true, true, false, false));
+    }
+
+    @Test
+    public void aRefusedReleaseIsNotAnnouncedAgain() {
+        assertTrue(AndySUState.mayAnnounce("1.2.282", ""));
+        assertTrue(AndySUState.mayAnnounce("1.2.282", null));
+        assertFalse(AndySUState.mayAnnounce("1.2.282", "1.2.282"));
+        assertTrue("a newer release is", AndySUState.mayAnnounce("1.2.283", "1.2.282"));
+    }
+
+    @Test
+    public void applyPolicyHasOneSourceAndDoesNotFlap() {
+        long t = 1_000_000;
+        assertEquals("live", AndySUState.desiredPolicy(true, false, t, 0));
+        assertEquals("next_start", AndySUState.desiredPolicy(true, true, t, t));
+        // a one-poll idle between busy readings holds
+        assertEquals("next_start", AndySUState.desiredPolicy(true, false, t + 2_000, t));
+        assertEquals("next_start", AndySUState.desiredPolicy(true, false, t + AndySUState.BUSY_HOLD_MS - 1, t));
+        assertEquals("live", AndySUState.desiredPolicy(true, false, t + AndySUState.BUSY_HOLD_MS, t));
+        // the player's switch off wins always
+        assertEquals("next_start", AndySUState.desiredPolicy(false, false, t, 0));
     }
 
     @Test
@@ -194,5 +248,34 @@ public class AndySUStateTest {
         org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + 5000L));
         org.junit.Assert.assertFalse(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w - 1));
         org.junit.Assert.assertTrue(AndySUState.mayAutoRestart("1.2.266", "1.2.266", 1000L, 1000L + w));
+    }
+
+    private static final long IDLE = AndySUState.IDLE_BEFORE_APPLY_MS;
+
+    @Test public void noApplyDuringAMatchOrLoad() {
+        // The owner's crash: stage=game while a match ran.
+        assertFalse(AndySUState.safeToApplyNow("game", true, "busy", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", false, "busy", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", true, "safe", true, IDLE * 10));
+        // Joining and loading, and an unreadable gate, are busy too.
+        assertFalse(AndySUState.safeToApplyNow("joining", false, "safe", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("loading", false, "safe", true, IDLE * 10));
+        assertFalse(AndySUState.safeToApplyNow("game", false, null, true, IDLE * 10));
+    }
+
+    @Test public void applyFromTheMenuOnceIdle() {
+        assertTrue(AndySUState.safeToApplyNow("game", false, "safe", true, IDLE));
+        assertTrue(AndySUState.safeToApplyNow("boot", false, "safe", true, Long.MAX_VALUE));
+        assertFalse(AndySUState.safeToApplyNow("game", false, "safe", true, IDLE - 1));
+    }
+
+    @Test public void noApplyInTheBackground() {
+        assertFalse(AndySUState.safeToApplyNow("game", false, "safe", false, IDLE * 10));
+    }
+
+    @Test public void checkOnlyHostNeverAppliesUnasked() {
+        assertFalse(AndySUState.mayApplyUnasked(false, false));
+        assertTrue(AndySUState.mayApplyUnasked(false, true));
+        assertTrue(AndySUState.mayApplyUnasked(true, false));
     }
 }

@@ -140,12 +140,7 @@
       "id": "disconnect",
       "label": "Leave match",
       "icon": "disconnect",
-      "style": "destructive",
-      "confirm": {
-       "title": "Leave the match?",
-       "ok": "Leave",
-       "destructive": true
-      }
+      "style": "destructive"
      },
      "style": "destructive"
     },

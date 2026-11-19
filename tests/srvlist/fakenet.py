@@ -131,7 +131,7 @@ def main():
         last_host[h] = (now, key)
         if not s.get("alive", True):
             return
-        if rnd.random() < a.loss:
+        if rnd.random() < s.get("loss", a.loss):
             stats["lost"] += 1
             return
         humans, bots = s.get("humans", 0), s.get("bots", 0)
@@ -149,6 +149,8 @@ def main():
         stats["master_queries"] += 1
         if t_master[0] is None:
             t_master[0] = now
+        if stats["master_queries"] <= state.get("drop_master_queries", 0):
+            return
         head = b"\xff\xff\xff\xffgetserversExtResponse" if ext else b"\xff\xff\xff\xffgetserversResponse"
         entries = [b"\\" + socket.inet_aton(s["ip"]) + struct.pack(">H", s["port"]) for s in state["servers"]]
         # a real master sends about 100 addresses a packet

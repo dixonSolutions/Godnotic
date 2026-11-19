@@ -26,9 +26,13 @@ in two layers:
    an idle frame costs one poll() with a zero timeout.
 
 2. Dynamic mode follows presence: touch controls appear on a touchscreen
-   unless both a keyboard and mouse are listed. Input can confirm a listed
-   device but an on-screen keyboard or mouse macro cannot stand in for one.
-   Mouse and touch can be used together while the controls are visible.
+   unless a keyboard is listed and the listed mouse has actually been used.
+   A listed-but-unused mouse is not a pointer the player has: tablets list
+   built-in pads nobody aims with (a Galaxy Tab's sec_touchpad), and a
+   keyboard beside such a phantom device hid the controls even though there
+   was no fire button. Input can confirm a listed device but an on-screen
+   keyboard or mouse macro cannot stand in for one. Mouse and touch can be
+   used together while the controls are visible.
 
 On top of that, the player decides how much of this runs:
 - vid_touchscreen_mode: Dynamic (1), Touch (2), Keyboard & mouse (0),
@@ -503,12 +507,14 @@ static const vid_presence_t *vid_presence_get(void)
 	return &vid_presence;
 }
 
+// Remember actual use for pointer feedback and folded-away device detection.
+static qbool vid_mouse_confirmed;
+
 void VID_DetectTouchHardware(qbool *has_touchscreen, qbool *is_touch_only)
 {
 	const vid_presence_t *p = vid_presence_get();
 	*has_touchscreen = p->touch;
-	// A keyboard alone leaves the touch controls on: there is still nothing
-	// else to aim with. Only a keyboard and a mouse together are the desktop.
+	// Either device alone leaves the remaining touch controls available.
 	*is_touch_only = p->touch && !(p->keyboard && p->mouse);
 }
 
@@ -525,10 +531,6 @@ vid_active_t;
 
 static vid_active_t vid_active = VID_ACTIVE_NONE;
 
-// A listed mouse or touchpad has been used since it was last plugged in.
-// Confirmation only: it never shows or hides the controls, and without a
-// mouse in the listing nothing sets it.
-static qbool vid_mouse_confirmed;
 // When that mouse was last moved or clicked.
 static double vid_mouse_last = -1000;
 // A used mouse keeps aiming until the fingers have been the pointer for this
@@ -692,21 +694,11 @@ void VID_NoteMouseUse(float travel, qbool press)
 	Con_Printf("Input: mouse in use\n");
 }
 
-// A mouse or touchpad aims in the game once it has been
-// moved or clicked, and until the fingers have been the only pointer for
-// VID_MOUSE_HOLD seconds. Presence alone is not enough: tablets list built-in
-// pointer devices nobody uses (a Galaxy Tab's sec_touchpad, a pen, a phone
-// browser reporting a fine pointer), and a mouse that "aims" without being
-// used takes the look from the fingers.
+// Presence is already filtered for pens, folded-away pads and tablet-internal
+// touchpads. A listed mouse takes aim immediately and stays until unplugged.
 qbool VID_TouchMouseConfirmed(void)
 {
-	if (!vid_mouse_confirmed)
-		return false;
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
-	if (!vid_presence_get()->mouse)
-		return false;
-#endif
-	return vid_mouse_last >= vid_touch_last || host.realtime - vid_mouse_last < VID_MOUSE_HOLD;
+	return cls.state != ca_dedicated && vid_presence_get()->mouse;
 }
 
 qbool VID_HasKeyboard(void)
