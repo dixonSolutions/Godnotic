@@ -3,8 +3,9 @@
 
 The control file holds one line: loss fraction, one-way delay seconds, freeze
 seconds and, optionally, jitter seconds (each packet waits delay plus a
-uniform 0..jitter more, so packets can overtake each other as on a real
-mobile link). The round trip is twice the delay. Writing a new line resets
+uniform 0..jitter more). Packets keep their order in each direction, as on
+a real link whose queue grows and shrinks; --reorder lets them overtake each
+other instead (a much harsher link). The round trip is twice the delay. Writing a new line resets
 the freeze deadline. Packets received during a freeze are dropped, not
 queued. --seed makes loss and jitter reproducible (default 527).
 """
@@ -20,6 +21,7 @@ p.add_argument('--listen', type=int, required=True)
 p.add_argument('--server', required=True, help='host:port')
 p.add_argument('--control', required=True)
 p.add_argument('--seed', type=int, default=527)
+p.add_argument('--reorder', action='store_true')
 a = p.parse_args()
 host, port = a.server.rsplit(':', 1)
 server = (host, int(port))
@@ -35,6 +37,7 @@ client = None
 previous = None
 loss = delay = jitter = frozen_until = 0.0
 pending = []
+last_due = {}
 serial = 0
 while True:
     now = time.monotonic()
@@ -53,14 +56,20 @@ while True:
         pass
     while pending and pending[0][0] <= now:
         _, _, sock, data, dest = heapq.heappop(pending)
-        if dest is None:
-            sock.send(data)
-        else:
-            sock.sendto(data, dest)
+        try:
+            if dest is None:
+                sock.send(data)
+            else:
+                sock.sendto(data, dest)
+        except OSError:
+            pass  # a peer not listening (ICMP unreachable) is a lost packet
     wait = min(0.05, max(0, pending[0][0] - now)) if pending else 0.05
     for key, _ in sel.select(wait):
         sock = key.fileobj
-        data, peer = sock.recvfrom(65535)
+        try:
+            data, peer = sock.recvfrom(65535)
+        except OSError:
+            continue  # an earlier send was refused: nothing to relay
         if sock is front:
             client = peer
             out, dest = back, None
@@ -71,4 +80,8 @@ while True:
         if time.monotonic() < frozen_until or rng.random() < loss:
             continue
         serial += 1
-        heapq.heappush(pending, (time.monotonic() + delay + rng.uniform(0, jitter), serial, out, data, dest))
+        due = time.monotonic() + delay + rng.uniform(0, jitter)
+        if not a.reorder:
+            due = max(due, last_due.get(out, 0.0))
+            last_due[out] = due
+        heapq.heappush(pending, (due, serial, out, data, dest))

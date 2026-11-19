@@ -47,6 +47,7 @@ the wire format and the measurements.
 #include "touch_lan.h"
 #include "touch_joinname.h" // "name (address)" in the reconnect lines
 #include "touch_netkeep.h" // the connection outlives a long frame
+#include "touch_netdl.h" // in-order download acks
 
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 #include <sys/select.h>
@@ -1521,6 +1522,7 @@ void TouchNet_Init(void)
 	Cvar_RegisterVariable(&net_away_spectate);
 	Cvar_RegisterVariable(&net_away_limit);
 	TouchNetKeep_Init();
+	TouchNetDL_Init();
 	Cmd_AddCommand(CF_CLIENT, "net_reconnect_cancel", TouchNet_ReconnectCancel_f, "stop the automatic reconnect");
 	Cmd_AddCommand(CF_CLIENT, "touch_away", TouchNet_Away_f, "1: the game is in the background (as on Android), 0: back (for tests on desktop)");
 	TouchCurl_Init();
