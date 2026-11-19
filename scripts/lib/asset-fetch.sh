@@ -545,17 +545,30 @@ xonotic_fetch_autobuild_assets() {
     for idx in "${!names[@]}"; do
         url="${XONOTIC_AUTOBUILD_URL}/${names[$idx]}"
         expected=0
+        pid=""
+        # A fresh archive cannot already be complete. Start its body while
+        # the size probe is in flight; partial files still need the probe first
+        # so a complete saved archive is installed without a redundant GET.
+        if [ ! -e "${paths[$idx]}" ] && [ "$jobs" -lt "$parallel" ]; then
+            xonotic_start_autobuild_download "${paths[$idx]}" "${names[$idx]}" 0 || return 1
+            pid="$XONOTIC_DOWNLOAD_PID"
+            [ "$pid" = 0 ] || jobs=$((jobs + 1))
+        fi
         if command -v curl >/dev/null 2>&1; then
             expected="$(xonotic_autobuild_content_length "$url")"
         fi
         expecteds+=("$expected")
-        pids+=("")
+        pids+=("$pid")
         installed+=(0)
     done
 
     next=0
     while [ "$next" -lt "${#names[@]}" ] || [ "$jobs" -gt 0 ]; do
         while [ "$jobs" -lt "$parallel" ] && [ "$next" -lt "${#names[@]}" ]; do
+            if [ -n "${pids[$next]}" ]; then
+                next=$((next + 1))
+                continue
+            fi
             name="${names[$next]}"
             path="${paths[$next]}"
             expected="${expecteds[$next]}"
