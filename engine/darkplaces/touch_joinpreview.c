@@ -134,7 +134,7 @@ static qbool JP_MapNameSrc(char *buf, int size, qbool *from_list)
 		*from_list = false;
 	if (JP_LocalLoading())
 		dp_strlcpy(buf, jp_localmap, size);
-	else
+	else if (!cls.connect_trying && cls.state == ca_connected)
 		InfoString_GetValue(cl.qw_serverinfo, "map", buf, size);
 	// a DarkPlaces server sends no serverinfo map: the precache list's first entry is the
 	// world model ("maps/foo.bsp"), there from the first reliable message of the signon
@@ -192,62 +192,9 @@ static qbool JP_FindPicture(const char *map, char *out, size_t size)
 	return false;
 }
 
-// A map of the same family (wind2 -> wind*.jpg): the server list's map name finds
-// "any picture" when the exact one is not here.
-static qbool JP_FindSimilar(const char *map, char *out, size_t size)
-{
-	char base[MAX_QPATH], pat[MAX_QPATH];
-	fssearch_t *search;
-	size_t n;
-	qbool found = false;
-	dp_strlcpy(base, map, sizeof(base));
-	if (strchr(base, '_'))
-		*strchr(base, '_') = 0;
-	n = strlen(base);
-	while (n > 0 && base[n - 1] >= '0' && base[n - 1] <= '9')
-		base[--n] = 0;
-	if (n < 4 || strpbrk(base, "*?[]"))
-		return false;
-	dpsnprintf(pat, sizeof(pat), "maps/%s*.jpg", base);
-	search = FS_Search(pat, true, true, NULL);
-	if (search)
-	{
-		if (search->numfilenames > 0)
-		{
-			dp_strlcpy(out, search->filenames[0], size);
-			found = true;
-		}
-		FS_FreeSearch(search);
-	}
-	return found;
-}
-
-// The picture for a join whose map this install has nothing for: the art of the home
-// screen's Multiplayer card (maps/xoylent), else any map picture, kept for the session.
-static qbool JP_FindGeneric(char *out, size_t size)
-{
-	static char generic[MAX_QPATH];
-	static double last;
-	if (!generic[0] && FS_FileExists("maps/xoylent.jpg"))
-		dp_strlcpy(generic, "maps/xoylent.jpg", sizeof(generic));
-	if (!generic[0] && Sys_DirtyTime() - last > 2.0)
-	{
-		fssearch_t *search = FS_Search("maps/*.jpg", true, true, NULL);
-		last = Sys_DirtyTime();
-		if (search)
-		{
-			if (search->numfilenames > 0)
-				dp_strlcpy(generic, search->filenames[(int)(last * 1000.0) % search->numfilenames], sizeof(generic));
-			FS_FreeSearch(search);
-		}
-	}
-	dp_strlcpy(out, generic, size);
-	return generic[0] != '\0';
-}
-
 // The picture behind a join: TJP_PIC_* (touch_joinpreview_logic.h) and its file
-// ("maps/foo.jpg") in `name`. The map's own picture is final; anything else is asked
-// again twice a second, so the pack that is downloading brings the right one in.
+// ("maps/foo.jpg") in `name`. Missing pictures are checked twice a second so a
+// downloaded pack can supply the real levelshot.
 int TouchJoinPreview_Picture(char *name, int size)
 {
 	static char key[MAX_QPATH + 2], cname[MAX_QPATH];
@@ -260,7 +207,7 @@ int TouchJoinPreview_Picture(char *name, int size)
 	dpsnprintf(nkey, sizeof(nkey), "%c%s", from_list ? 'L' : 'S', known ? map : "");
 	if (strcmp(nkey, key) || last < 0 || TouchJoinPreview_RetryPicture(choice, now, last))
 	{
-		int have_map = 0, have_list = 0, have_generic = 0;
+		int have_map = 0, have_list = 0;
 		last = now;
 		dp_strlcpy(key, nkey, sizeof(key));
 		file[0] = 0;
@@ -271,11 +218,7 @@ int TouchJoinPreview_Picture(char *name, int size)
 			else
 				have_map = 1;
 		}
-		else if (known && JP_FindSimilar(map, file, sizeof(file)))
-			have_list = 1;
-		else if (JP_FindGeneric(file, sizeof(file)))
-			have_generic = 1;
-		choice = TouchJoinPreview_PictureChoice(have_map, have_list, have_generic);
+		choice = TouchJoinPreview_PictureChoice(have_map, have_list, 0);
 		dp_strlcpy(cname, choice ? file : "", sizeof(cname));
 	}
 	dp_strlcpy(name, cname, size);

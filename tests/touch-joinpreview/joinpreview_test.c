@@ -69,7 +69,7 @@ int main(void)
 	/* own picture, else the list's, else a generic one, never the logo when any exists */
 	CHECK_INT(TJP_PIC_MAP, TouchJoinPreview_PictureChoice(1, 1, 1), "the map's own picture first");
 	CHECK_INT(TJP_PIC_LIST, TouchJoinPreview_PictureChoice(0, 1, 1), "then the server list's map");
-	CHECK_INT(TJP_PIC_GENERIC, TouchJoinPreview_PictureChoice(0, 0, 1), "then a generic picture");
+	CHECK_INT(TJP_PIC_NONE, TouchJoinPreview_PictureChoice(0, 0, 1), "never invent a map picture");
 	CHECK_INT(TJP_PIC_NONE, TouchJoinPreview_PictureChoice(0, 0, 0), "nothing at all");
 	CHECK_INT(1, TouchJoinPreview_PictureBrightness(TJP_PIC_MAP) == 1.0f, "the map's picture is full brightness");
 	CHECK_INT(1, TouchJoinPreview_PictureBrightness(TJP_PIC_GENERIC) < 0.6f, "the generic picture is dimmed");

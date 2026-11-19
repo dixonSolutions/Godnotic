@@ -23,7 +23,7 @@ int main(void)
     /* The theme plays through a join: connecting, downloading, loading and the
      * preview are not a match, so the menu theme is the music there. */
     assert(TouchMusic_JoinPolicy(TM_STAGE_JOINING, 1, 0, 0, 0) == 0);  /* never start during a join */
-    assert(TouchMusic_JoinPolicy(TM_STAGE_JOINING, 1, 1, 0, 0) == 0);  /* keep it through the load */
+    assert(TouchMusic_JoinPolicy(TM_STAGE_JOINING, 1, 1, 0, 0) == -1); /* stop it during the load */
     assert(TouchMusic_JoinPolicy(TM_STAGE_MENU, 1, 1, 0, 0) == 0);
 
     /* The first-run data download screen is not a match either: the theme

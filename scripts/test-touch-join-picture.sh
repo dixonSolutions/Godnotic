@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# A server join never shows the logo screen: from the first connect snapshot the
-# native card has a picture file. With the map unknown (nothing answers yet) it is a
-# generic map picture marked "generic" (the card dims it a little); once the server
-# names a map this install has, it is that map's own picture ("map"). The snapshot
-# also carries the precache step and the download size fields the card shows.
+# A join with no known map has no invented picture; when a known map exists,
+# its own picture is published with the loading progress.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ENGINE=${ENGINE:-$ROOT/build/bin/xonotic}
@@ -31,12 +28,11 @@ CFG
 		+exec jp.cfg > "$1/log" 2>&1 || true
 }
 
-# 1. nobody answers: the map is unknown, a generic picture still shows
+# 1. nobody answers: the map is unknown, so no map picture is claimed
 client "$work/c1" 127.0.0.1:26999 8
 line=$(grep -a '^FE> connect .*"stage":"connecting"' "$work/c1/log" | head -1 || true)
 [ -n "$line" ] || { tail -20 "$work/c1/log" >&2; bad "no connecting snapshot"; }
-case "$line" in *'"levelshot":"/'*) ;; *) bad "no picture file while connecting to an unknown server: $line" ;; esac
-case "$line" in *'"levelshot_kind":"generic"'*) ;; *) bad "the picture of an unknown map is not marked generic: $line" ;; esac
+case "$line" in *'"levelshot":""'*) ;; *) bad "unknown map must have no invented picture: $line" ;; esac
 case "$line" in *'"precache":""'*'"levelshot_kind"'*) ;; *) bad "no precache fields: $line" ;; esac
 
 # 2. a server with a map this install has: that map's own picture
@@ -52,10 +48,6 @@ if [ -z "$line" ]; then
 	bad "no snapshot with the map's own picture"
 else
 	case "$line" in *'"levelshot":"/'*stormkeep.jpg'"'*) ;; *) bad "wrong picture for stormkeep: $line" ;; esac
-fi
-# never a snapshot of the join without a picture before the world draws
-if grep -a '^FE> connect ' "$work/c2/log" | grep -a '"stage":"\(connecting\|signon\|loading\|downloading\)"' | grep -aq '"levelshot":""'; then
-	bad "a join snapshot had no picture: $(grep -a '^FE> connect ' "$work/c2/log" | grep -a '"levelshot":""' | grep -a '"stage":"\(connecting\|signon\|loading\|downloading\)"' | head -1)"
 fi
 [ $fail = 0 ] && echo "join picture: all checks passed"
 exit $fail

@@ -491,8 +491,7 @@ static void publish_connect(qbool force)
 	jb_knum(&b, "load_progress", scr_loading ? fe.load_fraction : 0);
 	jb_kbool(&b, "local", sv.active || TouchJoinPreview_LocalLoading());
 	// the map's picture for the native card, from the first moment of a join until the
-	// world draws: the map's own, else what the server list's map name finds, else a
-	// generic map picture (levelshot_kind says which; the card dims the last a little)
+	// world draws: only the named map's own picture, if available.
 	{
 		char map[MAX_QPATH], shot[MAX_OSPATH] = "", pic[MAX_QPATH];
 		static char shot_name[MAX_QPATH], shot_path[MAX_OSPATH];
@@ -1653,11 +1652,12 @@ void TouchMusic_Update(void)
     qbool map_music = (playing && !theme_playing) || music_playlist_active >= 0;
     qbool present = false;
     int action;
-    // connecting, downloading, loading and the join preview are not a match:
-    // the theme keeps playing through all of them, until the map brings music
-    if (cls.state == ca_connected && cls.signon == SIGNONS)
+    // Stop the menu theme as soon as a local or remote join starts.
+    if (TouchJoinPreview_LocalLoading() || cls.connect_trying)
+        stage = TM_STAGE_JOINING;
+    else if (cls.state == ca_connected && cls.signon == SIGNONS)
         stage = TM_STAGE_GAME;
-    else if (cls.connect_trying || cls.state != ca_disconnected)
+    else if (cls.state != ca_disconnected)
         stage = TM_STAGE_JOINING;
     else if (TouchData_Downloading())
         stage = TM_STAGE_DOWNLOAD;
@@ -1708,8 +1708,8 @@ void TouchMusic_Update(void)
         asked_before = false;
         said_retry = false;
         said_handover = false;
-        Cbuf_AddText(cmd_local, "\ncd stop\n");
-        Con_Printf("MUSIC: stop menu theme for match\n");
+        CDAudio_Stop();
+        Con_Printf("MUSIC: stop menu theme for join or match\n");
     }
     else if (action < 0 && !said_handover)
     {
