@@ -348,8 +348,9 @@ final class EngineSwap {
         return b.isFile() ? b : null;
     }
 
-    /** The host's own in-process apply (AndySU.applyLive) is reachable: it never relaunches. */
+    /** The host's own in-process apply is reachable without its relaunch fallback. */
     static boolean hostLiveEntry() {
+        if (AndySUCompat.has("applyLive")) return true; // the public API of newer hosts
         try {
             Class<?> c = Class.forName("com.andysu.host.AndySU");
             c.getField("INSTANCE");
@@ -367,6 +368,20 @@ final class EngineSwap {
      * app. Returns null when the host swapped (our handler accepted), else why not.
      */
     static String hostApplyLive() {
+        if (AndySUCompat.has("applyLive")) {
+            // A newer host's public entry: never restarts, answers with what it did.
+            lastDecline = null;
+            try {
+                String result = AndySUCompat.applyLive();
+                if ("swapped".equals(result)) return null;
+                String why = lastDecline;
+                return why != null ? why : "the host did not swap it (" + result + ")";
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return "the host's live apply failed: " + e;
+            }
+        }
+        // Host API 3 (the installed hosts): the same applyLive() that applyNow() calls first, but
+        // reached directly, so a false answer cannot turn into applyNow()'s relaunch.
         final Object instance;
         final Method apply;
         try {

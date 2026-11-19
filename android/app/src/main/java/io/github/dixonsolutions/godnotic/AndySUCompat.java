@@ -105,6 +105,16 @@ final class AndySUCompat {
         return updateApi().getMethod("restartToApply").invoke(client).toString();
     }
 
+    /**
+     * The host's live apply without a restart fallback (UpdateClient.applyLive, a newer host API):
+     * "swapped", "declined", "trial", "not_live" or "none". Check {@link #has} first.
+     */
+    static String applyLive() throws ReflectiveOperationException {
+        Object client = updateClient();
+        if (client == null) throw new IllegalStateException("AndySU host is unavailable");
+        return String.valueOf(updateApi().getMethod("applyLive").invoke(client));
+    }
+
     /** Commit the running release (HostApi.markHealthy); false when the host cannot. */
     static boolean markHealthy() {
         try {
