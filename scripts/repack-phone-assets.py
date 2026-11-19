@@ -81,7 +81,7 @@ PROFILES = {
     "slim": {"world_blocks": (10, 10), "model_blocks": (8, 6), "norm_blocks": (6, 6),
              "max_size": 512, "music_rate": "64k", "sfx": "opus", "bsp_zstd_level": 22,
              "jpeg_quality": 86, "lightmap_quality": 90,
-             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3"]},
+             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3", "*.xcf"]},
 }
 # The set for GPUs with ASTC, by what it is (the app's "slim" set).
 PROFILES["astc"] = PROFILES["slim"]

@@ -123,13 +123,19 @@ xonotic_ensure_menu_theme_track() {
 
     if curl -fL --connect-timeout 20 --max-time 180 -C - \
         -o "$partial" "$XONOTIC_MENU_THEME_URL"; then
-        mv -f "$partial" "$dest"
-        xonotic_mark_music_ready "$data_dir"
-        echo "godnotic: menu theme ready at $dest" >&2
-        return 0
+        :
+    elif [ "$?" -eq 33 ] && curl -fL --connect-timeout 20 --max-time 180 \
+        -o "$partial" "$XONOTIC_MENU_THEME_URL"; then
+        # This server does not support resuming: retry from the beginning.
+        :
+    else
+        # Keep the received prefix for the next attempt.
+        return 1
     fi
-    rm -f "$partial" 2>/dev/null || true
-    return 1
+    mv -f "$partial" "$dest"
+    xonotic_mark_music_ready "$data_dir"
+    echo "godnotic: menu theme ready at $dest" >&2
+    return 0
 }
 
 xonotic_nexcompat_assets_missing() {
@@ -522,9 +528,6 @@ xonotic_fetch_autobuild_assets() {
     mkdir -p "$tmp" "$data_dir/touch"
     parallel="$(xonotic_fetch_parallel_jobs)"
 
-    # Menu theme first (~7 MB): wizard can play rising-of-the-phoenix while the
-    # multi-GB packs continue. Full music zip still fills out the soundtrack.
-    xonotic_ensure_menu_theme_track "$data_dir" || true
     if ! xonotic_music_assets_missing "$data_dir"; then
         xonotic_mark_music_ready "$data_dir"
     fi
@@ -548,17 +551,30 @@ xonotic_fetch_autobuild_assets() {
     for idx in "${!names[@]}"; do
         url="${XONOTIC_AUTOBUILD_URL}/${names[$idx]}"
         expected=0
+        pid=""
+        # A fresh archive cannot already be complete. Start its body while
+        # the size probe is in flight; partial files still need the probe first
+        # so a complete saved archive is installed without a redundant GET.
+        if [ ! -e "${paths[$idx]}" ] && [ "$jobs" -lt "$parallel" ]; then
+            xonotic_start_autobuild_download "${paths[$idx]}" "${names[$idx]}" 0 || return 1
+            pid="$XONOTIC_DOWNLOAD_PID"
+            [ "$pid" = 0 ] || jobs=$((jobs + 1))
+        fi
         if command -v curl >/dev/null 2>&1; then
             expected="$(xonotic_autobuild_content_length "$url")"
         fi
         expecteds+=("$expected")
-        pids+=("")
+        pids+=("$pid")
         installed+=(0)
     done
 
     next=0
     while [ "$next" -lt "${#names[@]}" ] || [ "$jobs" -gt 0 ]; do
         while [ "$jobs" -lt "$parallel" ] && [ "$next" -lt "${#names[@]}" ]; do
+            if [ -n "${pids[$next]}" ]; then
+                next=$((next + 1))
+                continue
+            fi
             name="${names[$next]}"
             path="${paths[$next]}"
             expected="${expecteds[$next]}"
@@ -671,6 +687,7 @@ _xonotic_asset_discover_lib() {
 
 xonotic_fetch_game_assets() {
     local data_dir="$1"
+    local theme_pid fetch_ok=0
 
     mkdir -p "$data_dir"
 
@@ -693,9 +710,13 @@ xonotic_fetch_game_assets() {
     # gitlab is slow/unreachable inside Flatpak.
     xonotic_progress_write running 5 "Starting download..."
     echo "godnotic: downloading game assets (first launch may take several minutes)..."
-    # Theme before the big zips so the open-menu track is available ASAP.
-    xonotic_ensure_menu_theme_track "$data_dir" || true
-    if xonotic_fetch_autobuild_assets "$data_dir" && xonotic_assets_are_ready "$data_dir"; then
+    # Fetch the small theme alongside the archive, not before it. Close the
+    # daemon lock in the child just as the archive download children do.
+    ( exec 9>&-; xonotic_ensure_menu_theme_track "$data_dir" || true ) &
+    theme_pid=$!
+    xonotic_fetch_autobuild_assets "$data_dir" && fetch_ok=1
+    wait "$theme_pid" || true
+    if [ "$fetch_ok" = 1 ] && xonotic_assets_are_ready "$data_dir"; then
         xonotic_assets_mark_ready "$data_dir"
         xonotic_progress_write done 100 "Download complete"
         return 0
