@@ -31,6 +31,12 @@ const dedicated = opt('dedicated');
 const basedir = opt('basedir');
 const out = opt('out');
 const map = opt('map', 'stormkeep');
+// --public: the relay asks the real public masters (its defaults) instead of
+// the local fake one, and the browser lists and briefly joins a public server.
+const pub = args.includes('--public');
+// A topic of its own per run: on a public broker the test relay must not be
+// offered to real players, nor real relays to the test.
+const topic = opt('topic', `godnotic/test/${process.pid}-${Date.now()}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T0 = Date.now();
 const secs = () => ((Date.now() - T0) / 1000).toFixed(1);
@@ -92,15 +98,15 @@ master.on('message', (m, rinfo) => {
 });
 await new Promise((r) => master.bind(masterPort, '127.0.0.1', r));
 
-const game = startDedicated('game', gamePort, ['+hostname', 'Godnotic bridge test', '+bot_number', '0',
+const game = pub ? null : startDedicated('game', gamePort, ['+hostname', 'Godnotic bridge test', '+bot_number', '0',
   '+rcon_secure', '0', '+rcon_password', 'bridgetest', '+map', map]);
-let gameUp = false;
+let gameUp = pub;
 for (let i = 0; i < 150 && !gameUp; i++) { gameUp = !!(await udpQuery(gamePort, 'getinfo up')); if (!gameUp) await sleep(200); }
-check(gameUp, `the game server answers on 127.0.0.1:${gamePort}`);
+if (!pub) check(gameUp, `the game server answers on 127.0.0.1:${gamePort}`);
 
-const relay = startDedicated('relay', relayPort, ['+bridge_allow_loopback', '1', '+sv_master1', `127.0.0.1:${masterPort}`,
-  '+sv_masterextra1', '""', '+sv_masterextra2', '""', '+sv_masterextra3', '""',
-  '+bridge_relay_brokers', broker, '+bridge_relay_stun', '""', '+bridge_relay', '1', '+map', map]);
+const relay = startDedicated('relay', relayPort, [...(pub ? [] : ['+bridge_allow_loopback', '1', '+sv_master1', `127.0.0.1:${masterPort}`,
+  '+sv_masterextra1', '""', '+sv_masterextra2', '""', '+sv_masterextra3', '""']),
+  '+bridge_relay_brokers', broker, '+bridge_relay_topic', topic, '+bridge_relay_stun', '""', '+bridge_relay', '1', '+map', map]);
 const online = await waitLog(relay, /web relay ([0-9a-f]{16}) online on/, 60000);
 check(!!online, `1. the relay announces itself on ${broker}${online ? ' as ' + online[1] : ''}`);
 
@@ -159,7 +165,7 @@ await send('Page.enable');
 await send('Runtime.enable');
 await send('Emulation.setFocusEmulationEnabled', {enabled: true});
 const sep = pageUrl.includes('?') ? '&' : '?';
-const url = `${pageUrl}${sep}relaybroker=${encodeURIComponent(broker)}&relaystun=`;
+const url = `${pageUrl}${sep}relaybroker=${encodeURIComponent(broker)}&relaytopic=${encodeURIComponent(topic)}&relaystun=`;
 await send('Page.navigate', {url});
 let menu = false, clicked = false;
 const tStart = Date.now();
@@ -190,79 +196,136 @@ for (let i = 0; i < 120 && state !== 'connected'; i++) {
 results.relayConnectMs = Date.now() - tFind;
 const masters = await evaluate('xt.cvar("sv_masterextra1")');
 check(state === 'connected', `2. the page connects to the relay over WebRTC (state ${state}, ${results.relayConnectMs} ms) and asks its master (sv_masterextra1=${masters})`);
+if (pub) {
+  check(/^\d+\.\d+\.\d+\.\d+:\d+$/.test(masters || ''), '2b. the relay\'s public master list reaches the engine');
+  // 3. The public list over the relay: line 2 of each entry is "^4<address> <game> <map> ...".
+  await sleep(500);
+  const m3 = `XTMARK${++mark}`;
+  const tList = Date.now();
+  await command(`echo ${m3}`);
+  await command('net_slist');
+  // The console keeps 200 lines and the list prints hundreds of "querying"
+  // lines: read it every half second for 15 s.
+  const entries = [], seen = new Set();
+  const plain = (l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/\^(\d|x[0-9a-fA-F]{3})/g, '');
+  const dump = [];
+  for (let t = 0; t < 30; t++) {
+    await sleep(500);
+    let lines = await logLines();
+    const at = lines.findLastIndex((l) => l.includes(m3));
+    if (at >= 0) lines = lines.slice(at + 1);
+    for (let k = 0; k + 1 < lines.length; k++) {
+      const p = /^\s*(\d+)\s+(\d+)\/\s*(\d+)\s(.*)$/.exec(plain(lines[k]));
+      const a = /^(\d+\.\d+\.\d+\.\d+:\d+)\s+(\S+)\s+(\S+)\s*(\S*)/.exec(plain(lines[k + 1]));
+      if (!p || !a || seen.has(a[1])) continue;
+      seen.add(a[1]);
+      dump.push(plain(lines[k]), plain(lines[k + 1]));
+      entries.push({address: a[1], map: a[4] || a[3], players: Number(p[2]), max: Number(p[3]), name: p[4].trim(), ping: Number(p[1])});
+    }
+  }
+  fs.writeFileSync(path.join(out, 'slist.txt'), dump.join('\n'));
+  results.publicServers = entries.length;
+  results.serverListMs = Date.now() - tList;
+  check(entries.length >= 3, `3. net_slist lists public servers through the relay: ${entries.length} in 12 s (e.g. ${entries.slice(0, 3).map((e) => e.name + ' ' + e.map).join(' | ')})`);
+  fs.writeFileSync(path.join(out, 'public-servers.json'), JSON.stringify(entries, null, 1));
+  // 4. A short visit to a public server with room, on a map the web data has.
+  const stock = new Set(['stormkeep', 'boil', 'dance', 'atelier', 'afterslime', 'bromine', 'catharsis', 'courtfun', 'darkzone', 'erbium',
+    'finalrage', 'fuse', 'geoplanetary', 'glowplant', 'implosion', 'leave_em_behind', 'nexballarena', 'oilrig', 'runningman', 'silentsiege',
+    'solarium', 'space-elevator', 'stormkeep', 'techassault', 'vorix', 'warfare', 'xoylent', 'drain', 'opium', 'ruiner', 'gasoline']);
+  const pick = entries.filter((e) => stock.has(e.map) && e.players < e.max).sort((x, y) => y.players - x.players).slice(0, 3);
+  let joined = null;
+  for (const e of pick) {
+    const m4 = `XTMARK${++mark}`;
+    const tJoin = Date.now();
+    await command(`echo ${m4}`);
+    await command(`connect ${e.address}`);
+    const loaded = await waitConsole(/client: program loaded|CSQC.*loaded/i, 90000, m4);
+    if (loaded) { joined = {...e, ms: Date.now() - tJoin}; break; }
+    await command('disconnect');
+    await sleep(1000);
+  }
+  results.publicJoin = joined;
+  check(!!joined, `4. the browser joins a public server through the relay: ${joined ? `${joined.name} (${joined.address}, ${joined.map}) in ${joined.ms} ms` : 'none of ' + pick.length + ' tried'}`);
+  if (joined) {
+    await command('togglemenu 0');
+    await sleep(5000);
+    const world = await shot('public-world');
+    check(!!world && world.colours > 200 && world.sd > 12, `4c. the public server's world is drawn (${JSON.stringify(world)})`);
+  }
+} else {
 check(masters === `127.0.0.1:${masterPort}`, '2b. the relay\'s master list reaches the engine');
-
-// 3. The server list over the relay.
-await sleep(500);
-const m3 = `XTMARK${++mark}`;
-const tList = Date.now();
-await command(`echo ${m3}`);
-await command('net_slist');
-const listed = await waitConsole(/Godnotic bridge test/, 20000, m3);
-results.serverListMs = Date.now() - tList;
-check(!!listed && masterQueries > 0, `3. net_slist lists the game server through the relay (${results.serverListMs} ms, master queries ${masterQueries}): ${listed || 'nothing'}`);
-
-// 4. Join it.
-const m4 = `XTMARK${++mark}`;
-const tJoin = Date.now();
-await command(`echo ${m4}`);
-await command(`connect 127.0.0.1:${gamePort}`);
-const loaded = await waitConsole(/client: program loaded|CSQC.*loaded/i, 120000, m4);
-results.joinMs = Date.now() - tJoin;
-const entered = await waitLog(game, /connected|entered the game/i, 10000);
-check(!!loaded, `4. connect: the browser loads the server's world (${results.joinMs} ms): ${loaded || 'no CSQC'}`);
-check(!!entered, `4b. the game server sees the browser player: ${entered ? entered[0] : 'nothing'}`);
-await command('togglemenu 0');
-await sleep(4000);
-const world = await shot('joined-world');
-check(!!world && world.colours > 200 && world.sd > 12 && world.dark < 0.9,
-  `4c. the world is drawn (screenshot: ${JSON.stringify(world)})`);
-
-// 5. Move.
-await command('cmd join');
-await sleep(2500);
-// The server's welcome dialog is up: press its "Join!" (bottom left) as a player would.
-const vp = await evaluate('[innerWidth, innerHeight]');
-for (const [type, extra] of [['mouseMoved', {}], ['mousePressed', {button: 'left', clickCount: 1}], ['mouseReleased', {button: 'left', clickCount: 1}]]) {
-  await send('Input.dispatchMouseEvent', {type, x: Math.round(vp[0] * 0.377), y: Math.round(vp[1] * 0.711), ...extra});
-  await sleep(80);
+  
+  // 3. The server list over the relay.
+  await sleep(500);
+  const m3 = `XTMARK${++mark}`;
+  const tList = Date.now();
+  await command(`echo ${m3}`);
+  await command('net_slist');
+  const listed = await waitConsole(/Godnotic bridge test/, 20000, m3);
+  results.serverListMs = Date.now() - tList;
+  check(!!listed && masterQueries > 0, `3. net_slist lists the game server through the relay (${results.serverListMs} ms, master queries ${masterQueries}): ${listed || 'nothing'}`);
+  
+  // 4. Join it.
+  const m4 = `XTMARK${++mark}`;
+  const tJoin = Date.now();
+  await command(`echo ${m4}`);
+  await command(`connect 127.0.0.1:${gamePort}`);
+  const loaded = await waitConsole(/client: program loaded|CSQC.*loaded/i, 120000, m4);
+  results.joinMs = Date.now() - tJoin;
+  const entered = await waitLog(game, /connected|entered the game/i, 10000);
+  check(!!loaded, `4. connect: the browser loads the server's world (${results.joinMs} ms): ${loaded || 'no CSQC'}`);
+  check(!!entered, `4b. the game server sees the browser player: ${entered ? entered[0] : 'nothing'}`);
+  await command('togglemenu 0');
+  await sleep(4000);
+  const world = await shot('joined-world');
+  check(!!world && world.colours > 200 && world.sd > 12 && world.dark < 0.9,
+    `4c. the world is drawn (screenshot: ${JSON.stringify(world)})`);
+  
+  // 5. Move.
+  await command('cmd join');
+  await sleep(2500);
+  // The server's welcome dialog is up: press its "Join!" (bottom left) as a player would.
+  const vp = await evaluate('[innerWidth, innerHeight]');
+  for (const [type, extra] of [['mouseMoved', {}], ['mousePressed', {button: 'left', clickCount: 1}], ['mouseReleased', {button: 'left', clickCount: 1}]]) {
+    await send('Input.dispatchMouseEvent', {type, x: Math.round(vp[0] * 0.377), y: Math.round(vp[1] * 0.711), ...extra});
+    await sleep(80);
+  }
+  await sleep(1500);
+  await shot('after-join-click');
+  // The server's view of player 1, over plain rcon (stdout is buffered).
+  async function rcon(line, ms = 600) {
+    const sock = dgram.createSocket('udp4');
+    let text = '';
+    sock.on('message', (m) => { if (m.subarray(4, 5).toString() === 'n') text += m.subarray(5).toString('latin1'); });
+    await new Promise((r) => sock.bind(0, '127.0.0.1', r));
+    sock.send(Buffer.concat([Buffer.alloc(4, 255), Buffer.from(`rcon bridgetest ${line}`, 'latin1')]), gamePort, '127.0.0.1');
+    await sleep(ms);
+    sock.close();
+    return text;
+  }
+  async function origin() {
+    const mm = /(-?[\d.]+) (-?[\d.]+) (-?[\d.]+)/.exec(await rcon('prvm_edictget server 1 origin'));
+    return mm ? mm.slice(1, 4).map(Number) : null;
+  }
+  const before = await origin();
+  await command('+forward');
+  await sleep(1500);
+  await command('-forward');
+  await sleep(500);
+  const afterF = await origin();
+  await command('+back');
+  await sleep(1500);
+  await command('-back');
+  await sleep(500);
+  const afterB = await origin();
+  const dist = (a, b) => (a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 0);
+  results.moved = [dist(before, afterF), dist(afterF, afterB)].map((d) => Math.round(d));
+  check(dist(before, afterF) > 40 || dist(afterF, afterB) > 40,
+    `5. the player moves on the server (${JSON.stringify(before)} -> ${JSON.stringify(afterF)} -> ${JSON.stringify(afterB)})`);
+  await shot('moved');
+  const relayText = relay.text();
+  check(/web relay: offer from gnw-/.test(relayText), 'the relay logged the browser\'s offer');
 }
-await sleep(1500);
-await shot('after-join-click');
-// The server's view of player 1, over plain rcon (stdout is buffered).
-async function rcon(line, ms = 600) {
-  const sock = dgram.createSocket('udp4');
-  let text = '';
-  sock.on('message', (m) => { if (m.subarray(4, 5).toString() === 'n') text += m.subarray(5).toString('latin1'); });
-  await new Promise((r) => sock.bind(0, '127.0.0.1', r));
-  sock.send(Buffer.concat([Buffer.alloc(4, 255), Buffer.from(`rcon bridgetest ${line}`, 'latin1')]), gamePort, '127.0.0.1');
-  await sleep(ms);
-  sock.close();
-  return text;
-}
-async function origin() {
-  const mm = /(-?[\d.]+) (-?[\d.]+) (-?[\d.]+)/.exec(await rcon('prvm_edictget server 1 origin'));
-  return mm ? mm.slice(1, 4).map(Number) : null;
-}
-const before = await origin();
-await command('+forward');
-await sleep(1500);
-await command('-forward');
-await sleep(500);
-const afterF = await origin();
-await command('+back');
-await sleep(1500);
-await command('-back');
-await sleep(500);
-const afterB = await origin();
-const dist = (a, b) => (a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 0);
-results.moved = [dist(before, afterF), dist(afterF, afterB)].map((d) => Math.round(d));
-check(dist(before, afterF) > 40 || dist(afterF, afterB) > 40,
-  `5. the player moves on the server (${JSON.stringify(before)} -> ${JSON.stringify(afterF)} -> ${JSON.stringify(afterB)})`);
-await shot('moved');
-const relayText = relay.text();
-check(/web relay: offer from gnw-/.test(relayText), 'the relay logged the browser\'s offer');
-
 // 6. Relay gone: the page tells the player.
 await command('disconnect');
 relay.say('bridge_relay 0');
