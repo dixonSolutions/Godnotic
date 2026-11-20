@@ -91,7 +91,7 @@ class ViewRenderer(
         nodes[id] = e
         bindSafe(e)
         if (e.list != null && isServerSource(e.source)) flushServers(e.source)
-        e.view.visibility = if (props.bool("hidden")) View.GONE else View.VISIBLE
+        e.view.visibility = if (props.bool("hidden") || id == DOCKED_DETAILS) View.GONE else View.VISIBLE
         val p = parent?.let { nodes[it] } ?: return
         if (p.type == "tabs") { tabsAdd(p, e); return }
         // Home's bar of tabs: the screen's last strip, under the action bar
@@ -116,8 +116,11 @@ class ViewRenderer(
         val e = nodes[id] ?: return
         e.props = if (id == "mp/servers") serverListState.merge(props) else props
         bindSafe(e)
-        e.view.visibility = if (props.bool("hidden")) View.GONE else View.VISIBLE
+        e.view.visibility = if (props.bool("hidden") || id == DOCKED_DETAILS) View.GONE else View.VISIBLE
     }
+
+    /** The engine's chosen-server card: the "i" dialog shows it instead, so it is never docked over the list. */
+    private val DOCKED_DETAILS = "mp/details"
 
     private fun bindSafe(e: Entry) {
         try { e.bind?.invoke(e) } catch (ex: RuntimeException) { android.util.Log.w("Godnotic", "Native UI: ${e.type} ${e.id} did not bind: ${ex.message}") }
@@ -132,6 +135,8 @@ class ViewRenderer(
     }
 
     override fun navigate(screen: String, transition: String) {
+        closeDetails()
+        if (screen != "mp") for (st in serverListStates.values) st.select("") // a chosen row does not outlive its screen
         val e = nodes[screen] ?: return
         (e.view.parent as? ViewGroup)?.removeView(e.view)
         bindSafe(e) // the back arrow follows app.canBack
@@ -140,6 +145,7 @@ class ViewRenderer(
     }
 
     override fun dialog(id: String?) {
+        detailsOpen = false
         if (id == null) { host.showDialog(null); return }
         val e = nodes[id] ?: return
         (e.view.parent as? ViewGroup)?.removeView(e.view)
@@ -156,6 +162,8 @@ class ViewRenderer(
             // and must not be confused with a source notice: re-asking on it loops.
             serverState(source).accept(offset, total, rows, rev)
             flushServers(source)
+            if (rowsLogged.merge(source, 1, Int::plus)!! <= 60) // timing evidence (tests/srvlist/emu_card.py)
+                Log.i("Godnotic", "Native UI: $source rows offset=$offset n=${rows.size} total=$total known=${serverState(source).known} drawn=${serverState(source).size}")
             return
         }
         for (l in lists[source].orEmpty()) {
@@ -174,18 +182,35 @@ class ViewRenderer(
             for (l in lists[source].orEmpty()) nodes[l.id]?.let { bindEmpty(it) }
             return
         }
-        serverState(source).begin(total, rev)
+        val state = serverState(source)
+        state.begin(total, rev)
         flushServers(source)
-        // Fetch the complete cached source, not just the visible RecyclerView
-        // window. Small batches keep bridge messages within their size limit.
+        if (rowsLogged.merge(source, 1, Int::plus)!! <= 60)
+            Log.i("Godnotic", "Native UI: $source notice total=$total known=${state.known} lists=${lists[source].orEmpty().size}")
+        for (l in lists[source].orEmpty()) l.reask()
+        // Rows the list has never been sent (a cold list: only the visible window comes
+        // with reask) are fetched whole, in big windows and at most once a second: the
+        // engine sends four notices a second while it refreshes, and a request per
+        // notice for every 32 rows flooded the UI thread on a real 500-server list (ANR).
         val list = lists[source]?.firstOrNull()
         val props = list?.let { nodes[it.id]?.props }
         if (list != null && props != null) {
-            for (offset in 0 until total step 32)
-                events.window(list.id, source, offset, minOf(32, total - offset),
-                    props.str("sort"), props.bool("desc"), props.str("filter"))
+            val now = android.os.SystemClock.elapsedRealtime()
+            val offsets = ServerListState.fillOffsets(state.known, total, now - (fillAt[source] ?: -ServerListState.FILL_EVERY_MS), ServerListState.FILL_WINDOW)
+            if (offsets.isNotEmpty()) {
+                fillAt[source] = now
+                for (offset in offsets)
+                    events.window(list.id, source, offset, minOf(ServerListState.FILL_WINDOW, total - offset),
+                        props.str("sort"), props.bool("desc"), props.str("filter"))
+            }
         }
     }
+
+    private val fillAt = HashMap<String, Long>()
+    private val rowsLogged = HashMap<String, Int>()
+
+    /** The width pictures that must be there in the first frame are decoded and cached at. */
+    private val CARD_PX = 1024
 
     /**
      * Copy cached rows into every list reading this source, including newly
@@ -199,6 +224,7 @@ class ViewRenderer(
         val state = serverState(source)
         if (state.size > 0 && lists[source].orEmpty().isNotEmpty() && firstRowsLogged.add(source))
             Log.i("Godnotic", "Native UI: $source list holds ${state.size} rows (first rows handed to the list)")
+        for (map in state.firstMaps(4)) prefetch("pk3:maps/$map")
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -208,7 +234,32 @@ class ViewRenderer(
 
     override fun imageReady(ref: String, path: String) {
         imagePaths[ref] = path
+        if (path.isNotEmpty() && memo.put(ref, path)) saveMemo()
         imageWaiters.remove(ref)?.forEach { it(path) }
+    }
+
+    /** Picture files the engine gave earlier (this session or the last): a card draws its picture in its first frame. */
+    private val memoFile = java.io.File(ctx.cacheDir, "fe-imgpaths")
+    private val memo: ImagePathMemo = try { if (memoFile.isFile) ImagePathMemo.parse(memoFile.readText()) else ImagePathMemo() } catch (e: Exception) { ImagePathMemo() }
+    private val memoHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var memoSaving = false
+    private fun saveMemo() {
+        if (memoSaving) return
+        memoSaving = true
+        memoHandler.postDelayed({
+            memoSaving = false
+            val text = memo.serialize()
+            Thread { try { memoFile.writeText(text) } catch (e: Exception) { /* a convenience */ } }.start()
+        }, 1500)
+    }
+
+    /** The file for a picture: what the engine answered, else what it answered last time if that file is still there. */
+    private fun knownPath(ref: String): String? {
+        imagePaths[ref]?.let { return it }
+        val old = memo.get(ref) ?: return null
+        if (java.io.File(old).isFile) { imagePaths[ref] = old; return old }
+        memo.forget(ref)
+        return null
     }
 
     fun saveScroll(screen: String) {
@@ -248,6 +299,7 @@ class ViewRenderer(
         "card" -> card(id, props, hero = false)
         "hero" -> card(id, props, hero = true)
         "list" -> list(id, props)
+        // the chosen server's info is the "i" dialog, not a card docked over the list
         "preview" -> preview(id, props)
         "text" -> text(id, props)
         "image" -> image(id, props)
@@ -762,7 +814,9 @@ class ViewRenderer(
             c.isClickable = tappable
             img.aspect = aspect(p, 16f / 9f)
             img.maxHeight = (ctx.resources.displayMetrics.heightPixels * 0.22f).toInt()
-            if (photo) { img.visibility = View.VISIBLE; picture(img, ref) } else img.visibility = View.GONE
+            if (id == "home/tiles/mp") img.onShown = { Log.i("Godnotic", "Native UI: home card picture shown $ref") }
+            if (photo) { img.visibility = View.VISIBLE; picture(img, ref, sync = true) } else img.visibility = View.GONE
+            if (id == "home/tiles/mp") Log.i("Godnotic", "Native UI: home card rows=${if (p.str("subtitle").contains(" · ")) p.str("subtitle").count { it == '\n' } + 1 else 0} image=$ref picture=${img.hasPicture}")
             val prog = p.num("progress", -1.0)
             bar.visibility = if (prog >= 0) View.VISIBLE else View.GONE
             if (prog >= 0) bar.progress = (prog * 1000).toInt()
@@ -814,7 +868,7 @@ class ViewRenderer(
             if (prim.isNotEmpty()) actions.addView(actionButton(id, prim, true).apply { minimumWidth = dp(200f) })
             for (a in p["actions"].list()) actions.addView(actionButton(id, a.obj()))
             val ref = p.str("image")
-            if (ref.isEmpty()) img.none() else picture(img, ref)
+            if (ref.isEmpty()) img.none() else picture(img, ref, sync = true)
             c.contentDescription = listOf(title(p), p.str("subtitle")).filter { it.isNotEmpty() }.joinToString(". ")
         }
         return e
@@ -850,25 +904,42 @@ class ViewRenderer(
 
     private fun toneColor(t: String) = when (t) { "positive" -> Theme.GOOD; "danger" -> Theme.BAD; "warning" -> Theme.WARN; "accent" -> Theme.EMBER; else -> Theme.TEXT }
 
-    /** Asks for a picture once (through the host's bridge), fills every view waiting on it. */
-    fun picture(img: RoundImage, ref: String) {
+    /**
+     * Asks for a picture once (through the host's bridge), fills every view waiting on it.
+     * [sync]: a picture the screen's first frame must have (a card, the selection card): when
+     * its file is known it is decoded now and no placeholder is drawn before it.
+     */
+    fun picture(img: RoundImage, ref: String, sync: Boolean = false) {
+        val hadPicture = img.tag != null // a card whose map changes keeps the old picture until the new one is there
         img.tag = ref
         val ready: (String) -> Unit = { path ->
             if (img.tag == ref) {
                 if (path.isEmpty()) img.none()
                 else {
-                    val w = max(img.width, dp(320f))
-                    Images.cached(path, w)?.let { img.set(it) } ?: run {
-                        Images.load(path, w) { b -> if (img.tag == ref) { if (b != null) img.set(b) else img.none() } }
-                    }
+                    val w = if (sync) CARD_PX else max(img.width, dp(320f))
+                    val mem = Images.cached(path, w)
+                    val now = mem ?: if (PicturePolicy.decodeNow(sync, mem != null)) Images.now(path, w) else null
+                    if (now != null) img.set(now)
+                    else Images.load(path, w) { b -> if (img.tag == ref) { if (b != null) img.set(b) else img.none() } }
                 }
             }
         }
-        imagePaths[ref]?.let { ready(it); return }
-        img.set(null)
+        val known = knownPath(ref)
+        when (PicturePolicy.first(known != null, img.hasPicture || hadPicture)) {
+            PicturePolicy.First.SHOW -> { ready(known!!); return }
+            PicturePolicy.First.PLACEHOLDER -> img.set(null)
+            PicturePolicy.First.KEEP -> {}
+        }
         val waiting = imageWaiters.getOrPut(ref) { ArrayList() }
         waiting.add(ready)
         if (waiting.size == 1) events.image(ref, dp(480f), dp(270f))
+    }
+
+    /** Fetches a picture ahead of its view (the card of a chosen server, Home's top map). */
+    private fun prefetch(ref: String) {
+        if (knownPath(ref) != null || imageWaiters.containsKey(ref)) return
+        imageWaiters[ref] = arrayListOf<(String) -> Unit>({ path -> if (path.isNotEmpty()) Images.load(path, CARD_PX) { } }) // decoded and kept for the card
+        events.image(ref, dp(480f), dp(270f))
     }
 
     private fun preview(id: String, props: Map<String, Any?>): Entry {
@@ -910,7 +981,7 @@ class ViewRenderer(
             val ref = p.str("image")
             // no picture (a mod without an icon): the text takes the row
             img.visibility = if (ref.isEmpty()) View.GONE else View.VISIBLE
-            if (ref.isEmpty()) img.none() else picture(img, ref)
+            if (ref.isEmpty()) img.none() else picture(img, ref, sync = true)
         }
         return e
     }
@@ -1408,11 +1479,11 @@ class ViewRenderer(
         return e
     }
 
-    private fun dialogFrame(content: View, dismissable: Boolean): View {
+    private fun dialogFrame(content: View, dismissable: Boolean, onDismiss: (() -> Unit)? = null): View {
         val frame = FrameLayout(ctx)
         frame.setBackgroundColor(0xB3000000.toInt())
         frame.isClickable = true // nothing behind it takes the tap
-        if (dismissable) frame.setOnClickListener { events.back() }
+        if (dismissable) frame.setOnClickListener { if (onDismiss != null) onDismiss() else events.back() }
         val box = Kit.card(ctx, clickable = false, radiusDp = 24f)
         box.isClickable = true
         val p = dp(20f)
@@ -1424,7 +1495,50 @@ class ViewRenderer(
         return frame
     }
 
-    /** The native server selection panel: ask for its map picture as soon as the row is tapped. */
+    private var detailsOpen = false
+
+    /** Closes the server info dialog if it is up (a join, leaving a match, another screen). */
+    fun closeDetails() {
+        if (!detailsOpen) return
+        detailsOpen = false
+        host.showDialog(null)
+    }
+
+    /**
+     * The menu is left (a join or a match starts): no info dialog stays up and no row stays chosen,
+     * so coming back after the match shows the whole list.
+     */
+    fun leftMenu() {
+        if (!detailsOpen && serverListStates.values.all { it.selected.isEmpty() }) return
+        closeDetails()
+        for (st in serverListStates.values) st.select("")
+        nodes["mp/servers"]?.let { e -> e.props = e.props + ("selected" to emptyList<Any?>()); e.list?.refresh() }
+    }
+
+    /**
+     * The chosen server's row shows an "i" in front of its name; touching it opens the info dialog.
+     * Elsewhere the row's own tap selects (the first cell passes the touch on).
+     */
+    private fun bindInfo(r: LinearLayout, columns: List<Map<String, Any?>>, data: Map<String, Any?>?, chosen: Boolean) {
+        val ni = columns.indexOfFirst { it.str("key") == "name" }
+        if (ni < 0 || ni >= r.childCount) return
+        val cell = r.getChildAt(ni) as? TextView ?: return
+        var downX = 0f
+        if (chosen && data != null) {
+            cell.text = "\u24D8  " + cell.text.toString().removePrefix("\u24D8  ")
+            cell.isClickable = true
+            cell.setOnTouchListener { _, ev -> if (ev.action == android.view.MotionEvent.ACTION_DOWN) downX = ev.x; false }
+            cell.setOnClickListener { v ->
+                if (downX <= dp(52f)) { Kit.haptic(v); showServerDetails(data) } else r.performClick()
+            }
+        } else {
+            cell.setOnTouchListener(null)
+            cell.setOnClickListener(null)
+            cell.isClickable = false
+        }
+    }
+
+    /** The native server info dialog (the "i" of the chosen row): picture, title, facts, players, Join, Close. */
     private fun showServerDetails(row: Map<String, Any?>) {
         val cells = row["cells"].obj()
         val map = cells.str("map")
@@ -1439,7 +1553,9 @@ class ViewRenderer(
         }
         if (map.isNotEmpty()) {
             content.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            picture(img, "pk3:maps/$map")
+            // a map that is not installed has no picture: the card closes up rather than keep a bare panel
+            img.onMissing = { img.visibility = View.GONE }
+            picture(img, "pk3:maps/$map", sync = true)
         }
         content.addView(Kit.text(ctx, cells.str("name").ifEmpty { address }, Theme.SP_TITLE, Theme.TEXT, bold = true))
         content.addView(Kit.text(ctx, ServerDetails.facts(cells), Theme.SP_BODY, Theme.TEXT_MUTED))
@@ -1450,12 +1566,14 @@ class ViewRenderer(
         }
         val actions = Kit.row(ctx, 10f)
         actions.addView(Kit.button(ctx, "Join", primary = true) {
-            host.showDialog(null)
+            closeDetails()
             events.row("mp/servers", address, "activate")
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        actions.addView(Kit.button(ctx, "Close") { closeDetails() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         content.addView(actions)
         val scroll = ScrollView(ctx).apply { isFillViewport = true; addView(content) }
-        host.showDialog(dialogFrame(scroll, true))
+        detailsOpen = true
+        host.showDialog(dialogFrame(scroll, true) { closeDetails() })
     }
 
     private fun generic(id: String, type: String, props: Map<String, Any?>): Entry {
@@ -1653,6 +1771,7 @@ class ViewRenderer(
                         else Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
                     r.contentDescription = if (data == null) "Loading" else columns.joinToString(", ") { c -> "${c.str("label")} ${cells.str(c.str("key"))}" } + if (on) ", selected" else ""
                     bindTap(r, e, id, data)
+                    bindInfo(r, columns, data, on && id == "mp/servers")
                 },
                 makeCell = { _ ->
                     val r = Kit.row(ctx)
@@ -1774,9 +1893,7 @@ class ViewRenderer(
                 if (e.props.str("selection") == "multi") select(e, id, key, true) // the first tap's toggle undone
                 events.row(id, key, "activate")
             } else {
-                val changed = !isServerSource(e.source) || serverState(e.source).selected != key
-                select(e, id, key, true)
-                if (changed && id == "mp/servers" && e.props.str("selection") == "single") showServerDetails(row)
+                select(e, id, key, true) // selecting only: the "i" on the chosen row opens the info dialog
             }
         }
         v.setOnKeyListener { _, code, ev ->

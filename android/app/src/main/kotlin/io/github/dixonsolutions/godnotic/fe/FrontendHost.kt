@@ -54,7 +54,10 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     val root: FrameLayout = object : FrameLayout(activity) {
         override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
             // the engine's console button under the pause scrim takes its own touches (4.12)
-            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN && passThrough(ev.x, ev.y)) return false
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                Log.i("Godnotic", "Native UI: touch down ${ev.x.toInt()},${ev.y.toInt()}") // timing evidence (tests/srvlist/emu_card.py)
+                if (passThrough(ev.x, ev.y)) return false
+            }
             return super.dispatchTouchEvent(ev)
         }
     }
@@ -233,7 +236,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             a.bool("advanced") || a.bool("console") -> { setVisible(false); showBackPill(a.bool("advanced")) }
             state == "menu" -> { showBackPill(false); stopgap?.showReturn(); setVisible(true) }
             state == "paused" -> { showBackPill(false); stopgap?.show("pause", a); setVisible(true) }
-            else -> { showBackPill(false); setVisible(false) } // in a match, or the engine's loading screen
+            else -> { showBackPill(false); renderer?.leftMenu(); setVisible(false) } // in a match, or the engine's loading screen
         }
         reportPower("_android_idle_home", if (state == "menu" && root.visibility == View.VISIBLE) "1" else "0")
         if (JoinFlow.reconnectCard(state, a.str("reconnect"), loadingStrip != null) && !cardIgnoreBusy) {
@@ -400,11 +403,16 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val generic = JoinFlow.generic(c.str("levelshot_kind"))
         if (shot != shotPath) {
             shotPath = shot; shotBitmap = null; shotGeneric = generic
-            if (shot.isNotEmpty()) Images.load(shot, JoinFlow.SHOT_WIDTH) { bmp ->
-                if (shotPath == shot && bmp != null) {
-                    shotBitmap = bmp // sharp: decoded for the screen, drawn bilinear, never blurred
-                    applyLook(JoinFlow.showShot(shotPath, lastWorld))
+            if (shot.isNotEmpty()) {
+                val got = { bmp: android.graphics.Bitmap? ->
+                    if (shotPath == shot && bmp != null) {
+                        shotBitmap = bmp // sharp: decoded for the screen, drawn bilinear, never blurred
+                        applyLook(JoinFlow.showShot(shotPath, lastWorld))
+                    }
                 }
+                // a picture already on disk is drawn with the card, not a frame or two after it
+                val now = Images.cached(shot, JoinFlow.SHOT_WIDTH) ?: Images.now(shot, JoinFlow.SHOT_WIDTH)
+                if (now != null) got(now) else Images.load(shot, JoinFlow.SHOT_WIDTH, got)
             }
         }
         shotGeneric = generic
@@ -856,6 +864,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     // ---------------------------------------------------------------- UiEvents (from the views)
 
     override fun action(node: String, action: Map<String, Any?>) {
+        Log.i(tag, "Native UI: action $node / ${action.str("id")}")
         if (stopgap?.action(node, action) == true) return
         client?.event("action", mapOf("node" to node, "action" to action.str("id")))
     }

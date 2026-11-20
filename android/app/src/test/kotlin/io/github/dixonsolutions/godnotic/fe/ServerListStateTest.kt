@@ -583,4 +583,37 @@ class ServerListStateTest {
         assertEquals("online:2", state.selected)
         assertTrue("Join has a target", state.selected.isNotEmpty())
     }
+
+    @Test fun wholeSourceIsFetchedOnceASecondNotOncePerNotice() {
+        // 555 servers, nothing known: 6 windows of 100, then none until a second has passed
+        assertEquals(listOf(0, 100, 200, 300, 400, 500), ServerListState.fillOffsets(0, 555, 5_000L))
+        assertTrue("a notice right after a fetch asks nothing", ServerListState.fillOffsets(0, 555, 250L).isEmpty())
+        assertTrue("every row known: nothing to fetch", ServerListState.fillOffsets(555, 555, 5_000L).isEmpty())
+        assertTrue(ServerListState.fillOffsets(0, 0, 5_000L).isEmpty())
+        // the old code asked ceil(555 / 32) = 18 windows on each of the engine's four notices a second
+        assertTrue(ServerListState.fillOffsets(0, 555, 5_000L).size < 18)
+    }
+
+    @Test fun listKnowsItsRowsAndTheFirstMaps() {
+        val state = ServerListState()
+        state.begin(3, 1)
+        fun onMap(key: String, ping: Int, map: String) =
+            row(key, ping = ping).let { r -> r + ("cells" to (r["cells"] as Map<*, *> + ("map" to map))) }
+        state.accept(0, 3, listOf(onMap("a:1", 10, "stormkeep"), onMap("b:2", 20, "stormkeep"), onMap("c:3", 30, "xoylent")), 1)
+        assertEquals(3, state.known)
+        assertEquals(listOf("stormkeep", "xoylent"), state.firstMaps(4))
+    }
+
+    @Test fun selectionMovesFromOneServerToAnotherAndClears() {
+        state.accept(0, 3, listOf(row("a:1"), row("b:2"), row("c:3")))
+        assertTrue(state.select("a:1"))
+        assertEquals("a:1", state.selected)
+        assertTrue("choosing another row moves the choice", state.select("b:2"))
+        assertEquals("b:2", state.selected)
+        assertEquals(listOf<Any?>("b:2"), state.merge(mapOf("selected" to listOf<Any?>("a:1")))["selected"])
+        // leaving the menu (a join, a match): nothing stays chosen, the engine's own props rule again
+        assertTrue(state.select(""))
+        assertEquals("", state.selected)
+        assertEquals(listOf<Any?>(), state.merge(mapOf("selected" to emptyList<Any?>()))["selected"] ?: emptyList<Any?>())
+    }
 }

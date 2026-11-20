@@ -360,6 +360,18 @@ object Images {
 
     private fun bucket(w: Int) = when { w == Int.MAX_VALUE -> Int.MAX_VALUE; w <= 256 -> 256; w <= 512 -> 512; else -> 1024 }
 
+    /**
+     * The picture at once, on the calling thread (a few pictures decide a screen's first frame:
+     * Home's cards, the selection card). From the thumbnail on disk it is a few milliseconds.
+     */
+    fun now(path: String, widthPx: Int): Bitmap? {
+        val key = "$path@${bucket(widthPx)}"
+        cache.get(key)?.let { return it }
+        val bmp = try { decode(path, bucket(widthPx)) } catch (e: Exception) { null }
+        if (bmp != null) cache.put(key, bmp)
+        return bmp
+    }
+
     fun load(path: String, widthPx: Int, done: (Bitmap?) -> Unit) {
         val key = "$path@${bucket(widthPx)}"
         cache.get(key)?.let { done(it); return }
@@ -430,18 +442,29 @@ class RoundImage(ctx: Context, private val radiusDp: Float = 12f) : FrameLayout(
 
     init {
         setWillNotDraw(false)
+        // No placeholder until a picture is known to be missing: set(null) asks for the shimmer
+        // (a picture the engine still has to produce); a picture already on disk never shows it.
+        shimmer.visibility = GONE
         addView(shimmer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
+
+    /** Called each time a picture is set (not for none()): timing evidence for the Home card. */
+    var onShown: (() -> Unit)? = null
+    val hasPicture: Boolean get() = bitmap != null
 
     fun set(b: Bitmap?) {
         bitmap = b
         shimmer.visibility = if (b == null) VISIBLE else GONE
         invalidate()
+        if (b != null) onShown?.invoke()
     }
 
     /** No picture at all: the placeholder stops shimmering and stays a plain panel. */
-    fun none() { shimmer.visibility = GONE; bitmap = null; invalidate() }
+    fun none() { shimmer.visibility = GONE; bitmap = null; invalidate(); onMissing?.invoke() }
+
+    /** Called when the picture turns out not to exist (the engine has none for the reference). */
+    var onMissing: (() -> Unit)? = null
 
     override fun onMeasure(w: Int, h: Int) {
         val width = MeasureSpec.getSize(w)
