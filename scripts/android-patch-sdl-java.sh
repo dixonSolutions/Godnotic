@@ -52,3 +52,20 @@ s = open(p).read()
 open(p, "w").write(s.replace(a, b))
 PY
 fi
+
+# A keyboard attached: SDL's hidden text field asks for no text editor (TYPE_NULL),
+# so an input method with physical-keyboard prediction (Samsung Keyboard) passes the
+# keys on to the game instead of keeping them for its suggestion strip
+# (PhysicalKeyboard.java). handleKeyEvent still commits each key's character.
+if ! grep -qF "Godnotic: physical keys to the game" "$a"; then
+    plain="                             InputType.TYPE_TEXT_FLAG_MULTI_LINE;"
+    fixed="$plain
+        outAttrs.inputType = io.github.dixonsolutions.godnotic.PhysicalKeyboard.inputType(outAttrs.inputType); // Godnotic: physical keys to the game"
+    test "$(grep -cF "$plain" "$a")" = 1 || { echo "android-patch-sdl-java: '$plain' not found once in $a" >&2; exit 1; }
+    python3 - "$a" "$plain" "$fixed" <<'PY'
+import sys
+p, a, b = sys.argv[1:]
+s = open(p).read()
+open(p, "w").write(s.replace(a, b))
+PY
+fi

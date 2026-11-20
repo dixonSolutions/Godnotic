@@ -77,6 +77,43 @@ public class CrashReportTest {
                 "app=1.2.270 stage=game engine=1 phase=checking", false));
     }
 
+    @Test public void theHostRestartingToApplyAStagedReleaseIsNotACrash() {
+        // Owner's tablet 2026-11-20 17:08: app 1.2.289 on an API 3 host, payload 1.2.298 with
+        // 1.2.301 staged; the host killed the process once the player left, the next start ran
+        // 1.2.301 and reported "exit-self (1)", importance 300.
+        String state = "app=1.2.289 payload=1.2.298 host=present:auto stage=none engine=0 phase=staged";
+        assertTrue("before: reported as a crash",
+                CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false, null));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false, null,
+                "1.2.301", 300));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, state, false, null,
+                "1.2.301", 300));
+        // On screen with the engine down (host Phoenix relaunch) it is the same handover.
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false, null,
+                "1.2.301", 100));
+        // The release was not promoted: the same payload runs again, so it stays a report.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false, null,
+                "1.2.298", 300));
+        // A crash or ANR with a release staged is always a report.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true, state, false, null,
+                "1.2.301", 300));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_ANR, true, state, false, null,
+                "1.2.301", 300));
+        // The engine exiting in a match on screen while an update waited is still reported.
+        String playing = "app=1.2.289 payload=1.2.298 host=present:auto stage=game engine=1 phase=staged";
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, playing, false, null,
+                "1.2.301", 100));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, playing, false, null,
+                "1.2.301", 300));
+        // Another phase, or no payload in the state, is not this handover.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true,
+                state.replace("phase=staged", "phase=checking"), false, null, "1.2.301", 300));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true,
+                state.replace("payload=1.2.298", "payload=-"), false, null, "1.2.301", 300));
+        assertEquals("1.2.298", CrashReport.field(state, "payload"));
+        assertEquals("", CrashReport.field(null, "payload"));
+    }
+
     @Test public void swipingTheGameAwayIsNotACrash() {
         // Owner's tablet 2026-11-20: app 1.2.289, payload 1.2.296 -> 1.2.297 (around an update,
         // app version unchanged), "exit-self (1)", description "[REMOVE TASK] remove task".

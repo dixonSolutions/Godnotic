@@ -156,7 +156,8 @@ final class CrashStore {
             newest = Math.max(newest, when);
             int reason = exit.getReason();
             String state = state(exit);
-            if (!CrashReport.shouldReport(reason, aroundUpdate, state, versionChanged, exit.getDescription())) {
+            if (!CrashReport.shouldReport(reason, aroundUpdate, state, versionChanged,
+                    exit.getDescription(), payloadNow, exit.getImportance())) {
                 if (CrashReport.interesting(reason, aroundUpdate)) {
                     // Quiet/replacing self-exit or a version change: the old process left on
                     // purpose for the handover. Log it; never show it as a crash to the player.
