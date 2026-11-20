@@ -32,4 +32,7 @@ python3 "$dir/mirror_check.py" "$ROOT/engine/darkplaces/touch_feel.h" "$ROOT/eng
 "$CC" -std=c99 -Wall -Wextra -Werror -I"$ROOT/engine/darkplaces" \
     -o "$out/cursor_test" "$dir/cursor_test.c"
 "$out/cursor_test"
+"$CC" -std=c99 -Wall -Wextra -Werror -D__ANDROID__ -I"$ROOT/engine/darkplaces" \
+    -o "$out/cursor_test_android" "$dir/cursor_test.c"
+"$out/cursor_test_android"
 echo "touch cursor policy: passed"
