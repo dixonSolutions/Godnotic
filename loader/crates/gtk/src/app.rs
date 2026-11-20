@@ -644,14 +644,23 @@ pub fn row_activated(app: &App, list_node: &str, source: &str, pos: usize) {
         if selects && app.clicks.borrow_mut().click(list_node, &k, std::time::Instant::now()) == "select" {
             let m = app.core.borrow_mut().client.row(list_node, &k, "select");
             send(app, m);
+            // The server list: choosing a server opens its info dialog (Close keeps the choice).
+            if list_node == crate::widgets::SERVER_LIST {
+                crate::widgets::server_info(app, &k);
+            }
             return;
         }
-        let m = app.core.borrow_mut().client.row(list_node, &k, "activate");
-        send(app, m);
-        let primary = app.core.borrow().store.node(list_node).and_then(|n| n.obj("rowPrimary").and_then(|p| p.str_of("id")));
-        if let Some(p) = primary {
-            crate::backend::fixture_route(app, &p);
-        }
+        activate_row(app, list_node, &k);
+    }
+}
+
+/// Plays a row: the engine's row/activate, and the list's `rowPrimary` for the fixture backend.
+pub fn activate_row(app: &App, list_node: &str, key: &str) {
+    let m = app.core.borrow_mut().client.row(list_node, key, "activate");
+    send(app, m);
+    let primary = app.core.borrow().store.node(list_node).and_then(|n| n.obj("rowPrimary").and_then(|p| p.str_of("id")));
+    if let Some(p) = primary {
+        crate::backend::fixture_route(app, &p);
     }
 }
 

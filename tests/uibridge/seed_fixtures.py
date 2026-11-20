@@ -273,7 +273,7 @@ SERVER_COLS = [
 ]
 
 
-def mp_screen(rows=None, state="ready", total=None, lan=False, chosen=None, address=""):
+def mp_screen(rows=None, state="ready", total=None, lan=False, chosen=None, address="", details=False):
     rows = rows or servers()
     count = len([r for r in rows if not lan or r["cells"]["net"] != "internet"]) if total is None else total
     bar = N("mp/bar", "toolbar", [
@@ -303,7 +303,15 @@ def mp_screen(rows=None, state="ready", total=None, lan=False, chosen=None, addr
         N("mp/join/go", "button", label="Join", action=A("join", "Join", "play", style="primary"), style="primary",
           enabled=bool(chosen or address)),
     ], align="spread")
-    return N("mp", "screen", [bar, lst, join], title="Multiplayer", subtitle="40 servers · 87 players", kind="page",
+    kids = [bar, lst, join]
+    if details and chosen:
+        # what the engine adds while a server is chosen: its card (picture, title, facts, players, Join).
+        # A renderer with its own server dialog (Android's, the GTK app's) does not dock it into the page.
+        c = next(r for r in rows if r["key"] == chosen)["cells"]
+        kids.insert(2, N("mp/details", "preview", title=c["name"], image=f"pk3:maps/{c['map']}", aspect="16:9",
+                         subtitle=f"{c['map']} · {c['mode'].upper()} · {c['players']}/{c['max']} · {c['ping']} ms",
+                         primary=A("server.join", "Join", "play", style="primary")))
+    return N("mp", "screen", kids, title="Multiplayer", subtitle="40 servers · 87 players", kind="page",
              header={"collapsible": True})
 
 
@@ -572,6 +580,9 @@ def main():
                                              app([h, mp_screen(), sp_screen(create=True, lan=True, pw=True)]), rows={k: allrows[k] for k in ("maps.dm", "recent")}))
     write("servers", fixture("servers", "Servers: search, one row of checkboxes (LAN, Empty, Full, Laggy), Refresh, the dense list, address field, Join.",
                              app([h, mp_screen()]), rows=srows))
+    write("servers-chosen", fixture("servers-chosen", "Servers with one chosen: the engine's card for it (mp/details) sits between the list and the bar, "
+                                    "which a renderer with its own server dialog does not dock into the page.",
+                                    app([h, mp_screen(chosen=rows_all[5]["key"], details=True)]), rows=srows))
     write("servers-lan", fixture("servers-lan", "Servers with the LAN checkbox ticked (Wi-Fi and VPN rows).",
                                  app([h, mp_screen(lan=True)]), rows=srows))
     write("password-dialog", fixture("password-dialog", "Password prompt dialog.",

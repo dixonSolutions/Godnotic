@@ -190,7 +190,9 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
     let mut body: Vec<&Node> = Vec::new();
     let mut tabs: Option<&Node> = None;
     for k in &kids {
-        if k.hidden() {
+        // The engine's card for the chosen server: the info dialog shows it (as on Android), so
+        // it is never docked into the page, where its picture pushed the bottom bar off screen.
+        if k.hidden() || k.id == SERVER_DETAILS {
             continue;
         }
         match k.kind.as_str() {
@@ -254,7 +256,7 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
                 col.append(&node(app, store, n));
             }
             if body.is_empty() {
-                col.append(&adw::StatusPage::builder().title(s.title()).icon_name("dialog-information-symbolic").build());
+                col.append(&adw::StatusPage::builder().title(s.title()).icon_name("help-about-symbolic").build());
             }
             let clamp = adw::Clamp::builder().maximum_size(1100).tightening_threshold(900).child(&col).build();
             gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).kinetic_scrolling(true).child(&clamp).vexpand(true).build().upcast()
@@ -281,8 +283,152 @@ fn actionbar(app: &App, store: &Store, n: &Node) -> gtk::Widget {
         };
         b.append(&w);
     }
+    // Multiplayer's bar (address, Create, Join) ends with an "i": the chosen server's info dialog
+    // again (closing it kept the choice); off while no server is chosen. Android does the same.
+    if n.id == SERVER_BAR {
+        b.append(&server_info_button(app));
+    }
     let wrap = adw::Clamp::builder().maximum_size(1100).child(&b).build();
     wrap.upcast()
+}
+
+/// The server list and the bar under it (the engine's `mp/servers`, `mp/join`).
+pub const SERVER_LIST: &str = "mp/servers";
+pub const SERVER_BAR: &str = "mp/join";
+pub const SERVER_DETAILS: &str = "mp/details";
+const SERVER_INFO_BUTTON: &str = "mp/join:info";
+
+/// The chosen server: the list's `selected` key and that row's cells, while the row is held.
+fn chosen_server(app: &App) -> Option<(String, Map<String, Value>)> {
+    let core = app.core.borrow();
+    let list = core.store.node(SERVER_LIST)?;
+    let key = list.arr("selected").first()?.as_str()?.to_string();
+    let win = core.store.sources.get(&list.str("source")?)?;
+    let cells = (0..win.total()).find_map(|i| {
+        let r = win.row(i)?;
+        (r.str_of("key").as_deref() == Some(key.as_str())).then(|| r.get("cells").and_then(Value::as_object).cloned().unwrap_or_default())
+    })?;
+    Some((key, cells))
+}
+
+fn server_info_button(app: &App) -> gtk::Button {
+    let b = gtk::Button::from_icon_name("help-about-symbolic");
+    b.set_tooltip_text(Some("Server info"));
+    b.update_property(&[gtk::accessible::Property::Label("Server info")]);
+    b.set_valign(gtk::Align::Center);
+    b.set_sensitive(chosen_server(app).is_some());
+    let w = Rc::downgrade(app);
+    b.connect_clicked(move |_| {
+        if let Some(a) = w.upgrade() {
+            if let Some((key, _)) = chosen_server(&a) {
+                server_info(&a, &key);
+            }
+        }
+    });
+    register_activator(app, SERVER_INFO_BUTTON, &b);
+    b
+}
+
+/// The "i" is on exactly while a server is chosen.
+pub fn update_server_info_button(app: &App) {
+    let on = chosen_server(app).is_some();
+    if let Some(b) = app.ui.borrow().as_ref().and_then(|u| u.activators.get(SERVER_INFO_BUTTON).cloned()) {
+        b.set_sensitive(on);
+    }
+}
+
+/// "map · MODE · players/max · ping", as Android's server dialog says it.
+fn server_facts(c: &Map<String, Value>) -> String {
+    let num = |k: &str| c.get(k).and_then(Value::as_i64).unwrap_or(0);
+    let (players, max, ping) = (num("players"), num("max"), num("ping"));
+    [
+        cell_text(c.get("map")),
+        cell_text(c.get("mode")).to_uppercase(),
+        if max > 0 { format!("{players}/{max}") } else { players.to_string() },
+        if ping > 0 { format!("{ping} ms") } else { "– ms".to_string() },
+    ]
+    .into_iter()
+    .filter(|p| !p.is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+/// The server info dialog (opened by choosing a server, or the bar's "i"): picture, title, facts,
+/// players, Join and Close. Close keeps the choice; Join joins the server.
+pub fn server_info(app: &App, key: &str) {
+    let cells = {
+        let core = app.core.borrow();
+        let Some(list) = core.store.node(SERVER_LIST) else { return };
+        let Some(win) = list.str("source").and_then(|s| core.store.sources.get(&s)) else { return };
+        let Some(c) = (0..win.total()).find_map(|i| {
+            let r = win.row(i)?;
+            (r.str_of("key").as_deref() == Some(key)).then(|| r.get("cells").and_then(Value::as_object).cloned().unwrap_or_default())
+        }) else { return };
+        c
+    };
+    let Some(win) = app.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
+    let address = cell_text(cells.get("address"));
+    let name = {
+        let n = cell_text(cells.get("name"));
+        if n.is_empty() { if address.is_empty() { key.to_string() } else { address } } else { n }
+    };
+    let d = adw::Dialog::new();
+    d.set_title(&name);
+    d.set_content_width(440);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    col.set_margin_top(12);
+    col.set_margin_bottom(16);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    let map = cell_text(cells.get("map"));
+    if !map.is_empty() {
+        let frame = gtk::AspectFrame::new(0.5, 0.5, 16.0 / 9.0, false);
+        frame.set_overflow(gtk::Overflow::Hidden);
+        frame.add_css_class("card");
+        frame.set_size_request(-1, 200);
+        frame.set_child(Some(&picture(app, &format!("pk3:maps/{map}"), 640, 360)));
+        col.append(&frame);
+    }
+    let wide = |l: gtk::Label| {
+        l.set_max_width_chars(60);
+        l
+    };
+    col.append(&wide(label(&name, &["title-2"])));
+    col.append(&wide(label(&server_facts(&cells), &["dim-label"])));
+    let players = cell_text(cells.get("player_details")).trim().to_string();
+    if !players.is_empty() {
+        col.append(&label("Players · score · team", &["caption-heading", "dim-label"]));
+        col.append(&wide(label(&players, &["numeric"])));
+    }
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    actions.set_homogeneous(true);
+    let close = gtk::Button::with_label("Close");
+    let join = gtk::Button::with_label("Join");
+    join.add_css_class("suggested-action");
+    actions.append(&close);
+    actions.append(&join);
+    // (a script's "click" reaches them)
+    register_activator(app, "mp/servers:info-close", &close);
+    register_activator(app, "mp/servers:info-join", &join);
+    col.append(&actions);
+    let scroll = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).propagate_natural_height(true).max_content_height(560).child(&col).build();
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&adw::HeaderBar::new());
+    tv.set_content(Some(&scroll));
+    d.set_content_height(if map.is_empty() { 260 } else { 500 });
+    d.set_child(Some(&tv));
+    let d2 = d.clone();
+    close.connect_clicked(move |_| {
+        d2.close();
+    });
+    let (w, d2, key) = (Rc::downgrade(app), d.clone(), key.to_string());
+    join.connect_clicked(move |_| {
+        d2.close();
+        if let Some(a) = w.upgrade() {
+            app::activate_row(&a, SERVER_LIST, &key);
+        }
+    });
+    d.present(Some(&win));
 }
 
 /// A plain text entry (toolbar search, the address field in the action bar).
@@ -1621,6 +1767,9 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
                 let want = pos.map(|p| p as u32).unwrap_or(gtk::INVALID_LIST_POSITION);
                 if sel.selected() != want {
                     sel.set_selected(want);
+                }
+                if n.id == SERVER_LIST {
+                    update_server_info_button(&a);
                 }
                 return;
             }
