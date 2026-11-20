@@ -82,7 +82,7 @@ PROFILES = {
              "gfx_blocks": (4, 4), "max_size": 1024, "preset": "-thorough",
              "music_rate": "64k", "sfx": "opus", "bsp_zstd_level": 22,
              "jpeg_quality": 95, "lightmap_quality": 95,
-             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3"]},
+             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3", "*.xcf"]},
 }
 # The set for GPUs with ASTC, by what it is (the app's "slim" set).
 PROFILES["astc"] = PROFILES["slim"]
