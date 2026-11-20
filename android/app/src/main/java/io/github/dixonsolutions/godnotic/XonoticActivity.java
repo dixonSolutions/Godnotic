@@ -272,9 +272,7 @@ public final class XonoticActivity extends SDLActivity {
 
     private void reportInputDevices() {
         boolean touch = getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
-        boolean keyboard = false;
-        boolean mouse = false;
-        List<InputDevice> pointers = new ArrayList<>();
+        List<InputPresence.Dev> devs = new ArrayList<>();
         StringBuilder names = new StringBuilder();
         for (int id : InputDevice.getDeviceIds()) {
             InputDevice device = InputDevice.getDevice(id);
@@ -288,35 +286,30 @@ public final class XonoticActivity extends SDLActivity {
             if (hasSource(sources, InputDevice.SOURCE_TOUCHSCREEN)) {
                 touch = true;
             }
-            if (isRealKeyboard(device, sources)) {
-                keyboard = true;
+            InputPresence.Dev d = new InputPresence.Dev();
+            d.keyboard = isRealKeyboard(device, sources);
+            d.pointer = isRealPointer(device, sources);
+            d.touchpadOnly = hasSource(sources, InputDevice.SOURCE_TOUCHPAD)
+                    && !hasSource(sources, InputDevice.SOURCE_MOUSE);
+            d.external = Build.VERSION.SDK_INT >= 29 && device.isExternal();
+            d.chassisPad = isChassisPad(device);
+            if (d.keyboard) {
                 names.append(" keyboard=\"").append(device.getName()).append('"');
             }
-            if (isRealPointer(device, sources)) {
-                pointers.add(device);
+            if (d.pointer) {
+                names.append(" pointer=\"").append(device.getName()).append("\"(sources=0x")
+                        .append(Integer.toHexString(sources)).append(d.external ? ",external" : ",builtin")
+                        .append(')');
+            }
+            if (d.keyboard || d.pointer) {
+                devs.add(d);
             }
         }
-        // A keyboard the system itself calls hidden -- a lid or slider shut,
-        // a Chromebook folded into a tablet -- is not one the player can use,
-        // and neither is the chassis pad that goes face-down with it. Only a
-        // listed keyboard makes that folding: hardKeyboardHidden also reads
-        // YES on every device with no hard keys at all, where a touchpad the
-        // player attached is the pointer they aim with.
-        boolean folded = keyboard && getResources().getConfiguration().hardKeyboardHidden
+        boolean hidden = getResources().getConfiguration().hardKeyboardHidden
                 == Configuration.HARDKEYBOARDHIDDEN_YES;
-        if (folded) {
-            keyboard = false;
-        }
-        for (InputDevice pointer : pointers) {
-            if (folded && isChassisPad(pointer)) {
-                continue;
-            }
-            if (!keyboard && isBuiltInTouchpad(pointer)) {
-                continue;
-            }
-            mouse = true;
-            names.append(" mouse=\"").append(pointer.getName()).append('"');
-        }
+        InputPresence.Result presence = InputPresence.evaluate(devs, hidden);
+        boolean keyboard = presence.keyboard;
+        boolean mouse = presence.mouse;
 
         int state = (touch ? 1 : 0) | (keyboard ? 2 : 0) | (mouse ? 4 : 0);
         if (state != reportedInputState) {
@@ -379,17 +372,6 @@ public final class XonoticActivity extends SDLActivity {
      */
     private static boolean isChassisPad(InputDevice pointer) {
         return hasName(pointer, CHASSIS_POINTER_NAMES);
-    }
-
-    /**
-     * A touchpad built into the device, on a device with no keyboard listed:
-     * a Galaxy Tab's sec_touchpad, which sits on the touchscreen's own
-     * controller and is never a pad anyone aims with. A laptop's built-in pad
-     * comes with its built-in keyboard, so it still counts there.
-     */
-    private static boolean isBuiltInTouchpad(InputDevice pointer) {
-        return Build.VERSION.SDK_INT >= 29 && !pointer.isExternal()
-                && hasSource(pointer.getSources(), InputDevice.SOURCE_TOUCHPAD);
     }
 
     private static boolean hasIgnoredName(InputDevice device) {

@@ -57,4 +57,43 @@ with tempfile.TemporaryDirectory() as tmp:
     src.write_text(code)
     subprocess.run(['cc', '-std=c99', '-Wall', '-Wextra', '-Werror', str(src), '-o', tmp + '/test'], check=True)
     subprocess.run([tmp + '/test'], check=True)
+
+# Android: a mouse the activity lists but that never moved is not a mouse (a tablet's own
+# pad beside a Bluetooth keyboard used to read as one and switched the controls off).
+m = re.search(r'#if defined\(__ANDROID__\)\n\t\{\n(.*?)\n\t\}\n#elif defined\(DP_MOBILETOUCH\)', source, re.S)
+assert m, 'android presence block'
+acode = """#include <assert.h>
+#include <stdbool.h>
+typedef int qbool;
+#define __ATOMIC_ACQUIRE_ __ATOMIC_ACQUIRE
+typedef struct { qbool touch, keyboard, mouse; } vid_presence_t;
+#define VID_ANDROID_TOUCH 1
+#define VID_ANDROID_KEYBOARD 2
+#define VID_ANDROID_MOUSE 4
+#define VID_ANDROID_VALID 8
+static int vid_android_state, vid_android_seen, vid_touch_finger_seen;
+static qbool vid_android_mouse_used;
+static void compute(vid_presence_t *p) {
+    p->touch = p->keyboard = p->mouse = 0;
+""" + m.group(1) + """
+}
+int main(void) {
+    vid_presence_t p;
+    vid_android_state = 8 | 1 | 2 | 4;           /* touch, keyboard, a listed mouse never moved */
+    compute(&p); assert(p.keyboard && !p.mouse);
+    vid_android_mouse_used = 1;                  /* it moved */
+    compute(&p); assert(p.keyboard && p.mouse);
+    vid_android_state = 8 | 1 | 2;               /* unplugged */
+    compute(&p); assert(!p.mouse && !vid_android_mouse_used);
+    vid_android_state = 8 | 1 | 2 | 4;           /* plugged again: unused until it moves */
+    compute(&p); assert(!p.mouse);
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory() as tmp:
+    src = Path(tmp) / 'android.c'
+    src.write_text(acode)
+    subprocess.run(['cc', '-std=gnu11', '-Wall', '-Werror', str(src), '-o', tmp + '/android'], check=True)
+    subprocess.run([tmp + '/android'], check=True)
+assert 'vid_android_mouse_used = true;' in function('VID_NoteMouseUse'), 'real motion must mark the Android mouse used'
 print('touch hardware decisions: OK')
