@@ -335,11 +335,17 @@ static unsigned fnv8(const char *path) {
     return (unsigned)(h >> 32);
 }
 
+/* Where swapped-in engines are staged; %s is the package. The desktop swap harness
+ * (tests/andysu/desktop) points it at its own directory. */
+#ifndef ANDYSU_SWAP_DIR_FMT
+#define ANDYSU_SWAP_DIR_FMT "/data/data/%s/files/andysu-swap"
+#endif
+
 /* Copy src to the app-private dir under a unique name, read-only (external storage is noexec and
  * Android 14+ wants code files read-only). The name is libmain.<hash8>.<seq>.so. */
 static int stage_copy(const char *src, char *dst, size_t cap, int seq) {
     char dir[300];
-    snprintf(dir, sizeof dir, "/data/data/%s/files/andysu-swap", g_pkg);
+    snprintf(dir, sizeof dir, ANDYSU_SWAP_DIR_FMT, g_pkg);
     mkdir(dir, 0700);
     snprintf(dst, cap, "%s/libmain.%08x.%d.so", dir, fnv8(src), seq);
     FILE *in = fopen(src, "rb");

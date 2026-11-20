@@ -1,0 +1,18 @@
+# A self-hosted relay and its signaling broker (relay/README.md).
+#   docker compose -f relay/docker-compose.yml up -d --build
+services:
+  broker:
+    image: eclipse-mosquitto:2
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "8080:8080"   # ws://; publish it as wss:// through a TLS proxy
+    restart: unless-stopped
+  relay:
+    build:
+      context: ..
+      dockerfile: relay/Dockerfile
+    command: ["--broker", "ws://127.0.0.1:8080/mqtt"]   # the broker, through its published port
+    network_mode: host   # WebRTC needs the host's UDP ports
+    depends_on: [broker]
+    restart: unless-stopped

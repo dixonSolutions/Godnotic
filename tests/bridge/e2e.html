@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bridge end-to-end test</title>
+<script type="module">
+import {BridgeChannel} from "/web/bridge-channel.mjs";
+const pc = new RTCPeerConnection({iceServers: []});
+const channel = pc.createDataChannel('datagrams', {ordered: false, maxRetransmits: 0});
+const bridge = new BridgeChannel(channel);
+window.offer = async function offer() {
+  await pc.setLocalDescription(await pc.createOffer());
+  if (pc.iceGatheringState !== 'complete') await new Promise(resolve => {
+    pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') resolve(); });
+  });
+  return pc.localDescription.sdp;
+}
+window.answer = async function answer(sdp) {
+  await pc.setRemoteDescription({type: 'answer', sdp});
+  if (channel.readyState !== 'open') await new Promise((resolve, reject) => {
+    channel.onopen = resolve; channel.onerror = reject;
+    setTimeout(() => reject(Error('data channel open timeout')), 15000);
+  });
+}
+window.request = async function request(ip, port, payload, expected) {
+  const header = [1, 4, ...ip.split('.').map(Number), port >> 8, port & 255];
+  const msg = new Uint8Array([255, 255, 255, 255, ...new TextEncoder().encode(payload)]);
+  const start = performance.now();
+  if (!bridge.send(Uint8Array.from(ip.split('.').map(Number)), port, msg)) throw Error('bridge send failed');
+  while (performance.now() - start < 5000) {
+    let packet;
+    while ((packet = bridge.receive())) {
+      const r = new Uint8Array([1, packet.address.length === 4 ? 4 : 6, ...packet.address, packet.port >> 8, packet.port & 255, ...packet.payload]);
+      if (r.length > 12 && header.every((v, i) => r[i] === v) &&
+          new TextDecoder().decode(r.slice(12)).startsWith(expected))
+        return {ms: performance.now() - start, bytes: r.length - 8, data: Array.from(r.slice(8))};
+    }
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  throw Error('no ' + expected + ' reply from ' + ip + ':' + port);
+}
+</script>

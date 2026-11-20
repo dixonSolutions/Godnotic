@@ -56,6 +56,10 @@ accessibility = settings[settings.index("void UIB_SecAccessibility()"):settings.
 check('UIB_Section("desktop", _("Desktop"), true)' in accessibility and
       'UIB_Switch("assist", _("Enable auto shoot and aim assist"), "cvar:cl_accessibility_desktop"' in accessibility,
       "Accessibility exposes the desktop opt-in through the shared settings tree")
+privacy = settings[settings.index("void UIB_SecPrivacy()"):settings.index("float UIB_UpdSwitchV")]
+check('UIB_Switch("webrelay", _("Let web players connect through this device"), "cvar:bridge_relay"' in privacy and
+      'cvar_type("bridge_relay") & CVAR_TYPEFLAG_ENGINE' in privacy,
+      "Privacy has the web relay opt-in, only where the engine has the relay")
 content_start = settings.rindex("void UIB_SecContent(string k)\n{")
 content = settings[content_start:]
 for k in keys:

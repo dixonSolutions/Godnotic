@@ -143,6 +143,14 @@ jobs:
       - name: Check updater selection and configuration
         run: bash scripts/test-andysu-release.sh
 
+  java-abi:
+    name: Engine/Java contract for live swaps (java_abi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fingerprint of what the engine needs from the Java side
+        run: bash scripts/test-java-abi.sh
+
   andysu-channel:
     name: AndySU live channel app id
     runs-on: ubuntu-latest

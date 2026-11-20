@@ -77,6 +77,22 @@ EOF
 "$PY" -I "$here/repack-phone-assets.py" --textures keep --audio keep -j 2 -o "$tmp/keep" "$tmp/in.pk3" 2>"$tmp/log" || { cat "$tmp/log"; exit 1; }
 check "$tmp/keep" keep
 
+# Slim profiles omit GIMP source images while preserving playable textures.
+"$PY" -I - "$tmp/source.pk3" <<'EOF'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("textures/test/source.xcf", b"GIMP source")
+    z.writestr("textures/test/source.jpg", b"playable texture")
+EOF
+"$PY" -I "$here/repack-phone-assets.py" --profile dxt --audio keep --sfx keep --jpeg-quality 0 --lightmap-quality 0 -j 1 -o "$tmp/slim-source" "$tmp/source.pk3" 2>"$tmp/log"
+"$PY" -I - "$tmp/slim-source/source-phone.pk3" <<'EOF'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    assert "textures/test/source.xcf" not in z.namelist()
+    assert z.read("textures/test/source.jpg") == b"playable texture"
+print("ok: slim drops GIMP source and keeps texture")
+EOF
+
 astcenc=${ASTCENC:-$(command -v astcenc-avx2 || command -v astcenc-sse4.1 || command -v astcenc || true)}
 if [ -n "$astcenc" ] && command -v ffmpeg >/dev/null 2>&1; then
 	ASTCENC=$astcenc "$PY" -I "$here/repack-phone-assets.py" --allow-growth -j 2 -o "$tmp/astc" "$tmp/in.pk3" 2>"$tmp/log" || { cat "$tmp/log"; exit 1; }

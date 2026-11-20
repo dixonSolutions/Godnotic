@@ -22,6 +22,8 @@ mkdir -p "$profile"
     --user-data-dir="$profile" --remote-debugging-port="$port" about:blank \
     2>"${profile%/}.stderr.log" &
 pid=$!
-trap 'kill -9 $pid 2>/dev/null || true; wait $pid 2>/dev/null || true' EXIT
+# A browser that exits as browsers do writes what the page stored (a kill -9
+# lost the last localStorage writes, the read-ahead's list among them).
+trap 'kill -TERM $pid 2>/dev/null; for _ in $(seq 30); do kill -0 $pid 2>/dev/null || break; sleep 0.1; done; kill -9 $pid 2>/dev/null || true; wait $pid 2>/dev/null || true' EXIT
 for _ in $(seq 100); do curl -sf "http://127.0.0.1:$port/json/version" >/dev/null && break; sleep 0.1; done
 node "$here/e2e.mjs" --port "$port" --url "$url" --label "$label" "$@"

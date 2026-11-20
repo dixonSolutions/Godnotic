@@ -26,9 +26,10 @@ the data from a local `web/serve.py`, answers the welcome, then:
   real tap on its card or tab, and each must be our screen, have no two
   sibling controls overlapping, and keep every control inside the window;
 - **a local match** (`bot_number 2; map stormkeep`) is started and its menu
-  opened: the UIB stack must be `["pause"]`, `_menu_gamemenu_dialog_available`
-  must be 0 (the old Xonotic "Game menu" is not up), the pause screen must be
+  opened: the UIB stack must be `["pause"]`, `_uib_classic_up`
+  must be 0 (the old Xonotic "Game menu" is not drawing), the pause screen must be
   laid out cleanly, and Resume must close it;
+- **real touch input** must open the controls; the suite does not substitute scripted taps for these checks.
 - **no console errors** may be logged by the page.
 
 Screenshots and `run.log` go to `build/web-render/`; each run also prints a

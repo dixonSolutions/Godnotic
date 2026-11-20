@@ -270,10 +270,10 @@ class UiBridgeTest {
     @Test fun joinCardIsNotDroppedForAVisibleNativeScreen() {
         assertFalse(JoinFlow.settled(0, 299))
         assertTrue(JoinFlow.settled(0, 300))
-        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true))
         assertTrue(JoinFlow.card("preview", joinDialog = false, settled = true))
-        assertFalse(JoinFlow.card("preview", joinDialog = true, settled = true))
+        assertTrue(JoinFlow.card("preview", joinDialog = true, settled = true))
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true))
         assertTrue(JoinFlow.transparent("preview"))
         assertFalse(JoinFlow.transparent("loading"))
@@ -286,7 +286,7 @@ class UiBridgeTest {
      */
     @Test fun joinLogoAppearsOnceAndOnlyUntilThePreview() {
         // built once, once it has settled...
-        assertFalse(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
+        assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, hasCard = false))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = true, hasCard = false))
         // ...then kept through the stages that follow, settled or not
         for (stage in listOf("downloading", "loading", "signon", "preview")) {
@@ -294,7 +294,7 @@ class UiBridgeTest {
         }
         // the join is over, or the dialog is the join screen: the card goes
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = true, hasCard = true))
-        assertFalse(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
+        assertTrue(JoinFlow.card("signon", joinDialog = true, settled = true, hasCard = true))
 
         // the logo is for the wait before the preview, once
         assertFalse(JoinFlow.banner("connecting", previewSeen = false))
@@ -318,13 +318,118 @@ class UiBridgeTest {
         assertFalse(JoinFlow.showShot("/data/fe_cache/maps_stormkeep.jpg", world = true))
         assertFalse(JoinFlow.showShot("", world = false))
         // a local start: first snapshot, no settle wait, no card yet
-        assertFalse(JoinFlow.card("loading", joinDialog = false, settled = false))
+        assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false))
         assertTrue(JoinFlow.card("loading", joinDialog = false, settled = false, shot = true))
         assertTrue(JoinFlow.card("connecting", joinDialog = false, settled = false, shot = true))
         assertFalse(JoinFlow.card("idle", joinDialog = false, settled = false, shot = true))
         // the picture counts as the preview: the logo never shows
         assertTrue(JoinFlow.preview("loading", previewSeen = false, shot = true))
         assertFalse(JoinFlow.banner("loading", previewSeen = true))
+    }
+
+    /**
+     * The screen sequence of a join, replayed from what the engine publishes (a recorded log of
+     * scripts/test-touch-join-sequence.sh: connect, signon with the preview, the game, then a map
+     * change that reconnects). One card, built at the first busy snapshot, must stay until the
+     * game is entered, whatever gaps (`idle`, app `menu`) the engine reports on the way.
+     */
+    private class Replay {
+        var hasCard = false
+        var cards = 0
+        var idleSince = 0L
+        var lastStage = "idle"
+        var failed = false
+        var cancelled = false
+        val shown = ArrayList<Boolean>()
+        fun connect(stage: String, appState: String, t: Long, reconnecting: Boolean = false) {
+            if (stage != lastStage) { lastStage = stage; idleSince = t }
+            if (JoinFlow.isBusy(stage)) cancelled = false
+            val hold = JoinFlow.holdCard(stage, appState, hasCard, failed, reconnecting, t - idleSince, cancelled)
+            if (hold && !hasCard) { hasCard = true; cards++ }
+            if (!hold) hasCard = false
+            shown.add(hasCard)
+        }
+        /** The grace timer or an app update re-asks. */
+        fun recheck(appState: String, t: Long, reconnecting: Boolean = false) {
+            if (hasCard && !JoinFlow.holdCard(lastStage, appState, true, failed, reconnecting, t - idleSince, cancelled)) hasCard = false
+            shown.add(hasCard)
+        }
+    }
+
+    @Test fun joinCardStaysThroughAJoinAndAMapChange() {
+        val r = Replay()
+        var t = 0L
+        // tap on Join: the app is still on its menu screen when the first snapshot arrives
+        for ((stage, st) in listOf("connecting" to "menu", "connecting" to "loading", "connecting" to "loading",
+            "preview" to "loading", "preview" to "loading", "preview" to "loading", "preview" to "loading")) { t += 50; r.connect(stage, st, t) }
+        assertTrue("card from the first snapshot", r.shown.all { it })
+        // the game is entered: the world is drawn, the card goes
+        t += 50; r.connect("idle", "ingame", t)
+        assertFalse(r.hasCard)
+        // a map change: the engine drops to stage 1 again (loading), the old pause menu state is gone
+        for ((stage, st) in listOf("loading" to "paused", "loading" to "loading", "preview" to "loading", "preview" to "loading")) { t += 50; r.connect(stage, st, t); assertTrue(r.hasCard) }
+        t += 50; r.connect("idle", "ingame", t)
+        assertFalse(r.hasCard)
+        assertEquals("one card per join, none rebuilt between stages", 2, r.cards)
+    }
+
+    /** A reconnect: the engine reads idle between the drop and the next connect; the menu state shows under it. */
+    @Test fun joinCardStaysThroughAReconnectGap() {
+        val r = Replay()
+        var t = 0L
+        for (stage in listOf("connecting", "preview", "preview")) { t += 50; r.connect(stage, "loading", t) }
+        // the connection drops: idle and app `menu` for a while, with the reconnect text published
+        t += 50; r.connect("idle", "menu", t, reconnecting = true)
+        assertTrue(r.hasCard)
+        t += 4000; r.recheck("menu", t, reconnecting = true)
+        assertTrue("a reconnect under way keeps the card past the grace", r.hasCard)
+        t += 50; r.connect("connecting", "loading", t, reconnecting = true)
+        t += 50; r.connect("preview", "loading", t)
+        t += 50; r.connect("idle", "ingame", t)
+        assertFalse(r.hasCard)
+        assertEquals(1, r.cards)
+    }
+
+    /** A connection lost in the game: no card yet, the app topic says `menu` with the reconnect text; the card comes up from it. */
+    @Test fun lostConnectionRaisesTheCardBeforeTheMenu() {
+        assertTrue(JoinFlow.reconnectCard("menu", "Reconnecting to x (attempt 1 of 5)...", hasCard = false))
+        assertTrue(JoinFlow.reconnectCard("loading", "Reconnecting to x (attempt 2 of 5)...", hasCard = false))
+        assertFalse("a plain menu is a menu", JoinFlow.reconnectCard("menu", "", hasCard = false))
+        assertFalse("the card is there already", JoinFlow.reconnectCard("menu", "Reconnecting...", hasCard = true))
+        assertFalse("in the game, the banner is enough", JoinFlow.reconnectCard("ingame", "Reconnecting...", hasCard = false))
+    }
+
+    /** A failure: the card waits for the notice (idle, app `menu`), becomes the error, and Back removes it. */
+    @Test fun joinCardBecomesTheErrorNotTheMenu() {
+        val r = Replay()
+        var t = 0L
+        for (stage in listOf("connecting", "connecting")) { t += 50; r.connect(stage, "loading", t) }
+        t += 50; r.connect("idle", "menu", t)
+        assertTrue("the menu does not show while the failure notice is on its way", r.hasCard)
+        t += 700; r.failed = true; r.recheck("menu", t)
+        assertTrue("the error is on the card", r.hasCard)
+        t += 60_000; r.recheck("menu", t)
+        assertTrue("the error stays until Back or Retry", r.hasCard)
+        r.cancelled = true // Back
+        r.recheck("menu", t)
+        assertFalse(r.hasCard)
+        assertEquals(1, r.cards)
+    }
+
+    /** Idle with no failure and no reconnect: the card does not stay for ever. */
+    @Test fun joinCardGoesWhenNothingExplainsTheIdle() {
+        val r = Replay()
+        r.connect("connecting", "loading", 0)
+        r.connect("idle", "menu", 100)
+        assertTrue(r.hasCard)
+        r.recheck("menu", 100 + JoinFlow.FAIL_GRACE_MS + 50)
+        assertFalse(r.hasCard)
+        // a cancel is at once
+        val c = Replay()
+        c.connect("connecting", "loading", 0)
+        c.cancelled = true
+        c.connect("idle", "menu", 10)
+        assertFalse(c.hasCard)
     }
 
     @Test fun joinLinks() {

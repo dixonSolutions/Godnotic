@@ -19,6 +19,12 @@ fi
 
 mkdir -p "$DEST"
 
+# Stock CSQC programs are indexed by the engine's announced size and CRC.
+# Keep them in a pack so the first join need not download matching programs.
+if [ -f "$ROOT/touch/godnotic-stock-csqc.pk3" ]; then
+    install -m 644 "$ROOT/touch/godnotic-stock-csqc.pk3" "$DEST/godnotic-stock-csqc.pk3"
+fi
+
 (
     cd "$SRC"
     tar cf - \

@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "libcurl.h"
 #include "taskqueue.h"
 #include "utf8lib.h"
-#if defined(__ANDROID__) && defined(ANDYSU_SWAP)
+#ifdef ANDYSU_SWAP
 #include "andysu_engine.h"
 #endif
 #include "touch_uib.h" // Touch: UI bridge
@@ -579,7 +579,7 @@ void Host_Init (void)
 		Cbuf_Execute(cmd_local->cbuf);
 	}
 
-#if defined(__ANDROID__) && defined(ANDYSU_SWAP)
+#ifdef ANDYSU_SWAP
 	Andysu_RestoreState(); // after a live swap: reconnect / reload the map; test hooks
 #endif
 
@@ -609,6 +609,9 @@ void Host_Shutdown(void)
 {
 	if (Sys_CheckParm("-profilegameonly"))
 		Sys_AllowProfiling(false);
+#ifdef TOUCH_BRIDGE_ENABLED // Touch:
+	{ extern void Touch_BridgeSignalingShutdown(void); Touch_BridgeSignalingShutdown(); } // Touch:
+#endif // Touch:
 	TouchUIB_Shutdown(); // Touch: UI bridge
 	TouchSrvList_Shutdown(); // Touch: save answers from an unfinished refresh
 	TouchFrameTime_Shutdown(); // Touch: frame-time summary
@@ -643,7 +646,7 @@ void Host_Shutdown(void)
 	Host_UnlockSession();
 
 	Con_Shutdown();
-#if defined(__ANDROID__) && defined(ANDYSU_SWAP)
+#ifdef ANDYSU_SWAP
 	if (andysu_swapping)
 	{
 		// The process lives on and so does this library's address space: give back what an
@@ -691,6 +694,9 @@ double Host_Frame(double time)
 	Cbuf_Frame(host.cbuf);
 	TouchUIB_Frame(); // Touch: UI bridge
 	TouchData_Frame(); // Touch: progressive data download
+#ifdef TOUCH_BRIDGE_ENABLED // Touch:
+	{ extern void Touch_BridgeSignalingFrame(void); Touch_BridgeSignalingFrame(); } // Touch:
+#endif // Touch:
 
 	R_TimeReport("---");
 
