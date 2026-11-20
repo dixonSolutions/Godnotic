@@ -38,4 +38,10 @@ test "$(grep -c 'setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SE
 if grep -n 'setRequestedOrientation(req)' "$tmp/sdl/SDLActivity.java" | grep -q .; then
 	echo "FAIL sdl glue: SDL still requests its own orientation" >&2; exit 1
 fi
-echo "sdl glue (hidapi receivers, full-sensor orientation): all checks passed"
+# A keyboard attached: SDL's text field asks PhysicalKeyboard for its input type, once,
+# after SDL's own and before the IME flags the chat check needs.
+test "$(grep -c 'PhysicalKeyboard.inputType(outAttrs.inputType); // Godnotic: physical keys to the game' "$tmp/sdl/SDLActivity.java")" = 1 \
+	|| { echo "FAIL sdl glue: SDL's text field must take its input type from PhysicalKeyboard" >&2; exit 1; }
+python3 scripts/check-sdl-chat-ime.py "$tmp/sdl/SDLActivity.java" >/dev/null \
+	|| { echo "FAIL sdl glue: the keyboard patch broke the chat IME flags" >&2; exit 1; }
+echo "sdl glue (hidapi receivers, full-sensor orientation, physical keyboard): all checks passed"

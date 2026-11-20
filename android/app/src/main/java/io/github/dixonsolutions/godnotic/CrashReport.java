@@ -115,6 +115,47 @@ final class CrashReport {
         return !(handoverPhase || versionChanged);
     }
 
+    /**
+     * {@link #shouldReport(int, boolean, String, boolean, String)} with the payload this process
+     * runs and the importance the dead one had. An AndySU host with a staged release ends the
+     * process itself once the player has left it ({@code restart_to_apply}, a self-kill with no
+     * callback to the payload), so the dead process still says {@code phase=staged} and the next
+     * start runs the promoted payload (owner's tablet 2026-11-20: app 1.2.289, host API 3, payload
+     * 1.2.298 staged 1.2.301, "exit-self (1)", importance 300, engine=0).
+     */
+    static boolean shouldReport(int reason, boolean aroundUpdate, String state,
+                                boolean versionChanged, String description, String payloadNow,
+                                int importance) {
+        if (promotedByHost(reason, state, payloadNow, importance)) {
+            return false;
+        }
+        return shouldReport(reason, aroundUpdate, state, versionChanged, description);
+    }
+
+    /** Below this an exit happened on screen ({@code RunningAppProcessInfo.IMPORTANCE_SERVICE}). */
+    static final int IMPORTANCE_BACKGROUND = 300;
+
+    /**
+     * The host ended the process to apply a staged release: a self-exit or kill (never a crash or
+     * ANR) while the release was staged, and this process runs a different payload than the dead
+     * one did. Only when the game was not running or not on screen, so an engine error in a match
+     * that happened to have an update waiting is still reported.
+     */
+    static boolean promotedByHost(int reason, String state, String payloadNow, int importance) {
+        if (reason != REASON_EXIT_SELF && reason != REASON_USER_REQUESTED && reason != REASON_SIGNALED) {
+            return false;
+        }
+        if (!"staged".equals(phase(state))) {
+            return false;
+        }
+        String before = field(state, "payload");
+        if (before.isEmpty() || ProcessStateText.NONE.equals(before)
+                || payloadNow == null || payloadNow.isEmpty() || before.equals(payloadNow)) {
+            return false;
+        }
+        return "0".equals(field(state, "engine")) || importance >= IMPORTANCE_BACKGROUND;
+    }
+
     /** The system's description of an exit says the player removed the game's task (recent apps). */
     static boolean closedByPlayer(String description) {
         return description != null && description.toLowerCase(java.util.Locale.ROOT).contains("remove task");
@@ -122,12 +163,18 @@ final class CrashReport {
 
     /** The {@code phase=...} field of a process state summary, or "" when it has none. */
     static String phase(String state) {
+        return field(state, "phase");
+    }
+
+    /** The {@code name=...} field of a process state summary, or "" when it has none. */
+    static String field(String state, String name) {
         if (state == null) {
             return "";
         }
+        String prefix = name + "=";
         for (String field : state.trim().split("\\s+")) {
-            if (field.startsWith("phase=")) {
-                return field.substring("phase=".length());
+            if (field.startsWith(prefix)) {
+                return field.substring(prefix.length());
             }
         }
         return "";

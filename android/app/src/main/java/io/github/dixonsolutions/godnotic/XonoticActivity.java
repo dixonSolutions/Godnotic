@@ -317,6 +317,7 @@ public final class XonoticActivity extends SDLActivity {
             Log.i("Godnotic", "Input devices: touch=" + touch + " keyboard=" + keyboard
                     + " mouse=" + mouse + names);
         }
+        PhysicalKeyboard.update(this, keyboard, mTextEdit);
         try {
             nativeInputDevices(touch, keyboard, mouse);
         } catch (UnsatisfiedLinkError e) {

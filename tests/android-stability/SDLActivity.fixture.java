@@ -63,3 +63,18 @@ class SDLActivity {
         mSingleton.setRequestedOrientation(req);
     }
 }
+
+/* DummyEdit's input connection from SDL 2.32.10, for the physical-keyboard patch */
+class DummyEdit extends View {
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        ic = new SDLInputConnection(this, true);
+
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT |
+                             InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI |
+                              EditorInfo.IME_FLAG_NO_FULLSCREEN /* API 11 */;
+
+        return ic;
+    }
+}
