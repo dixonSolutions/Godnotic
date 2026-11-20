@@ -207,7 +207,18 @@ def modes_and_match():
               "refresh keeps the filter chips and selected server")
         c.send({"t": "ev", "ev": "value", "node": "mp/join/address", "value": "example.org:26001"})
         c.settle()
-        check(c.nodes.get("mp/join/address", {}).get("props", {}).get("value") == "example.org:26001", "the selected address can be edited")
+        check(c.nodes.get("mp/join/address", {}).get("props", {}).get("value") == "example.org:26001",
+              f"the selected address can be edited ({c.nodes.get('mp/join/address', {}).get('props', {}).get('value')!r})")
+        c.send({"t": "ev", "ev": "back"})
+        c.settle()
+        # opening Multiplayer again starts with nothing chosen: a server picked earlier (before a join, a
+        # match) never stays chosen, and no row hides the others
+        c.send({"t": "ev", "ev": "action", "node": "home/tiles/mp", "action": "mp"})
+        c.settle()
+        again = c.nodes.get("mp/servers", {}).get("props", {})
+        check(not again.get("selected") and "mp/details" not in c.nodes
+              and not c.nodes.get("mp/join/address", {}).get("props", {}).get("value"),
+              f"Multiplayer opened again has no server chosen ({again.get('selected')!r})")
         c.send({"t": "ev", "ev": "back"})
         c.settle()
         card = c.nodes.get("home/tiles/sp", {}).get("props", {}).get("subtitle", "")
