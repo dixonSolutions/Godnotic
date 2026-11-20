@@ -23,5 +23,8 @@ object PicturePolicy {
     }
 
     /** Whether a picture the screen's first frame needs is decoded on the calling thread (a few ms) rather than queued. */
-    fun decodeNow(sync: Boolean, cachedInMemory: Boolean) = sync && !cachedInMemory
+    fun decodeNow(sync: Boolean, cachedInMemory: Boolean, blocking: Boolean = true) = sync && !cachedInMemory && blocking
+
+    /** Maps whose pictures are decoded ahead of any choice: the first rows' maps, then the rest of what the list holds, up to [max]. */
+    fun warmMaps(rowMaps: List<String>, max: Int): List<String> = rowMaps.filter { it.isNotEmpty() }.distinct().take(max)
 }

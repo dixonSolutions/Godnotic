@@ -23,4 +23,14 @@ class PicturePolicyTest {
         assertFalse(PicturePolicy.decodeNow(sync = true, cachedInMemory = true))
         assertFalse(PicturePolicy.decodeNow(sync = false, cachedInMemory = false))
     }
+
+    @Test fun theDialogNeverDecodesOnTheUiThread() {
+        assertFalse(PicturePolicy.decodeNow(sync = true, cachedInMemory = false, blocking = false))
+        assertTrue(PicturePolicy.decodeNow(sync = true, cachedInMemory = false, blocking = true))
+    }
+
+    @Test fun warmMapsAreDistinctNonEmptyAndCapped() {
+        assertEquals(listOf("a", "b", "c"), PicturePolicy.warmMaps(listOf("a", "", "b", "a", "c", "d"), 3))
+        assertEquals(emptyList<String>(), PicturePolicy.warmMaps(emptyList(), 5))
+    }
 }

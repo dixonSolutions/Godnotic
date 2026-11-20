@@ -211,6 +211,8 @@ class ViewRenderer(
 
     /** The width pictures that must be there in the first frame are decoded and cached at. */
     private val CARD_PX = 1024
+    private val WARM_ROWS = 40
+    private val WARM_MAPS = 24
 
     /**
      * Copy cached rows into every list reading this source, including newly
@@ -224,7 +226,7 @@ class ViewRenderer(
         val state = serverState(source)
         if (state.size > 0 && lists[source].orEmpty().isNotEmpty() && firstRowsLogged.add(source))
             Log.i("Godnotic", "Native UI: $source list holds ${state.size} rows (first rows handed to the list)")
-        for (map in state.firstMaps(4)) prefetch("pk3:maps/$map")
+        for (map in PicturePolicy.warmMaps(state.firstMaps(WARM_ROWS), WARM_MAPS)) prefetch("pk3:maps/$map")
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -260,6 +262,11 @@ class ViewRenderer(
         if (java.io.File(old).isFile) { imagePaths[ref] = old; return old }
         memo.forget(ref)
         return null
+    }
+
+    // The maps pictured last time are decoded in the background at start: choosing a server before its row has been seen this session still has its picture ready.
+    init {
+        for ((ref, path) in memo.recent("pk3:maps/", 12)) if (java.io.File(path).isFile) Images.load(path, CARD_PX) { }
     }
 
     fun saveScroll(screen: String) {
@@ -954,7 +961,7 @@ class ViewRenderer(
      * [sync]: a picture the screen's first frame must have (a card, the selection card): when
      * its file is known it is decoded now and no placeholder is drawn before it.
      */
-    fun picture(img: RoundImage, ref: String, sync: Boolean = false) {
+    fun picture(img: RoundImage, ref: String, sync: Boolean = false, blocking: Boolean = true) {
         val hadPicture = img.tag != null // a card whose map changes keeps the old picture until the new one is there
         img.tag = ref
         val ready: (String) -> Unit = { path ->
@@ -963,7 +970,7 @@ class ViewRenderer(
                 else {
                     val w = if (sync) CARD_PX else max(img.width, dp(320f))
                     val mem = Images.cached(path, w)
-                    val now = mem ?: if (PicturePolicy.decodeNow(sync, mem != null)) Images.now(path, w) else null
+                    val now = mem ?: if (PicturePolicy.decodeNow(sync, mem != null, blocking)) Images.now(path, w) else null
                     if (now != null) img.set(now)
                     else Images.load(path, w) { b -> if (img.tag == ref) { if (b != null) img.set(b) else img.none() } }
                 }
@@ -982,7 +989,8 @@ class ViewRenderer(
 
     /** Fetches a picture ahead of its view (the card of a chosen server, Home's top map). */
     private fun prefetch(ref: String) {
-        if (knownPath(ref) != null || imageWaiters.containsKey(ref)) return
+        knownPath(ref)?.let { Images.load(it, CARD_PX) { }; return } // the file is known: only decode it ahead
+        if (imageWaiters.containsKey(ref)) return
         imageWaiters[ref] = arrayListOf<(String) -> Unit>({ path -> if (path.isNotEmpty()) Images.load(path, CARD_PX) { } }) // decoded and kept for the card
         events.image(ref, dp(480f), dp(270f))
     }
@@ -1578,7 +1586,11 @@ class ViewRenderer(
             content.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             // a map that is not installed has no picture: the card closes up rather than keep a bare panel
             img.onMissing = { img.visibility = View.GONE }
-            picture(img, "pk3:maps/$map", sync = true)
+            val ref = "pk3:maps/$map"
+            val t0 = android.os.SystemClock.uptimeMillis()
+            Log.i("Godnotic", "Preview: dialog build map=$map pathKnown=${knownPath(ref) != null}")
+            img.onShown = { Log.i("Godnotic", "Preview: picture set ${android.os.SystemClock.uptimeMillis() - t0} ms after build map=$map") }
+            picture(img, ref, sync = true, blocking = false) // a picture that is not decoded yet never holds the dialog (or Join) back
         }
         content.addView(Kit.text(ctx, cells.str("name").ifEmpty { address }, Theme.SP_TITLE, Theme.TEXT, bold = true))
         content.addView(Kit.text(ctx, ServerDetails.facts(cells), Theme.SP_BODY, Theme.TEXT_MUTED))
@@ -1588,11 +1600,20 @@ class ViewRenderer(
             content.addView(Kit.text(ctx, playerDetails, Theme.SP_BODY, Theme.TEXT, bold = true))
         }
         val actions = Kit.row(ctx, 10f)
-        actions.addView(Kit.button(ctx, "Join", primary = true) {
+        // Join is what the dialog is for: first, twice as wide, taller, and the focused button (Enter / the d-pad's centre joins).
+        val join = Kit.button(ctx, "Join", primary = true) {
+            Log.i("Godnotic", "Preview: Join tapped $address")
             closeDetails()
             events.row("mp/servers", address, "activate")
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }.apply {
+            minHeight = Theme.dp(ctx, 60f)
+            textSize = Theme.SP_BODY + 2f
+            isFocusableInTouchMode = true
+        }
+        actions.addView(join, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f))
         actions.addView(Kit.button(ctx, "Close") { closeDetails() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        actions.gravity = Gravity.CENTER_VERTICAL
+        join.post { join.requestFocus() }
         content.addView(actions)
         val scroll = ScrollView(ctx).apply { isFillViewport = true; addView(content) }
         detailsOpen = true
