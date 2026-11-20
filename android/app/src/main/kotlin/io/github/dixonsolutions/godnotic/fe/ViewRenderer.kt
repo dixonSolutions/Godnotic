@@ -287,7 +287,7 @@ class ViewRenderer(
         "screen" -> screen(id, props)
         "section" -> section(id, props)
         "toolbar" -> group(id, type, props, AdaptiveBar(ctx, dp(10f), dp(360f)).apply { setPadding(0, dp(4f), 0, dp(4f)) })
-        "actionbar" -> group(id, type, props, Kit.row(ctx, 12f).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL })
+        "actionbar" -> if (id == SERVER_BAR) serverBar(id, type, props) else group(id, type, props, Kit.row(ctx, 12f).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL })
         "row" -> if (props.bool("wrap")) group(id, type, props, FlowGrid(ctx, 0, dp(10f), wrap = true)) else labelledRow(id, props, Kit.row(ctx, 12f).apply {
             gravity = when (props.str("align")) { "center" -> Gravity.CENTER; "end" -> Gravity.END or Gravity.CENTER_VERTICAL; else -> Gravity.START or Gravity.CENTER_VERTICAL }
         })
@@ -599,6 +599,51 @@ class ViewRenderer(
     }
 
     private fun group(id: String, type: String, props: Map<String, Any?>, g: ViewGroup) = Entry(id, type, g, g, props)
+
+    private val SERVER_BAR = "mp/join"
+    private var infoButton: View? = null
+
+    /**
+     * Multiplayer's bottom bar (address, Create, Join) with an "i" after Join: it opens the chosen
+     * server's info dialog and is off while no server is chosen. The engine's children go in the
+     * inner row, so their indices are untouched by the button.
+     */
+    private fun serverBar(id: String, type: String, props: Map<String, Any?>): Entry {
+        val outer = Kit.row(ctx, 12f).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        // start gravity: with END, LinearLayout's weighted pass leaves the dividers out of the
+        // content length and shifts the row by them, which cut Join off at the right edge
+        val inner = Kit.row(ctx, 12f)
+        outer.addView(inner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val info = Kit.button(ctx, "", false, "info") { openChosenDetails() }.apply {
+            minimumWidth = dp(56f)
+            val h = dp(14f)
+            setPadding(h, paddingTop, h, paddingBottom)
+            contentDescription = "Server info"
+            tag = "server-info"
+        }
+        outer.addView(info, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        infoButton = info
+        updateInfoButton()
+        return Entry(id, type, outer, inner, props)
+    }
+
+    private fun chosenServer(): String = nodes["mp/servers"]?.let { serverState(it.source).selected } ?: ""
+
+    /** The "i" is on exactly while a server is chosen. */
+    private fun updateInfoButton() {
+        val b = infoButton ?: return
+        val on = chosenServer().isNotEmpty()
+        b.isEnabled = on
+        b.alpha = if (on) 1f else 0.4f
+    }
+
+    /** The bottom bar's "i": the chosen server's info dialog again (closing it kept the choice). */
+    private fun openChosenDetails() {
+        val e = nodes["mp/servers"] ?: return
+        val st = serverState(e.source)
+        val row = st.rowOf(st.selected) ?: return
+        showServerDetails(row)
+    }
 
     /**
      * A row with a `label` (the LAN popup's "Wi-Fi", "VPN (tailscale0)", "Link"):
@@ -1513,32 +1558,10 @@ class ViewRenderer(
         closeDetails()
         for (st in serverListStates.values) st.select("")
         nodes["mp/servers"]?.let { e -> e.props = e.props + ("selected" to emptyList<Any?>()); e.list?.refresh() }
+        updateInfoButton()
     }
 
-    /**
-     * The chosen server's row shows an "i" in front of its name; touching it opens the info dialog.
-     * Elsewhere the row's own tap selects (the first cell passes the touch on).
-     */
-    private fun bindInfo(r: LinearLayout, columns: List<Map<String, Any?>>, data: Map<String, Any?>?, chosen: Boolean) {
-        val ni = columns.indexOfFirst { it.str("key") == "name" }
-        if (ni < 0 || ni >= r.childCount) return
-        val cell = r.getChildAt(ni) as? TextView ?: return
-        var downX = 0f
-        if (chosen && data != null) {
-            cell.text = "\u24D8  " + cell.text.toString().removePrefix("\u24D8  ")
-            cell.isClickable = true
-            cell.setOnTouchListener { _, ev -> if (ev.action == android.view.MotionEvent.ACTION_DOWN) downX = ev.x; false }
-            cell.setOnClickListener { v ->
-                if (downX <= dp(52f)) { Kit.haptic(v); showServerDetails(data) } else r.performClick()
-            }
-        } else {
-            cell.setOnTouchListener(null)
-            cell.setOnClickListener(null)
-            cell.isClickable = false
-        }
-    }
-
-    /** The native server info dialog (the "i" of the chosen row): picture, title, facts, players, Join, Close. */
+    /** The native server info dialog (opened by choosing a server, or the bottom bar's "i"): picture, title, facts, players, Join, Close. */
     private fun showServerDetails(row: Map<String, Any?>) {
         val cells = row["cells"].obj()
         val map = cells.str("map")
@@ -1573,7 +1596,11 @@ class ViewRenderer(
         content.addView(actions)
         val scroll = ScrollView(ctx).apply { isFillViewport = true; addView(content) }
         detailsOpen = true
-        host.showDialog(dialogFrame(scroll, true) { closeDetails() })
+        val openedAt = android.os.SystemClock.uptimeMillis()
+        // a double tap's second touch lands on the backdrop: it does not close what the first opened
+        host.showDialog(dialogFrame(scroll, true) {
+            if (android.os.SystemClock.uptimeMillis() - openedAt > android.view.ViewConfiguration.getDoubleTapTimeout() + 100) closeDetails()
+        })
     }
 
     private fun generic(id: String, type: String, props: Map<String, Any?>): Entry {
@@ -1771,7 +1798,6 @@ class ViewRenderer(
                         else Theme.surface(ctx, Color.TRANSPARENT, 0f, Color.TRANSPARENT)
                     r.contentDescription = if (data == null) "Loading" else columns.joinToString(", ") { c -> "${c.str("label")} ${cells.str(c.str("key"))}" } + if (on) ", selected" else ""
                     bindTap(r, e, id, data)
-                    bindInfo(r, columns, data, on && id == "mp/servers")
                 },
                 makeCell = { _ ->
                     val r = Kit.row(ctx)
@@ -1893,7 +1919,7 @@ class ViewRenderer(
                 if (e.props.str("selection") == "multi") select(e, id, key, true) // the first tap's toggle undone
                 events.row(id, key, "activate")
             } else {
-                select(e, id, key, true) // selecting only: the "i" on the chosen row opens the info dialog
+                select(e, id, key, true) // choosing opens the info dialog, whose Join joins
             }
         }
         v.setOnKeyListener { _, code, ev ->
@@ -1915,11 +1941,15 @@ class ViewRenderer(
         val next = if (multi) (if (key in cur) cur - key else cur + key) else listOf(key)
         if (isServerSource(e.source) && !multi) {
             // the list's model keeps the row, the engine's next props cannot undo it
-            if (serverState(e.source).select(key)) {
+            val st = serverState(e.source)
+            if (st.select(key)) {
                 chooseServer(key)
                 e.props = e.props + ("selected" to next)
                 e.list?.refresh()
             }
+            updateInfoButton()
+            // a player's choice opens its info dialog; closing it keeps the choice (the bar's "i" reopens it)
+            if (send && id == "mp/servers") st.rowOf(key)?.let { showServerDetails(it) }
         } else if (next != cur) {
             e.props = e.props + mapOf("selected" to next)
             e.list?.refresh()

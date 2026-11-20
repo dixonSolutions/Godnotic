@@ -105,6 +105,9 @@ internal class ServerListState(
     /** The chosen address, while its row is still listed (a refresh can drop it). */
     val selected: String get() = selectedKey.takeIf { items.containsKey(it) } ?: ""
 
+    /** The row held for [key] (its cells), or null when the list has no such server. */
+    fun rowOf(key: String): Map<String, Any?>? = if (key.isEmpty()) null else items[key]?.row
+
     /** Slot indices drawn, in slot order: the rows that pass the chips now. */
     private val shown = ArrayList<Int>()
 
