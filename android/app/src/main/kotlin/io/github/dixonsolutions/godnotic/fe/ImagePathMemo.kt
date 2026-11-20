@@ -26,6 +26,10 @@ class ImagePathMemo(private val max: Int = 200) {
 
     fun forget(ref: String) { map.remove(ref) }
 
+    /** The newest [n] remembered entries whose reference starts with [prefix]: (ref, path), newest first. */
+    fun recent(prefix: String, n: Int): List<Pair<String, String>> =
+        map.entries.reversed().filter { it.key.startsWith(prefix) }.take(n).map { it.key to it.value }
+
     fun serialize(): String = map.entries.joinToString("") { "${it.key}\t${it.value}\n" }
 
     companion object {

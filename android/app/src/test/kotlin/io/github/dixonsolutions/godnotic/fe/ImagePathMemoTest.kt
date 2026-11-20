@@ -39,4 +39,10 @@ class ImagePathMemoTest {
         assertEquals("/p/ok", back.get("ok"))
         assertFalse(ImagePathMemo().put("missing", ""))
     }
+
+    @Test fun recentGivesTheNewestAnswersWithAPrefix() {
+        val m = ImagePathMemo()
+        m.put("pk3:maps/a", "/p/a"); m.put("asset:logo", "/p/l"); m.put("pk3:maps/b", "/p/b"); m.put("pk3:maps/c", "/p/c")
+        assertEquals(listOf("pk3:maps/c" to "/p/c", "pk3:maps/b" to "/p/b"), m.recent("pk3:maps/", 2))
+    }
 }
