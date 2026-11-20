@@ -12,6 +12,8 @@ keyboard, mouse = (fixtures / 'desktop-usb-keyboard-mouse-pad.txt').read_text().
 variants = {'keyboard': touch + '\n\n' + keyboard + '\n', 'mouse': touch + '\n\n' + mouse + '\n',
             'both': touch + '\n\n' + keyboard + '\n\n' + mouse + '\n', 'touch2': touch,
             'mouse_acc': touch + '\n\n' + mouse + '\n'}
+NOJPEG = [a for lib in sorted(__import__('pathlib').Path('/usr/lib/x86_64-linux-gnu').glob('libjpeg.so*')) if lib.is_file() or lib.is_symlink()
+          for a in ('--ro-bind', '/dev/null', str(lib))]  # a host libjpeg newer than the build headers aborts the engine
 env = os.environ.copy(); env.update(SDL_VIDEODRIVER='offscreen', SDL_AUDIODRIVER='dummy')
 env.pop('DISPLAY', None); env.pop('WAYLAND_DISPLAY', None)
 with tempfile.TemporaryDirectory(prefix='spec-device-match-') as tmp:
@@ -39,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='spec-device-match-') as tmp:
                     f'defer {sec+4} "echo SNAP_{name}; touch_hud_state rects; cl_touch_aim_input"']
         cfg += ['defer 72 "quit"']
         (t / 'client/data/test.cfg').write_text('\n'.join(cfg) + '\n')
-        cmd = ['bwrap', '--bind', '/', '/', '--dev-bind', '/dev', '/dev', '--ro-bind', str(device), '/proc/bus/input/devices',
+        cmd = ['bwrap', '--bind', '/', '/', '--dev-bind', '/dev', '/dev', *NOJPEG, '--ro-bind', str(device), '/proc/bus/input/devices',
                'taskset', '-c', '8-11', str(engine), '-xonotic', '-basedir', base, '-userdir', str(t / 'client'),
                '+vid_fullscreen', '0', '+vid_width', '640', '+vid_height', '360', '+set', '_touch_assets_ready', '1',
                '+set', 'touch_join_dialog_auto', '0', '+set', 'vid_touchscreen_mode', '1', '+set', 'vid_touchscreen_live', '1',
