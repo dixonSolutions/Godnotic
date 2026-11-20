@@ -77,6 +77,28 @@ public class CrashReportTest {
                 "app=1.2.270 stage=game engine=1 phase=checking", false));
     }
 
+    @Test public void swipingTheGameAwayIsNotACrash() {
+        // Owner's tablet 2026-11-20: app 1.2.289, payload 1.2.296 -> 1.2.297 (around an update,
+        // app version unchanged), "exit-self (1)", description "[REMOVE TASK] remove task".
+        String state = "app=1.2.289 payload=1.2.296 host=present:auto stage=none engine=0 phase=uptodate";
+        assertTrue("before: reported as a crash",
+                CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false,
+                "[REMOVE TASK] remove task"));
+        assertFalse(CrashReport.shouldReport(CrashReport.REASON_SIGNALED, true, state, false,
+                "remove task"));
+        assertTrue(CrashReport.closedByPlayer("[REMOVE TASK] remove task"));
+        assertFalse(CrashReport.closedByPlayer(null));
+        assertFalse(CrashReport.closedByPlayer("crash"));
+        // A real crash or ANR stays a report whatever the description says.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_CRASH, true, state, false,
+                "[REMOVE TASK] remove task"));
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_ANR, false, state, false,
+                "[REMOVE TASK] remove task"));
+        // Another self-exit around an update still is.
+        assertTrue(CrashReport.shouldReport(CrashReport.REASON_EXIT_SELF, true, state, false, "exit"));
+    }
+
     @Test public void aSignaledReplaceIsNotReportedButARealSignalIs() {
         // The owner's 1.2.290 -> 1.2.292 banner: signaled (2), phase=replacing, same app version.
         String replacing = "app=1.2.289 payload=1.2.290 host=present:check_only stage=game engine=0 phase=replacing";

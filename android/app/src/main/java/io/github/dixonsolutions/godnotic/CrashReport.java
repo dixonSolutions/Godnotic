@@ -83,6 +83,21 @@ final class CrashReport {
      */
     static boolean shouldReport(int reason, boolean aroundUpdate, String state,
                                 boolean versionChanged) {
+        return shouldReport(reason, aroundUpdate, state, versionChanged, null);
+    }
+
+    /**
+     * {@link #shouldReport(int, boolean, String, boolean)} with the system's description of the
+     * exit. A process that ended because the player swiped the game away from the recent apps
+     * ("[REMOVE TASK] remove task") is the player closing it, not a crash, even right after a
+     * payload update (owner's tablet, 1.2.289 app with payload 1.2.296 -> 1.2.297: "exit-self (1)").
+     */
+    static boolean shouldReport(int reason, boolean aroundUpdate, String state,
+                                boolean versionChanged, String description) {
+        if (reason != REASON_CRASH && reason != REASON_CRASH_NATIVE && reason != REASON_ANR
+                && reason != REASON_INITIALIZATION_FAILURE && closedByPlayer(description)) {
+            return false;
+        }
         if (!interesting(reason, aroundUpdate)) {
             return false;
         }
@@ -98,6 +113,11 @@ final class CrashReport {
             return true;
         }
         return !(handoverPhase || versionChanged);
+    }
+
+    /** The system's description of an exit says the player removed the game's task (recent apps). */
+    static boolean closedByPlayer(String description) {
+        return description != null && description.toLowerCase(java.util.Locale.ROOT).contains("remove task");
     }
 
     /** The {@code phase=...} field of a process state summary, or "" when it has none. */
