@@ -5,7 +5,7 @@
 # makefile.inc rather than duplicated: the Touch port adds engine files
 # (touch_ui.c, vid_touchdetect.c) and a hand-copied list would rot.
 cmake_minimum_required(VERSION 3.22)
-project(godnotic C)
+project(godnotic C CXX)
 
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
 cmake_path(NORMAL_PATH REPO_ROOT)
@@ -54,6 +54,34 @@ set(DP_SDL
     "${DP_DIR}/snd_sdl.c")
 
 add_library(main SHARED ${DP_COMMON} ${DP_MENU} ${DP_SND} ${DP_SDL})
+
+##### Native WebRTC relay ########################################################
+# "Let web players connect through this device" (Settings > Privacy): the
+# touch_bridge* files makefile.inc adds to OBJ_SDL where libdatachannel exists.
+# They are read from there for the same reason as the lists above. libdatachannel
+# is C++, so libmain.so is linked as C++ with libc++ static. -DGODNOTIC_RELAY=OFF
+# builds an engine without it.
+option(GODNOTIC_RELAY "Build the web relay (libdatachannel) into the engine" ON)
+if(GODNOTIC_RELAY)
+    string(REGEX MATCHALL "touch_bridge[A-Za-z0-9_]*\\.o" _bridge_objs "${_mk}")
+    list(REMOVE_DUPLICATES _bridge_objs)
+    list(LENGTH _bridge_objs _bridge_count)
+    if(_bridge_count LESS 6)
+        message(FATAL_ERROR "makefile.inc lists ${_bridge_count} touch_bridge objects, expected at least 6")
+    endif()
+    foreach(obj IN LISTS _bridge_objs)
+        string(REGEX REPLACE "\\.o$" ".c" src "${obj}")
+        target_sources(main PRIVATE "${DP_DIR}/${src}")
+    endforeach()
+    foreach(lib datachannel juice usrsctp mbedtls mbedx509 mbedcrypto)
+        add_library(rtc_${lib} STATIC IMPORTED)
+        set_target_properties(rtc_${lib} PROPERTIES
+            IMPORTED_LOCATION "${XONOTIC_DEPS_PREFIX}/lib/lib${lib}.a")
+    endforeach()
+    target_compile_definitions(main PRIVATE
+        TOUCH_BRIDGE_ENABLED RTC_STATIC RTC_ENABLE_MEDIA=0)
+    set_target_properties(main PROPERTIES LINKER_LANGUAGE CXX)
+endif()
 
 # The bridge remains resident across AndySU engine swaps.
 add_library(nativeui SHARED "${CMAKE_CURRENT_SOURCE_DIR}/nativeui/bridge.c")
@@ -139,3 +167,7 @@ target_link_libraries(main
     SDL2
     jpeg freetype vorbisfile vorbis opusfile opus ogg
     z GLESv2 EGL OpenSLES android log m dl)
+if(GODNOTIC_RELAY)
+    target_link_libraries(main rtc_datachannel rtc_juice rtc_usrsctp
+        rtc_mbedtls rtc_mbedx509 rtc_mbedcrypto)
+endif()

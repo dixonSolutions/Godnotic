@@ -17,6 +17,12 @@
 #               link PNG statically would mean rewriting 30-odd function pointers.
 #   libcurl     SHARED, dlopen()ed by libcurl.c for server map downloads, with
 #               mbedTLS linked into it for https
+#   libdatachannel + libjuice + usrsctp
+#               static  — the native WebRTC relay (engine/darkplaces/touch_bridge*),
+#               "Let web players connect through this device". Pinned sources
+#               from scripts/fetch-libdatachannel.sh, TLS from the mbedTLS built
+#               here, NO_MEDIA so libsrtp is never fetched. C++, so the engine's
+#               libmain.so links libc++ statically (android/.../cpp/CMakeLists.txt).
 #   SDL2        shared  — also supplies the Java glue the APK needs
 #   d0_blind_id SHARED, libd0_blind_id.so and libd0_rijndael.so, dlopen()ed by
 #               crypto.c (player IDs, stats, encrypted connections), built
@@ -207,6 +213,10 @@ fi
 if [ ! -f "$PREFIX/lib/libmbedtls.a" ]; then
     log "mbedTLS $MBEDTLS_VERSION"
     fetch "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS_VERSION/mbedtls-$MBEDTLS_VERSION.tar.bz2" "mbedtls-$MBEDTLS_VERSION"
+    # libdatachannel's DTLS transport (the web relay) negotiates SRTP profiles
+    # and needs this, which Mbed TLS leaves off; curl does not care.
+    python3 "$SRC_DIR/mbedtls-$MBEDTLS_VERSION/scripts/config.py" \
+        -f "$SRC_DIR/mbedtls-$MBEDTLS_VERSION/include/mbedtls/mbedtls_config.h" set MBEDTLS_SSL_DTLS_SRTP
     cmake_build "$SRC_DIR/mbedtls-$MBEDTLS_VERSION" mbedtls \
         -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON \
         -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DGEN_FILES=OFF \
@@ -232,6 +242,27 @@ if [ ! -f "$PREFIX/lib/libcurl.so" ]; then
         -DCURL_CA_BUNDLE=none -DCURL_CA_PATH=none -DCURL_CA_FALLBACK=OFF \
         -DENABLE_THREADED_RESOLVER=ON
     test -f "$PREFIX/lib/libcurl.so" || { echo "curl build produced no shared object" >&2; ls -la "$PREFIX/lib" >&2; exit 1; }
+fi
+
+##### libdatachannel (static, for the web relay) ##############################
+
+# The relay lets a browser reach game servers through this device (WebRTC data
+# channel in, UDP out). Static archives, linked into libmain.so, nothing
+# shipped separately. Mbed TLS provides DTLS and the wss:// signaling socket,
+# so the APK carries no OpenSSL. libjuice (ICE) uses its built-in crypto and
+# usrsctp comes from the submodule, both installed next to libdatachannel.a.
+if [ ! -f "$PREFIX/lib/libdatachannel.a" ] || [ ! -f "$PREFIX/lib/libjuice.a" ] || [ ! -f "$PREFIX/lib/libusrsctp.a" ]; then
+    log "libdatachannel (scripts/fetch-libdatachannel.sh)"
+    sh "$ROOT/scripts/fetch-libdatachannel.sh" "$SRC_DIR/libdatachannel"
+    # rm: a build tree configured before the sources changed must not be reused
+    rm -rf "$CACHE_DIR/build/$ABI/libdatachannel"
+    cmake_build "$SRC_DIR/libdatachannel" libdatachannel \
+        -DBUILD_SHARED_LIBS=OFF -DBUILD_SHARED_DEPS_LIBS=OFF \
+        -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_LIBDIR=lib \
+        -DUSE_MBEDTLS=ON -DNO_MEDIA=ON -DNO_WEBSOCKET=OFF -DNO_EXAMPLES=ON -DNO_TESTS=ON
+    for a in libdatachannel.a libjuice.a libusrsctp.a; do
+        test -f "$PREFIX/lib/$a" || { echo "libdatachannel build produced no $a" >&2; ls -la "$PREFIX/lib" >&2; exit 1; }
+    done
 fi
 
 ##### GMP + d0_blind_id (shared, dlopen'd) ##################################
