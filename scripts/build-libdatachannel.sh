@@ -9,12 +9,7 @@ if [ -f "$prefix/.godnotic-complete" ]; then
     exit 0
 fi
 mkdir -p "$cache"
-if [ ! -d "$src/.git" ]; then
-    git clone --no-checkout https://github.com/paullouisageneau/libdatachannel.git "$src"
-fi
-git -C "$src" checkout --detach "$commit"
-test "$(git -C "$src" rev-parse HEAD)" = "$commit"
-git -C "$src" submodule update --init --recursive
+sh "$(dirname "$0")/fetch-libdatachannel.sh" "$src"
 cmake -S "$src" -B "$cache/build" -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF -DBUILD_SHARED_DEPS_LIBS=OFF \
     -DNO_MEDIA=ON -DNO_WEBSOCKET=OFF -DNO_EXAMPLES=ON -DNO_TESTS=ON

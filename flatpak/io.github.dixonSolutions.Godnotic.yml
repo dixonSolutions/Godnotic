@@ -72,11 +72,46 @@ modules:
         dest-filename: godnotic-loader
         only-arches: [aarch64]
 
+  # The native WebRTC relay ("Let web players connect through this device",
+  # Settings > Privacy) needs libdatachannel, with libjuice and usrsctp from its
+  # own submodules; TLS comes from the runtime's OpenSSL. Static, so the engine
+  # carries it and nothing else is installed (cleanup drops the headers and
+  # archives once the engine is built). The commit is the one in
+  # scripts/fetch-libdatachannel.sh. NO_MEDIA leaves libsrtp unused.
+  - name: libdatachannel
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DBUILD_SHARED_LIBS=OFF
+      - -DBUILD_SHARED_DEPS_LIBS=OFF
+      - -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+      - -DNO_MEDIA=ON
+      - -DNO_WEBSOCKET=OFF
+      - -DNO_EXAMPLES=ON
+      - -DNO_TESTS=ON
+    cleanup:
+      - /include
+      - /lib/*.a
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/paullouisageneau/libdatachannel.git
+        commit: 4e4f4892dccb2a57fe3a490d0c9d958de4244e74
+
   - name: godnotic
     buildsystem: simple
+    build-options:
+      env:
+        # Where the libdatachannel module installed; engine/darkplaces/makefile.inc
+        # then builds the touch_bridge* relay in.
+        TOUCH_BRIDGE_PREFIX: /app
     build-commands:
       - bash scripts/fetch-sources.sh code
       - bash scripts/build.sh
+      # A build that silently lost the relay would hide the Privacy switch.
+      - grep -q bridge_relay_brokers build/bin/xonotic
       - bash scripts/stage-flatpak.sh
     sources:
       - type: dir

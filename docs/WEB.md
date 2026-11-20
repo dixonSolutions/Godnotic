@@ -926,8 +926,16 @@ masters and the game servers they list
   signaling connection; the data channel stays. A relay that goes away ends
   the session; the next request looks again (at most every 20 s).
 - **Opt-in** (native): `bridge_relay` (archived, default 0), the switch in
-  Settings > Privacy, shown only where the engine has the relay (desktop
-  Linux builds today; the Android engine is not built with libdatachannel yet).
+  Settings > Privacy, shown only where the engine has the relay: the Linux
+  Flatpak (its `libdatachannel` module, OpenSSL from the runtime), the Android
+  APK (libdatachannel, libjuice and usrsctp cross-built by `scripts/android-deps.sh`
+  with the Mbed TLS it already builds, linked into `libmain.so` with libc++
+  static) and local Linux builds (`scripts/build-libdatachannel.sh`). Both
+  fetch the pinned sources with `scripts/fetch-libdatachannel.sh`. Not in the
+  Click package, and not in a build made without those libraries.
+  On Android libjuice lists local addresses with `SIOCGIFCONF` (IPv4) and the
+  default IPv6 route instead of `getifaddrs` (bionic has it only from API 24);
+  not checked on a device yet.
   `bridge_relay_status`: off, connecting, online N/M, failed. Also
   `bridge_relay_brokers`, `bridge_relay_stun`, `bridge_relay_topic`.
 

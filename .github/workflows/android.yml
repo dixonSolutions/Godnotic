@@ -96,13 +96,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/android/src
-          key: xonotic-android-src-v1-${{ hashFiles('scripts/android-deps.sh') }}
+          key: xonotic-android-src-v1-${{ hashFiles('scripts/android-deps.sh', 'scripts/fetch-libdatachannel.sh') }}
 
       - name: Cache compiled native dependencies
         uses: actions/cache@v4
         with:
           path: build/android/prefix/${{ matrix.abi }}
-          key: xonotic-android-prefix-${{ matrix.abi }}-${{ env.NDK_VERSION }}-${{ hashFiles('scripts/android-deps.sh') }}
+          key: xonotic-android-prefix-${{ matrix.abi }}-${{ env.NDK_VERSION }}-${{ hashFiles('scripts/android-deps.sh', 'scripts/fetch-libdatachannel.sh') }}
 
       # The Rust loader core (loader/crates/android) for this ABI; android-build.sh
       # builds it with GODNOTIC_RUST_CORE=1 and fails without it.
