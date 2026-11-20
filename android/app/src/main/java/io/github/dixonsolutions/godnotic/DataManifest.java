@@ -75,6 +75,12 @@ final class DataManifest {
     }
 
     final String set;
+    /**
+     * {@code replaces_legacy}: a complete install in the old layout does not
+     * stand for this set (its packs are an older build of the same files, e.g.
+     * blurrier textures), so the set is fetched and the old packs go last.
+     */
+    final boolean replacesLegacy;
     final String archiveUrl;
     final long archiveSize;
     /** In the manifest's order. */
@@ -88,10 +94,11 @@ final class DataManifest {
     final String text;
     private final Map<String, Pack> byName;
 
-    private DataManifest(String set, String archiveUrl, long archiveSize, List<Pack> packs,
+    private DataManifest(String set, boolean replacesLegacy, String archiveUrl, long archiveSize, List<Pack> packs,
                          Map<String, Pack> byName, List<Pack> firstPlay, Map<String, List<Pack>> needs,
                          Map<String, Pack> ownPack, String text) {
         this.set = set;
+        this.replacesLegacy = replacesLegacy;
         this.archiveUrl = archiveUrl;
         this.archiveSize = archiveSize;
         this.packs = packs;
@@ -258,7 +265,7 @@ final class DataManifest {
                 needs.put(map, Collections.unmodifiableList(mapNeeds));
             }
         }
-        return new DataManifest(set, url, archiveSize, Collections.unmodifiableList(packs), byName,
+        return new DataManifest(set, Boolean.TRUE.equals(top.get("replaces_legacy")), url, archiveSize, Collections.unmodifiableList(packs), byName,
                 Collections.unmodifiableList(firstPlay), needs, ownPack, text);
     }
 

@@ -37,6 +37,8 @@ import java.util.zip.CRC32;
 final class DataInstall {
 
     static final String STATE = ".godnotic-set";
+    /** The {@code legacy} value of an old install that no set stands for (DataManifest.replacesLegacy). */
+    static final String LEGACY_REPLACED = "replaced";
 
     /** The old layout's packs: the official names, as the single archive installs them. */
     private static final Pattern OLD_PACK = Pattern.compile(
@@ -104,8 +106,13 @@ final class DataInstall {
         }
         if (old && legacy == null && set == null) {
             // The first time a manifest is seen: this install is that set.
-            legacy = m.set;
-            env.log("A complete install from before the split stands for set " + m.set);
+            // A manifest that replaces legacy installs (better textures than
+            // the packs on disk) gets a marker no set id equals: the set is
+            // fetched, the old packs stay until it is complete, then go.
+            legacy = m.replacesLegacy ? LEGACY_REPLACED : m.set;
+            env.log(m.replacesLegacy
+                    ? "A complete install from before the split is replaced by set " + m.set
+                    : "A complete install from before the split stands for set " + m.set);
         }
         if (!old) {
             // A first download in the old layout that never finished: its

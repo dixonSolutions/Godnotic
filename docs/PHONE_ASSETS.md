@@ -171,20 +171,24 @@ it by GPU), with the official DXT textures kept:
 | option | full | astc (slim) | dxt |
 | --- | --- | --- | --- |
 | `--textures` | astc | astc | keep (DXT) |
-| `--world-blocks` | 8x8 | 10x10 | - |
-| `--model-blocks` | 6x6 | 8x6 | - |
-| `--norm-blocks` | 5x5 | 6x6 | - |
+| `--world-blocks` | 8x8 | 8x8 | - |
+| `--model-blocks` | 6x6 | 6x6 | - |
+| `--norm-blocks` | 5x5 | 5x5 | - |
 | `--gfx-blocks` | 4x4 | 4x4 | - |
-| `--max-size` | 1024 | 512 | - |
+| `--max-size` | 1024 | 1024 | - |
+| `--preset` (astcenc) | -medium | -thorough | - |
 | `--music-rate` | 96k | 64k | 64k |
 | `--sfx` | keep | opus | opus |
 | `--bsp-zstd-level` | (19) | 22 | 22 |
-| JPEG / lightmap re-encode | - | 86 / 90 | 86 / 90 |
+| JPEG / lightmap re-encode | - | 95 / 95 | 95 / 95 |
 | left out | - | editor files, `*.mp3` | editor files, `*.mp3` |
 
-Any flag still overrides its preset value. 2D graphics, which the HUD draws at
-1:1, keep 4x4 blocks and their size in both profiles; the sacrifices are in
-the world, model and normal-map textures a small screen shows at arm's length.
+Any flag still overrides its preset value. The slim profile is *standard
+quality*: the same block sizes, texture sizes and encoder effort as the full
+profile (see "Standard quality" below). Until 2026-11-20 it used 10x10 / 8x6 /
+6x6 blocks, a 512 px cap and JPEG 86 / lightmaps 90, which the owner found
+visibly blurry and blocky on a tablet; the table of sizes that follows is of
+that earlier set.
 
 Sizes from the pinned `20261107` source (13 min for astc, 11 min for dxt on 24
 cores):
@@ -394,3 +398,60 @@ entry would be larger, including its name and symlink targets. This fixes stored
 Ogg expansion and keeps unsuitable ASTC conversions as DDS. `--allow-growth` is
 an explicit GPU-load tradeoff for experiments; it is not the default distribution
 policy. Manifests record `size_policy` and `astc-mixed` when applicable.
+
+## Standard quality (slim profile since 2026-11-20)
+
+Side by side against the official desktop DXT, on a few textures taken from the
+20261107 packs, decoded at full size (PSNR over RGBA against the DXT decode,
+`astcenc -tl`; world n=6, model n=4, normal n=4; PNGs are the sharpest 128 px
+square at 3x: desktop | listed encodings in order):
+
+| kind | encoding | PSNR | encode time per 1024 px texture |
+| --- | --- | ---: | ---: |
+| world | 10x10 medium, halved (old slim) | 30.6 dB | 0.3 s |
+| world | 8x8 medium | 37.1 dB | 1.1 s |
+| world | 8x8 thorough (slim now) | 37.8 dB | 2.6 s |
+| world | 6x6 medium | 40.9 dB | 0.9 s |
+| model | 8x6 medium (old slim) | 44.9 dB | 0.5 s |
+| model | 6x6 medium | 46.7 dB | 0.5 s |
+| model | 6x6 thorough (slim now) | 49.2 dB | 1.9 s |
+| normal | 6x6 medium (old slim) | 38.8 dB | 0.6 s |
+| normal | 5x5 medium | 40.7 dB | 0.6 s |
+| normal | 5x5 thorough (slim now) | 41.6 dB | 1.2 s |
+
+- World: the old 10x10 at half size is a smear (the right-hand tile in the
+  PNGs). 8x8 at full size keeps all detail; only the busiest noisy terrain
+  (`terrain01x/ground/drylake01`) shows block edges against the DXT, and 6x6
+  removes them (+3.9 dB). 6x6 costs 1.78x the bytes of 8x8 on world textures
+  (about +270 MB), so it stays an option (`--world-blocks 6x6`), not the
+  default. Flat and structured textures (concrete, panels) are
+  indistinguishable from the DXT at 8x8.
+- Models: 6x6 is indistinguishable from the DXT; 8x6 already was close.
+- Normal maps: 5x5 smooth, 6x6 slightly banded in gradients.
+- `-thorough` buys 0.7-2.5 dB for 2-4x the encode time and nothing at run time
+  (the format is the same, hardware decoded).
+- JPEG and lightmaps at 95 with the source's chroma sampling: no visible loss
+  (an official lightmap is saved at ~99); each re-encode is still checked
+  against a PSNR floor and kept only when a tenth smaller.
+
+Textures keep their source size except the 2048 px skins, which start one level
+down as in the full profile.
+
+### How installed apps get the new set
+
+The packs keep their names, so a name check cannot tell old from new.
+
+- Split manifest (`godnotic-data-astc.json`): `set` includes a hash of every
+  pack's sha256, so new bytes are a new set; a pack whose size/crc32 line differs
+  is fetched again and the old file replaced. A complete old-layout install
+  normally *stands for* the first manifest it sees and fetches nothing, which
+  would leave the blurry packs on a tablet for ever, so `build-split-release.py
+  --replaces-legacy` (set by `split-data.yml`) writes `"replaces_legacy": true`:
+  `DataInstall.adopt` then records `legacy replaced`, fetches the set in the
+  background while the old packs keep the game whole, and deletes them when it
+  is complete (DataFetchTest.aCompleteOldInstallIsReplacedWhenTheManifestSaysSo).
+- The single archive (`Godnotic-data.zip` on `data-slim`, no manifest): an
+  install that already has the packs never asks again (`PackFetch.Meta` pins
+  the archive only for a setup in progress), so a rebuilt archive reaches new
+  installs only. Existing installs get the new textures through the split
+  manifest.
