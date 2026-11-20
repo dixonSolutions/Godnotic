@@ -108,6 +108,21 @@ internal class ServerListState(
     /** Slot indices drawn, in slot order: the rows that pass the chips now. */
     private val shown = ArrayList<Int>()
 
+    /** The maps of the first `n` rows drawn, for pictures worth having ready before a row is chosen. */
+    fun firstMaps(n: Int): List<String> {
+        val out = ArrayList<String>()
+        for (i in 0 until minOf(n, size)) {
+            val key = keyAt(i) ?: continue
+            val cells = items[key]?.row?.get("cells") as? Map<*, *> ?: continue
+            val map = cells["map"]?.toString().orEmpty()
+            if (map.isNotEmpty() && map !in out) out.add(map)
+        }
+        return out
+    }
+
+    /** Rows the list has been sent at some point (drawn or filtered out). */
+    val known: Int get() = items.size
+
     /** Rows the list draws, including the ones still in their grace period. */
     val size: Int get() = shown.size
 
@@ -444,6 +459,17 @@ internal class ServerListState(
     }
 
     companion object {
+        const val FILL_WINDOW = 100
+        const val FILL_EVERY_MS = 1000L
+
+        /**
+         * Offsets of the windows to ask for so the list holds the whole source: none when it
+         * already knows `total` rows or asked less than [FILL_EVERY_MS] ago (`sinceLastMs`).
+         */
+        fun fillOffsets(known: Int, total: Int, sinceLastMs: Long, window: Int = FILL_WINDOW): List<Int> =
+            if (total <= 0 || known >= total || sinceLastMs < FILL_EVERY_MS) emptyList()
+            else (0 until total step window).toList()
+
         /**
          * The empty message covers only a list with nothing left to draw: a source
          * still holding rows through a refresh (or past a chip) is not empty, and
