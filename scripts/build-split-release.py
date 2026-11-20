@@ -15,6 +15,8 @@ p.add_argument('--source-date', required=True, help='eight-digit date of the inp
 p.add_argument('--revision', type=int, required=True, help='unused immutable release revision')
 p.add_argument('--usage', type=pathlib.Path, required=True)
 p.add_argument('--default-map', default='stormkeep')
+p.add_argument('--replaces-legacy', action='store_true',
+               help='manifest says an installed old-layout set does not stand for this one (clients fetch it)')
 p.add_argument('--output', type=pathlib.Path, required=True, help='new empty output directory')
 p.add_argument('phone', type=pathlib.Path)
 a = p.parse_args()
@@ -39,6 +41,8 @@ if not all(a.source_date in x['install_as'] for x in m['packs']):
     sys.exit('source date does not match the pack names')
 m['archive']['url'] = f'https://github.com/dixonSolutions/Godnotic-data/releases/download/{tag}/{archive}'
 path.unlink()
+if a.replaces_legacy:
+    m['replaces_legacy'] = True
 manifest_file = f'godnotic-data-{a.profile}.json'
 (a.output / manifest_file).write_text(json.dumps(m, indent=1) + '\n')
 manifest_sha = hashlib.sha256((a.output / manifest_file).read_bytes()).hexdigest()

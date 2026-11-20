@@ -70,18 +70,19 @@ GL_ASTC_FIRST = 0x93B0  # GL_COMPRESSED_RGBA_ASTC_4x4_KHR
 PROFILES = {
     # The desktop-sized phone set, i.e. the option defaults below.
     "full": {},
-    # The set the app downloads: coarser blocks and half-size world textures.
-    # A phone screen is small and held at arm's length, which is what buys the
-    # bytes back; 2D graphics, the part read at 1:1, keep their size.
-    # JPEGs: the official lightmaps are saved at quality ~99 and are a third of
-    # the maps pack. Each re-encode keeps the source's chroma sampling and is
-    # checked against the picture it replaces (recompress_jpeg). What a
-    # running game never opens (map and model sources, QuakeC line tables, the
-    # benchmark demo) is left out.
-    "slim": {"world_blocks": (10, 10), "model_blocks": (8, 6), "norm_blocks": (6, 6),
-             "max_size": 512, "music_rate": "64k", "sfx": "opus", "bsp_zstd_level": 22,
-             "jpeg_quality": 86, "lightmap_quality": 90,
-             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3", "*.xcf"]},
+    # The set the app downloads. Standard quality: the full profile's ASTC block
+    # sizes (8x8 world, 6x6 models, 5x5 normal maps, 4x4 2D graphics), textures
+    # at the size the desktop game draws them (only the 2048 px skins start a
+    # level down), JPEGs and lightmaps re-encoded at a quality with no visible
+    # loss (chroma sampling kept, every re-encode checked, recompress_jpeg).
+    # What a running game never opens (map and model sources, QuakeC line
+    # tables, the benchmark demo) is left out. The earlier slim set (10x10 / 8x6
+    # / 6x6 blocks, 512 px cap, JPEG 86/90) was visibly blurry and blocky.
+    "slim": {"world_blocks": (8, 8), "model_blocks": (6, 6), "norm_blocks": (5, 5),
+             "gfx_blocks": (4, 4), "max_size": 1024, "preset": "-thorough",
+             "music_rate": "64k", "sfx": "opus", "bsp_zstd_level": 22,
+             "jpeg_quality": 95, "lightmap_quality": 95,
+             "drop": ["maps/*.map", "models/*.map", "*.ase", "*.lno", "demos/*.dem", "*.mp3"]},
 }
 # The set for GPUs with ASTC, by what it is (the app's "slim" set).
 PROFILES["astc"] = PROFILES["slim"]

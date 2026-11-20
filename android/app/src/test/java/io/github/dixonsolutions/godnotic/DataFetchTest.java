@@ -421,6 +421,24 @@ public class DataFetchTest {
     }
 
     @Test
+    public void aCompleteOldInstallIsReplacedWhenTheManifestSaysSo() throws Exception {
+        Fixture f = standard("A");
+        f.json = f.json.replaceFirst("\\{", "{\"replaces_legacy\": true,");
+        server.publish(f);
+        oldLayout("data", "maps", "music", "xoncompat");
+        write(new File(data, "font-unifont-20261107.pk3"), "font");
+
+        DataSession s = session();
+        assertTrue(s.manifest() == null);
+        s.background(server.manifestUrl(), new TestHost());
+        assertEquals(DataStatus.COMPLETE, s.state());
+        assertTrue("the manifest asked for the archive", server.archiveRequests.get() > 0);
+        assertOldLayout(false, "data", "maps", "music", "xoncompat");
+        f.assertInstalled(data, "core", "shared-1", "map-alpha", "shared-2", "map-beta", "music", "extras");
+        assertFalse(read(new File(data, DataInstall.STATE)).contains("legacy"));
+    }
+
+    @Test
     public void aCompleteOldInstallMovesToANewSetAndIsDeletedLast() throws Exception {
         Fixture a = standard("A");
         server.publish(a);

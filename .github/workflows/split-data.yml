@@ -56,7 +56,7 @@ jobs:
         run: |
           python scripts/repack-phone-assets.py --profile "$PROFILE" -j "$(nproc)" -o /tmp/phone /tmp/source/*.pk3
           rm -rf /tmp/source
-          python scripts/build-split-release.py --profile "$PROFILE" --source-date "$SOURCE_DATE" --revision "$REVISION" --usage "scripts/data-usage-$SOURCE_DATE.tsv.gz" --output /tmp/split /tmp/phone
+          python scripts/build-split-release.py --profile "$PROFILE" --source-date "$SOURCE_DATE" --revision "$REVISION" --replaces-legacy --usage "scripts/data-usage-$SOURCE_DATE.tsv.gz" --output /tmp/split /tmp/phone
           mkdir /tmp/artifact
           cp /tmp/split/Godnotic-data-*.zip /tmp/split/godnotic-data-*.json /tmp/split/split-sizes.md /tmp/split/UPLOADS.txt /tmp/artifact/
           (cd /tmp/artifact && sha256sum * > SHA256SUMS)
