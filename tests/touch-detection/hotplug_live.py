@@ -23,7 +23,10 @@ with tempfile.TemporaryDirectory(prefix='spec-devices-') as td:
     (t / 'home/data/test.cfg').write_text('\n'.join(cfg) + '\n')
     env = os.environ.copy(); env.update(SDL_VIDEODRIVER='offscreen', SDL_AUDIODRIVER='dummy')
     env.pop('DISPLAY', None); env.pop('WAYLAND_DISPLAY', None)
-    cmd = ['bwrap', '--bind', '/', '/', '--dev-bind', '/dev', '/dev', '--ro-bind', str(device), '/proc/bus/input/devices',
+    # a host libjpeg newer than the build headers aborts the engine at its first JPEG
+    NOJPEG = [a for lib in sorted(pathlib.Path('/usr/lib/x86_64-linux-gnu').glob('libjpeg.so*')) if lib.is_file() or lib.is_symlink()
+              for a in ('--ro-bind', '/dev/null', str(lib))]
+    cmd = ['bwrap', '--bind', '/', '/', '--dev-bind', '/dev', '/dev', *NOJPEG, '--ro-bind', str(device), '/proc/bus/input/devices',
            'taskset', '-c', '8-11', str(engine), '-xonotic', '-basedir', base, '-userdir', str(t / 'home'),
            '+set', 'vid_touchscreen_mode', '1', '+set', 'vid_touchscreen_live', '1', '+exec', 'test.cfg']
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env)

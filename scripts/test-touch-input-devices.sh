@@ -13,6 +13,7 @@ rc=0
 if command -v bwrap > /dev/null; then
 	python3 "$ROOT/tests/touch-detection/hotplug_live.py" || rc=$?
 	python3 "$ROOT/tests/touch-detection/match_live.py" || rc=$?
+	python3 "$ROOT/tests/touch-detection/look_live.py" || rc=$?
 else
 	echo "SKIP: bwrap is missing, the live hot-plug checks did not run"; rc=77
 fi
