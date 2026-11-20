@@ -10,6 +10,10 @@
 #   Loading       one card: the step with its size and speed and one Cancel, and
 #                 no banner saying the same above it
 #   Map preview   on a phone on its side the title and Play are in view
+#   Multiplayer   with a server chosen the engine's card for it (mp/details) is not docked into
+#                 the page: the bottom bar (address, Create, Join, "i") stays on screen at
+#                 1280x720, 1366x768, 1920x1080 and a phone; choosing opens the info dialog, Close
+#                 keeps the choice, the "i" opens it again
 #
 #   scripts/test-gtk-screens.sh        (needs loader/target/release/godnotic-loader:
 #                                       loader/build.sh, and org.gnome.Platform//48)
@@ -65,6 +69,32 @@ if has map-preview-915x412 Stormkeep && has map-preview-915x412 "Play Deathmatch
 else
 	bad "Map preview at 915x412: Play is out of view ($(tr '\n' '|' < "$WORK/map-preview-915x412.txt" | cut -c1-200))"
 fi
+
+# Multiplayer with a server chosen: the bar on screen at common sizes, the info dialog and its "i"
+for size in 1280x720 1366x768 1920x1080 400x860; do
+	labels servers-chosen "$size"
+	f=servers-chosen-$size
+	if has $f Create && has $f Join && ! has $f "Players · score · team"; then
+		ok "Multiplayer with a server chosen at $size: the bottom bar (Create, Join) is on screen"
+	else
+		bad "Multiplayer with a server chosen at $size: bar off screen or card docked ($(tr '\n' '|' < "$WORK/$f.txt" | cut -c1-200))"
+	fi
+done
+dialog() { # WxH: choose a row (opens the dialog), then the labels while it is up, after Close, after the "i"
+	local size=$1 out="$WORK/dialog-$1"
+	mkdir -p "$out"
+	printf 'wait 2500\nrow mp/servers 2\nwait 1500\nlabels %s/open.txt\nsnapshot %s/open.png\nclick mp/servers:info-close\nwait 800\nlabels %s/closed.txt\nclick mp/join:info\nwait 1200\nlabels %s/again.txt\nsnapshot %s/again.png\nquit\n' "$out" "$out" "$out" "$out" "$out" > "$out/run.script"
+	FIXTURE=seq-server-select timeout 90 "$ROOT/loader/scripts/drive.sh" "$out/run.script" "$out" "$size" dark > "$out/log.txt" 2>&1
+}
+for size in 1280x720 400x860; do
+	dialog "$size"
+	o="$WORK/dialog-$size"
+	if grep -qxF Close "$o/open.txt" && grep -qxF "Join" "$o/open.txt" && ! grep -qxF Close "$o/closed.txt" && grep -qxF Join "$o/closed.txt" && grep -qxF Close "$o/again.txt"; then
+		ok "Server info at $size: choosing opens the dialog, Close leaves the list with the bar, the \"i\" opens it again"
+	else
+		bad "Server info at $size: open=$(tr '\n' '|' < "$o/open.txt" | cut -c1-120) closed=$(tr '\n' '|' < "$o/closed.txt" | cut -c1-120)"
+	fi
+done
 
 [ $fail = 0 ] && echo "gtk-screens: all passed"
 exit $fail
