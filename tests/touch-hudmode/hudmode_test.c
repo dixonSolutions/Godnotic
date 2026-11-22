@@ -384,6 +384,20 @@ static void check_join_dialog(void)
 	CHECK_STR("cmd selectteam pink; cmd join pink", TouchJoinDlg_Command("pink", 1), "pink");
 	CHECK_STR("cmd spectate", TouchJoinDlg_Command("spectate", 1), "spectate");
 	CHECK_STR("", TouchJoinDlg_Command("quit", 1), "anything else: nothing");
+
+	// auto-join's default team: a fixed team only on the first try, in a team game, when offered
+	CHECK_STR("red", TouchJoinDlg_AutoChoice("red", 3, 1, 1), "default team red, red and blue offered");
+	CHECK_STR("blue", TouchJoinDlg_AutoChoice("blue", 3, 1, 1), "default team blue");
+	CHECK_STR("pink", TouchJoinDlg_AutoChoice("pink", 15, 1, 1), "default team pink on a four-team server");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("pink", 3, 1, 1), "pink not offered: auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("yellow", 0, 1, 1), "no team list yet: auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("red", 3, 1, 0), "a retry after a refusal: auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("red", 3, 0, 1), "not a team game: auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("auto", 3, 1, 1), "setting auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice("purple", 15, 1, 1), "unknown value: auto");
+	CHECK_STR("auto", TouchJoinDlg_AutoChoice(NULL, 15, 1, 1), "no value: auto");
+	CHECK_STR("cmd selectteam blue; cmd join blue", TouchJoinDlg_Command(TouchJoinDlg_AutoChoice("blue", 3, 1, 1), 1), "auto-join sends the stock team commands");
+	CHECK_STR("cmd join", TouchJoinDlg_Command(TouchJoinDlg_AutoChoice("blue", 0, 0, 1), 0), "auto-join in a free-for-all is a plain join");
 }
 
 int main(void)

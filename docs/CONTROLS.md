@@ -152,6 +152,7 @@ and Spectate. It is the menu's, so it works under any server's game code.
 | When | What happens |
 |------|--------------|
 | A match starts and the player is an observer (every public server) | the dialog opens by itself after 0.75 s as an observer, once nothing else has the screen (`touch_join_dialog_auto`: 0 never, 1 on a device with a touchscreen, 2 always) |
+| Auto-join on (`touch_always_autojoin`, **on by default**; Settings > Game > Always auto-join) | no dialog: the player goes straight in, in a team game on the team `touch_autojoin_team` names (`auto` = the server balances, or `red`/`blue`/`yellow`/`pink`; Settings > Game > Default team): `cmd selectteam <team>; cmd join <team>`, else `cmd selectteam auto; cmd join`. A team the server does not offer, a refused first try, a campaign with `g_campaign_forceteam`, and a join the server locked or queued all fall back to Auto or to the dialog. Choosing Spectate once in a match is respected |
 | Join / a team | `cmd join`, or `cmd selectteam <team>; cmd join <team>` — the stock dialog's commands; the dialog closes |
 | Spectate, or dismissing it | stays an observer; the dialog does not come back in this match |
 | MENU > **Join game** (observing), **Change team** (team games) | the dialog again |
@@ -651,6 +652,8 @@ Engine movement (already in `touch/xonotic.cfg`):
 | `touch_haptics` | int | 0/1 | `1` | A short vibration (`touch_haptics_ms`, 8) when a button takes a finger. Only where the platform lets the engine vibrate (`_touch_haptics_available`; no platform does yet) |
 | `touch_topbar_auto` | int | 0/1 | `1` | The engine lays out the top bar — see [The top bar](#the-top-bar) |
 | `touch_join_dialog_auto` | int | 0–2 | `1` | The join dialog opens by itself for an observer at match start — see [Joining](#joining-xonotics-join-dialog) |
+| `touch_always_autojoin` | int | 0/1 | `1` | Join straight away instead of asking for a team or Spectate |
+| `touch_autojoin_team` | string | auto, red, blue, yellow, pink | `auto` | The team Auto-join asks for in team games; auto when the server does not offer it |
 | `touch_local_autojoin` | int | 0/1 | `1` | A game hosted on this device with no team to pick joins straight away |
 | `touch_fire_slide_release` | int | 0/1 | `0` | Legacy: treat sliding off FIRE as release |
 | `touch_hop_mode` | int | 0=plain, 1=hold HOP to latch, 2=auto-hop while moving, 3=plain HOP + KEEP switch | `3` | Bunny-hop is a *held* key in Xonotic: holding HOP jumps again at every landing in every mode, and the thumb holding it can steer (`touch_button_drag_look`). KEEP frees the thumb altogether. Layouts on 1 move to 3 once (`touch_hop_version`) |

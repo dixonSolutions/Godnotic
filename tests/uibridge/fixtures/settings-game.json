@@ -366,7 +366,8 @@
     },
     "children": [
      "settings/split/game/content/gentle",
-     "settings/split/game/content/autojoin"
+     "settings/split/game/content/autojoin",
+     "settings/split/game/content/autoteam"
     ]
    },
    {
@@ -386,7 +387,42 @@
     "props": {
      "label": "Always auto-join",
      "bind": "cvar:touch_always_autojoin",
-     "value": false
+     "value": true,
+     "help": "Go straight into the game on joining a server or starting a local game, without the team and spectator question"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/game/content/autoteam",
+    "type": "choice",
+    "props": {
+     "label": "Default team",
+     "bind": "cvar:touch_autojoin_team",
+     "style": "dropdown",
+     "options": [
+      {
+       "value": "auto",
+       "label": "Auto"
+      },
+      {
+       "value": "red",
+       "label": "Red"
+      },
+      {
+       "value": "blue",
+       "label": "Blue"
+      },
+      {
+       "value": "yellow",
+       "label": "Yellow"
+      },
+      {
+       "value": "pink",
+       "label": "Pink"
+      }
+     ],
+     "help": "The team Auto-join asks for in team games; Auto lets the server balance. A team the server does not offer falls back to Auto",
+     "value": "auto"
     },
     "children": []
    },

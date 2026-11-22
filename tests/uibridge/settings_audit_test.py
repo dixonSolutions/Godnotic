@@ -115,5 +115,19 @@ for name in ("home", "pause"):
                 continue  # hidden in Home/Pause; the engine opens them
             check(f'"{a}"' in host, f"fe/{name}.json action {a} has a handler")
 
+# 4. auto-join: on by default, with a default-team choice that every renderer gets from the tree
+HUDMODE = read(os.path.join(ROOT, "engine/darkplaces/touch_hudmode.c"))
+check('"touch_always_autojoin", "1"' in HUDMODE, "auto-join is on by default")
+check('"touch_autojoin_team", "auto"' in HUDMODE, "the default team is auto")
+check('UIB_Choice("autoteam", _("Default team"), "cvar:touch_autojoin_team"' in settings
+      and all(f'UIB_Opt("{t}"' in settings.split('"cvar:touch_autojoin_team"')[1].split("\n")[0]
+              for t in ("auto", "red", "blue", "yellow", "pink")),
+      "Settings > Game has a Default team choice with auto, red, blue, yellow and pink")
+with open(os.path.join(ROOT, "tests/uibridge/fixtures/settings-game.json")) as f:
+    ids = {n["id"]: n for n in json.load(f)["snapshot"]["nodes"]}
+check(ids["settings/split/game/content/autojoin"]["props"]["value"] is True
+      and ids["settings/split/game/content/autoteam"]["props"]["bind"] == "cvar:touch_autojoin_team",
+      "the settings-game fixture shows both rows")
+
 print(("settings audit: %d failure(s)" % fails) if fails else "settings audit: all passed")
 sys.exit(1 if fails else 0)
