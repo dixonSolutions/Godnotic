@@ -19,6 +19,11 @@ void Touch_Chat_Capture(string msg);
 // line comes back unchanged. Hooked into CSQC_Parse_Print.
 string Touch_Chat_Mark(string msg);
 
+// The server's echo of a message we already showed locally: true to drop it.
+bool Touch_Chat_IsEcho(string msg);
+
+bool Touch_ChatLog_Hit(vector p);
+
 bool Touch_Chat_Active(void);
 void Touch_Chat_Open(bool team);
 void Touch_Chat_Close(void);

@@ -44,4 +44,9 @@ test "$(grep -c 'PhysicalKeyboard.inputType(outAttrs.inputType); // Godnotic: ph
 	|| { echo "FAIL sdl glue: SDL's text field must take its input type from PhysicalKeyboard" >&2; exit 1; }
 python3 scripts/check-sdl-chat-ime.py "$tmp/sdl/SDLActivity.java" >/dev/null \
 	|| { echo "FAIL sdl glue: the keyboard patch broke the chat IME flags" >&2; exit 1; }
+# Typing order: the hidden text field keeps its cursor at the end and loses what a Backspace key removes.
+test "$(grep -c "input method cursor stays at the end" "$tmp/sdl/SDLActivity.java")" = 3 \
+	|| { echo "FAIL sdl glue: the input connection must pin its cursor (3 places) and mirror Backspace" >&2; exit 1; }
+python3 scripts/check-sdl-chat-ime.py "$tmp/sdl/SDLActivity.java" --ordering >/dev/null \
+	|| { echo "FAIL sdl glue: SDLInputConnection ordering guards missing" >&2; exit 1; }
 echo "sdl glue (hidapi receivers, full-sensor orientation, physical keyboard): all checks passed"

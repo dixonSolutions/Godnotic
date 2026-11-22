@@ -22,7 +22,30 @@ def check(source):
     return {"EditorInfo.IME_FLAG_NO_EXTRACT_UI", "EditorInfo.IME_FLAG_NO_FULLSCREEN"} <= flags
 
 
+def check_ordering(source):
+    """The typing-order guards of scripts/android-patch-sdl-java.sh are in SDLInputConnection."""
+    m = re.search(r"class SDLInputConnection\b.*?\n}\n", source, flags=re.DOTALL)
+    if not m:
+        return False
+    body = m.group(0)
+    pins = len(re.findall(r"Selection\.setSelection\(\s*\w+\s*,\s*\w+\.length\(\)\s*\)", body))
+    override = re.search(r"public\s+boolean\s+setSelection\s*\(\s*int\s+\w+\s*,\s*int\s+\w+\s*\)", body)
+    del_key = "KeyEvent.KEYCODE_DEL" in body and "field.delete(" in body
+    # the pin in updateText comes before the committed text is recorded
+    ordered = re.search(r"Selection\.setSelection\([^;]*;[^\n]*\n\s*mCommittedText\s*=\s*text;", body)
+    return pins >= 2 and bool(override) and del_key and bool(ordered)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or not check(Path(sys.argv[1]).read_text()):
-        sys.exit("SDL chat input must set both IME_FLAG_NO_EXTRACT_UI and IME_FLAG_NO_FULLSCREEN")
-    print("SDL chat input: non-fullscreen IME flags present")
+    ordering = len(sys.argv) == 3 and sys.argv[2] == "--ordering"
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and not ordering):
+        sys.exit("usage: check-sdl-chat-ime.py SDLActivity.java [--ordering]")
+    text = Path(sys.argv[1]).read_text()
+    if ordering:
+        if not check_ordering(text):
+            sys.exit("SDL chat input: the cursor pin or the Backspace mirror is missing from SDLInputConnection")
+        print("SDL chat input: typing-order guards present")
+    else:
+        if not check(text):
+            sys.exit("SDL chat input must set both IME_FLAG_NO_EXTRACT_UI and IME_FLAG_NO_FULLSCREEN")
+        print("SDL chat input: non-fullscreen IME flags present")

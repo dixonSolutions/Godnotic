@@ -30,6 +30,10 @@ static cvar_t touch_roster = {CF_CLIENT, "_touch_roster", "",
 static cvar_t touch_typing = {CF_CLIENT, "_touch_typing", "",
 	"the \"is typing\" text the chat area shows (read by the chat sheet)"};
 
+static cvar_t touch_mention_draws = {CF_CLIENT, "_touch_mention_draws", "0", "test: how many times the chat area drew the typing line"};
+
+static cvar_t touch_roster_n = {CF_CLIENT, "_touch_roster_n", "0", "test: how many names _touch_roster holds"};
+
 #define TM_ROSTER_MAX 64
 typedef struct { char name[TM_MAX_NAME]; qbool spectator; } tm_entry_t;
 static tm_entry_t tm_roster[TM_ROSTER_MAX];
@@ -37,7 +41,9 @@ static int tm_roster_n;
 
 static int tm_sel;        // highlighted row
 static int tm_dismissed = -1; // the @ position the player closed the picker on
-static struct { int n, idx[TM_MAX_SHOWN]; int at; float x, y, w, rowh; } tm_pick;
+#define TM_MAX_FOUND 32
+static int tm_off; /* first row shown when more names fit than rows */
+static struct { int n, idx[TM_MAX_FOUND]; int at; float x, y, w, rowh; } tm_pick;
 
 static void TM_SetStr(cvar_t *c, const char *s)
 {
@@ -82,6 +88,8 @@ static void TM_PublishRoster(void)
 	}
 	buf[o] = 0;
 	TM_SetStr(&touch_roster, buf);
+	if (touch_roster_n.integer != tm_roster_n)
+		Cvar_SetValueQuick(&touch_roster_n, tm_roster_n);
 }
 
 /* ---- typing ---- */
@@ -140,10 +148,20 @@ static void TM_Matches(void)
 	qlen = chat_bufferpos - at - 1;
 	for (i = 0; i < tm_roster_n; i++)
 		names[i] = tm_roster[i].name;
-	tm_pick.n = TouchMention_Filter(names, tm_roster_n, chat_buffer + at + 1, (size_t)qlen, tm_pick.idx, TM_MAX_SHOWN);
+	tm_pick.n = TouchMention_Filter(names, tm_roster_n, chat_buffer + at + 1, (size_t)qlen, tm_pick.idx, TM_MAX_FOUND);
 	tm_pick.at = at;
 	if (tm_sel >= tm_pick.n)
 		tm_sel = 0;
+	tm_off = bound(0, tm_off, max(0, tm_pick.n - TM_MAX_SHOWN));
+}
+
+/* keeps the highlighted row among the rows shown */
+static void TM_ShowSel(void)
+{
+	if (tm_sel < tm_off)
+		tm_off = tm_sel;
+	else if (tm_sel >= tm_off + TM_MAX_SHOWN)
+		tm_off = tm_sel - TM_MAX_SHOWN + 1;
 }
 
 static void TM_Accept(int row)
@@ -163,10 +181,15 @@ static void TM_Accept(int row)
 qbool TouchMention_Key(int key, int ascii)
 {
 	(void)ascii;
-	if (TouchChatLog_Key(key, true))
-		return true;
 	TM_BuildRoster();
 	TM_Matches();
+	if (tm_pick.n > TM_MAX_SHOWN && (key == K_MWHEELUP || key == K_MWHEELDOWN))
+	{
+		tm_off = bound(0, tm_off + (key == K_MWHEELUP ? -1 : 1), tm_pick.n - TM_MAX_SHOWN);
+		return true;
+	}
+	if (TouchChatLog_Key(key, true))
+		return true;
 	if (key != K_ESCAPE && key != K_ENTER && key != K_KP_ENTER && key != K_TAB
 		&& key != K_UPARROW && key != K_DOWNARROW && key != K_MOUSE1)
 		return false;
@@ -178,8 +201,8 @@ qbool TouchMention_Key(int key, int ascii)
 	}
 	switch (key)
 	{
-	case K_UPARROW:   tm_sel = (tm_sel + tm_pick.n - 1) % tm_pick.n; return true;
-	case K_DOWNARROW: tm_sel = (tm_sel + 1) % tm_pick.n; return true;
+	case K_UPARROW:   tm_sel = (tm_sel + tm_pick.n - 1) % tm_pick.n; TM_ShowSel(); return true;
+	case K_DOWNARROW: tm_sel = (tm_sel + 1) % tm_pick.n; TM_ShowSel(); return true;
 	case K_TAB: case K_ENTER: case K_KP_ENTER: TM_Accept(tm_sel); return true;
 	case K_ESCAPE: tm_dismissed = tm_pick.at; tm_pick.n = 0; return true; /* the next Esc closes the chat */
 	case K_MOUSE1:
@@ -187,9 +210,10 @@ qbool TouchMention_Key(int key, int ascii)
 		float mx = in_windowmouse_x * vid_conwidth.value / vid.mode.width;
 		float my = in_windowmouse_y * vid_conheight.value / vid.mode.height;
 		int row = (int)((my - tm_pick.y) / tm_pick.rowh);
-		if (mx < tm_pick.x || mx > tm_pick.x + tm_pick.w || my < tm_pick.y || row < 0 || row >= tm_pick.n)
+		if (mx < tm_pick.x || mx > tm_pick.x + tm_pick.w || my < tm_pick.y || row < 0
+			|| row >= TM_MAX_SHOWN || tm_off + row >= tm_pick.n)
 			return false;
-		TM_Accept(row);
+		TM_Accept(tm_off + row);
 		return true;
 	}
 	}
@@ -202,19 +226,39 @@ void TouchMention_Init(void)
 	Cvar_RegisterVariable(&touch_chat_typing);
 	Cvar_RegisterVariable(&touch_roster);
 	Cvar_RegisterVariable(&touch_typing);
+	Cvar_RegisterVariable(&touch_mention_draws);
+	Cvar_RegisterVariable(&touch_roster_n);
+}
+
+static char tm_typing[160];
+
+/* Once per frame, from SCR_DrawScreen, whatever the chat area is doing. */
+void TouchMention_Frame(void)
+{
+	if (cls.state != ca_connected || cls.demoplayback)
+	{
+		if (tm_typing[0] || touch_roster.string[0])
+		{
+			tm_typing[0] = 0;
+			TM_SetStr(&touch_typing, "");
+			TM_SetStr(&touch_roster, "");
+		}
+		return;
+	}
+	TM_BuildRoster();
+	TM_PublishRoster();
+	TM_BuildTyping(tm_typing, sizeof(tm_typing));
+	TM_SetStr(&touch_typing, tm_typing);
 }
 
 void TouchMention_Draw(float x, float v, float size)
 {
-	char typing[160];
+	const char *typing = tm_typing;
 	float y = v;
 	int i;
 	if (cls.state != ca_connected || cls.demoplayback)
 		return;
-	TM_BuildRoster();
-	TM_PublishRoster();
-	TM_BuildTyping(typing, sizeof(typing));
-	TM_SetStr(&touch_typing, typing);
+	Cvar_SetValueQuick(&touch_mention_draws, touch_mention_draws.value + 1);
 
 	if (key_dest == key_message)
 		y += size; /* the input line sits at v */
@@ -227,16 +271,17 @@ void TouchMention_Draw(float x, float v, float size)
 	if (!tm_pick.n)
 		return;
 	{
-		float rowh = size * 1.4f, w = size * 18.0f, h = rowh * tm_pick.n;
+		int shown = min(tm_pick.n, TM_MAX_SHOWN);
+		float rowh = size * 1.4f, w = size * 18.0f, h = rowh * shown;
 		if (y + h > vid_conheight.value)
 			y = max(0.0f, v - h); /* no room below: above the input line */
 		tm_pick.x = x; tm_pick.y = y; tm_pick.w = w; tm_pick.rowh = rowh;
 		DrawQ_Fill(x, y, w, h, 0.02f, 0.04f, 0.08f, 0.85f, 0);
-		for (i = 0; i < tm_pick.n; i++)
+		for (i = 0; i < shown; i++)
 		{
-			const tm_entry_t *e = &tm_roster[tm_pick.idx[i]];
+			const tm_entry_t *e = &tm_roster[tm_pick.idx[tm_off + i]];
 			char label[TM_MAX_NAME + 16];
-			if (i == tm_sel)
+			if (tm_off + i == tm_sel)
 				DrawQ_Fill(x, y + i * rowh, w, rowh, 0.2f, 0.45f, 0.9f, 0.7f, 0);
 			dpsnprintf(label, sizeof(label), "@%s%s", e->name, e->spectator ? "  (spectator)" : "");
 			DrawQ_String(x + size * 0.4f, y + i * rowh + (rowh - size) * 0.5f, label, 0, size, size,

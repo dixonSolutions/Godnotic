@@ -4,6 +4,8 @@
 /* Chat @mentions, the "is typing" line, and the chat log (Godnotic). */
 
 void TouchMention_Init(void);
+/* cl_screen.c, SCR_DrawScreen: once a frame, publishes the roster and who is typing. */
+void TouchMention_Frame(void);
 /* console.c, Con_DrawNotify: x, v is where the chat input line goes, size its height. */
 void TouchMention_Draw(float x, float v, float size);
 /* keys.c, Key_Message: true when the picker took the key. */

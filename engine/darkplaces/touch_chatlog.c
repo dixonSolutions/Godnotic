@@ -153,7 +153,7 @@ void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
 {
 	unsigned visible;
 	int lines, i, maxl = stock_lines > 0 ? stock_lines : 8;
-	char rect[96];
+	char rect[128];
 	if (!touch_chatlog.integer || cls.state != ca_connected || size <= 0)
 		return;
 	if (tcl_scroll && host.realtime - tcl_scroll_time > 20)
@@ -176,9 +176,9 @@ void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
 		DrawQ_Line(1, tcl_ix + s * 0.3f, tcl_iy + s * 0.5f, tcl_ix + s * 0.7f, tcl_iy + s * 0.25f, 1, 1, 1, a, 0);
 		DrawQ_Line(1, tcl_ix + s * 0.3f, tcl_iy + s * 0.5f, tcl_ix + s * 0.7f, tcl_iy + s * 0.75f, 1, 1, 1, a, 0);
 	}
-	dpsnprintf(rect, sizeof(rect), "%.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f",
+	dpsnprintf(rect, sizeof(rect), "%.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f",
 		x / vid_conwidth.value, y / vid_conheight.value, w / vid_conwidth.value, lines * size / vid_conheight.value,
-		tcl_ix / vid_conwidth.value, tcl_iy / vid_conheight.value, tcl_isz / vid_conwidth.value, tcl_isz / vid_conheight.value);
+		tcl_ix / vid_conwidth.value, tcl_iy / vid_conheight.value, tcl_isz / vid_conwidth.value, tcl_isz / vid_conheight.value, size / vid_conheight.value);
 	if (strcmp(touch_chatlog_rect.string, rect))
 		Cvar_SetQuick(&touch_chatlog_rect, rect);
 

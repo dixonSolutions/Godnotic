@@ -11,6 +11,7 @@
 #include "touch_ui.h"
 #include "touch_hud.h"
 #include "touch_vote.h"
+#include "touch_mention.h" // Touch: roster and typing text
 #include "touch_aim.h" // Touch: offline practice markers
 #include "touch_lua.h" // Touch: Lua mods and plugins
 #include "touch_shellbtn.h" // Touch: console button
@@ -1821,6 +1822,8 @@ static void SCR_DrawScreen (void)
 			Mem_Free(buffer2);
 		}
 	}
+
+	TouchMention_Frame(); // Touch: roster and typing text for the chat
 
 	// draw 2D stuff
 

@@ -1007,6 +1007,7 @@ void CSQC_Parse_Print(string strMessage)
 	// The touch chat sheet keeps its own backlog: the engine's chat lines expire
 	// on con_chattime, so by the time a player opens the sheet to reply the
 	// message they are replying to is usually gone.
+	if (Touch_Chat_IsEcho(strMessage)) return; // Touch: the line was shown locally when it was sent
 	Touch_Chat_Capture(strMessage);
 	print(ColorTranslateRGB(Touch_Chat_Mark(strMessage))); // Touch: @mention of us gets a colour and a sound
 }
