@@ -119,6 +119,14 @@ jobs:
       - name: Broadcast addresses, LAN ranges, the lock key, password rejects, port lists
         run: bash scripts/test-lan-logic.sh
 
+  chat-logic:
+    name: Chat mentions, typing line and chat log logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mention matching, the typing text, ring buffer, fade, scroll box, export
+        run: bash scripts/test-chat-mention.sh
+
   uibridge:
     name: UI bridge
     runs-on: ubuntu-latest

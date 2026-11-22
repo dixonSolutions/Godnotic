@@ -69,3 +69,56 @@ s = open(p).read()
 open(p, "w").write(s.replace(a, b))
 PY
 fi
+
+# Typing came out in reverse after a backspace. SDL feeds the engine from a diff of
+# its hidden text field (SDLInputConnection.updateText: backspaces for what left the
+# end, then the new tail), so that field is only right while its cursor sits at the
+# end and it holds exactly what the engine's line holds. An input method breaks both:
+#  - it moves the cursor (setSelection, or a composing region that ends at 0 after a
+#    delete), and the next characters land in front of the old ones;
+#  - Backspace arriving as a key event (hardware or Samsung Keyboard) goes to the
+#    engine but never out of the field, so the next diff is against stale text.
+# The field's cursor is therefore pinned to the end, and a Backspace key event
+# takes its last character out of the field too.
+if ! grep -qF "Godnotic: input method cursor stays at the end" "$a"; then
+    python3 - "$a" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+
+def once(s, anchor):
+    if s.count(anchor) != 1:
+        sys.exit("android-patch-sdl-java: '%s' not found exactly once in %s" % (anchor.strip(), p))
+
+send = "        return super.sendKeyEvent(event);\n"
+once(s, send)
+s = s.replace(send, """        if (event.getKeyCode() == KeyEvent.KEYCODE_DEL && event.getAction() == KeyEvent.ACTION_DOWN) {
+            // Godnotic: input method cursor stays at the end -- the key reaches the engine, so the field loses it too
+            Editable field = getEditable();
+            if (field != null && field.length() > 0) {
+                field.delete(field.length() - 1, field.length());
+                mCommittedText = field.toString();
+            }
+        }
+""" + send)
+
+commit = "        mCommittedText = text;\n"
+once(s, commit)
+s = s.replace(commit, "        android.text.Selection.setSelection(content, content.length()); // Godnotic: input method cursor stays at the end\n" + commit)
+
+native = "    public static native void nativeCommitText(String text, int newCursorPosition);\n"
+once(s, native)
+s = s.replace(native, """    @Override
+    public boolean setSelection(int start, int end) {
+        // Godnotic: input method cursor stays at the end -- the engine line only grows and shrinks there
+        Editable field = getEditable();
+        if (field != null) {
+            android.text.Selection.setSelection(field, field.length());
+        }
+        return true;
+    }
+
+""" + native)
+open(p, "w").write(s)
+PY
+fi
