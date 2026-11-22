@@ -62,16 +62,16 @@ object CardTags {
     fun of(p: Map<String, Any?>): List<String> {
         val tags = (p["tags"] as? List<*>)?.mapNotNull { (it as? String)?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
         if (tags.isNotEmpty()) return tags.take(6)
-        if (p["featured"] == true && p["display"] != "table" && !(p["image"] as? String).isNullOrEmpty()) {
+        if (p["featured"] == true && p["display"] != "table" && p["live"] != true && !(p["image"] as? String).isNullOrEmpty()) {
             val s = p["subtitle"] as? String ?: ""
-            if (s.contains(" · ")) return s.split(" · ").take(6)
+            if (s.contains(" · ") && !s.contains('\n')) return s.split(" · ").take(6)
         }
         return emptyList()
     }
 
     /**
      * A card's lines of cells (at most six lines of four): a `display: table` card's `rows`; for an
-     * older payload of a featured card with no picture and no `tags` (Home's Multiplayer card, whose
+     * older payload of a featured live card (or one with no picture) and no `tags` (Home's Multiplayer card, whose
      * servers are the lines of its `subtitle`), each line split at " · " into name, map, players.
      */
     fun rows(p: Map<String, Any?>): List<List<String>> {
@@ -80,7 +80,7 @@ object CardTags {
                 (r as? List<*>)?.take(4)?.map { it?.toString() ?: "" }?.takeIf { it.isNotEmpty() }
             }
         }
-        if (p["featured"] == true && (p["image"] as? String).isNullOrEmpty() && ((p["tags"] as? List<*>).isNullOrEmpty())) {
+        if (p["featured"] == true && (p["live"] == true || (p["image"] as? String).isNullOrEmpty()) && ((p["tags"] as? List<*>).isNullOrEmpty())) {
             return (p["subtitle"] as? String ?: "").lines().filter { it.contains(" · ") }.take(6).map { line ->
                 // the last two parts are the map and the players; a name may hold " · " itself
                 val parts = line.split(" · ")

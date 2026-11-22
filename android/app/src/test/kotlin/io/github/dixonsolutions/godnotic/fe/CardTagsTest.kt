@@ -30,7 +30,7 @@ class CardTagsTest {
     }
 
     @Test fun anOlderMultiplayerCardIsALinePerServer() {
-        val p = mapOf("featured" to true, "subtitle" to "Jeff & Julius · Server · circle_jerk · 12/32\nQuake 1 · qbj · 3/12")
+        val p = mapOf("featured" to true, "live" to true, "image" to "pk3:maps/vorix", "subtitle" to "Jeff & Julius · Server · circle_jerk · 12/32\nQuake 1 · qbj · 3/12")
         assertTrue(CardTags.tagged(p))
         assertEquals(listOf("Jeff & Julius · Server", "circle_jerk", "12/32"), CardTags.rows(p)[0])
         assertEquals(listOf("Quake 1", "qbj", "3/12"), CardTags.rows(p)[1])

@@ -1103,8 +1103,8 @@ fn card_tags(n: &Node) -> Vec<String> {
     if !tags.is_empty() {
         return tags;
     }
-    if n.bool("featured").unwrap_or(false) && n.str("display").is_none() && n.str("image").is_some() {
-        if let Some(s) = n.str("subtitle").filter(|s| s.contains(" · ")) {
+    if n.bool("featured").unwrap_or(false) && n.str("display").is_none() && n.str("image").is_some() && !n.bool("live").unwrap_or(false) {
+        if let Some(s) = n.str("subtitle").filter(|s| s.contains(" · ") && !s.contains('\n')) {
             return s.split(" · ").map(str::to_string).collect();
         }
     }
@@ -1118,7 +1118,7 @@ fn card_lines(n: &Node) -> Vec<Vec<String>> {
     if n.str("display").as_deref() == Some("table") {
         return n.arr("rows").iter().filter_map(Value::as_array).take(6).map(|r| r.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()).collect();
     }
-    if n.bool("featured").unwrap_or(false) && n.str("image").is_none() && n.arr("tags").is_empty() {
+    if n.bool("featured").unwrap_or(false) && (n.str("image").is_none() || n.bool("live").unwrap_or(false)) && n.arr("tags").is_empty() {
         return n.str("subtitle").unwrap_or_default().lines().filter(|l| l.contains(" · ")).take(6).map(|l| {
             let p: Vec<&str> = l.split(" · ").collect();
             if p.len() <= 3 { p.iter().map(|s| s.to_string()).collect() } else { vec![p[..p.len() - 2].join(" · "), p[p.len() - 2].to_string(), p[p.len() - 1].to_string()] }
