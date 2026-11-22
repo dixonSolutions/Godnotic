@@ -82,7 +82,7 @@ one() { # scenario run
 	case $1 in
 		menu) bench "$d" 1 menu ""; cp "$d/menu-1.log" "$WORK/$1.$2.log" ;;
 		cold) bench "$d" 1 map:stormkeep ""; cp "$d/map-stormkeep-1.log" "$WORK/$1.$2.log" ;;
-		warm) bench "$d" 6 map:stormkeep ""; cp "$d/map-stormkeep-1.log" "$WORK/$1.$2.log" ;;
+		warm) bench "$d" 6 map:stormkeep "+set touch_warm 1"; cp "$d/map-stormkeep-1.log" "$WORK/$1.$2.log" ;;
 	esac
 	rm -rf "$d"
 }

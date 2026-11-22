@@ -543,7 +543,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val bmp = shotBitmap
         val strip = showShot || lastTransparent
         previewStrip = strip
-        loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE
+        loadingBanner?.visibility = if (JoinFlow.banner(joinStage, previewSeen)) View.VISIBLE else View.GONE // never the logo in a join: a picture, the world, or plain dark
         when {
             showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash

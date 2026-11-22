@@ -178,16 +178,20 @@ final class BootTheme {
                 releasePlayer();
                 return true;
             });
-            mp.prepare();
-            if (!wanted) {
-                mp.release();
-                return;
-            }
-            mp.start();
+            // prepareAsync: prepare() decodes the first buffers on the main thread, a visible stall
+            // on the screen that is also doing the download or the hand-off
             player = mp;
-            Log.i(TAG, "Boot theme playing from " + file.getName() + " at " + volume);
+            mp.setOnPreparedListener(prepared -> {
+                if (!wanted || player != prepared) {
+                    return;
+                }
+                prepared.start();
+                Log.i(TAG, "Boot theme playing from " + file.getName() + " at " + volume);
+            });
+            mp.prepareAsync();
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "Could not play the boot theme", e);
+            player = null;
             mp.release();
             nextTry = SystemClock.elapsedRealtime() + 10_000;
         }
