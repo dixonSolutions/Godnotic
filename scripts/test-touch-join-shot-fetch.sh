@@ -26,6 +26,7 @@ for _ in $(seq 1 600); do grep -q 'Server spawned' "$work/sv.log" && break; slee
 grep -q 'Server spawned' "$work/sv.log" || { tail -30 "$work/sv.log"; exit 1; }
 cat > "$work/client/data/test.cfg" <<CFG
 set touch_profile_done 1
+set touch_always_autojoin 0
 set fe_echo 1
 fe attach 1
 connect 127.0.0.1:28181

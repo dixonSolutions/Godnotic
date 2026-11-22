@@ -19,6 +19,7 @@ mkfifo "$work/sv1.in"; exec 7<>"$work/sv1.in" # the first server's console: the 
 for _ in $(seq 1 300); do grep -q 'Server spawned' "$work/sv1.log" && grep -q 'Server spawned' "$work/sv2.log" && break; sleep .1; done
 cat > "$work/c/data/t.cfg" <<CFG
 set touch_profile_done 1
+set touch_always_autojoin 0
 set _cl_name JoinSeq
 set vid_touchscreen 1
 set fe_echo 1

@@ -79,7 +79,7 @@ client() { # name port answer(no|back)
 	if [ "$3" = back ]; then answer=$(ui '{"uib":1,"t":"ev","id":3,"ev":"back"}')
 	else answer=$(ui '{"uib":1,"t":"ev","id":3,"ev":"action","node":"uid2name/no","action":"uid2name.no"}'); fi
 	{
-		echo 'set cl_welcome 0; set touch_join_dialog_auto 0; set developer 1; set fe_echo 1'
+		echo 'set cl_welcome 0; set touch_always_autojoin 0; set touch_join_dialog_auto 0; set developer 1; set fe_echo 1'
 		echo 'alias xbeat "fe beat; defer 1 xbeat"'
 		echo 'alias xshow "cl_allow_uid2name"'   # a cvar's name alone prints its value when it runs
 		ui '{"uib":1,"t":"hello","id":1,"schema":"1.0","renderer":{"name":"test"},"caps":{"widthClass":"expanded"}}' | sed 's/^/alias xhello "/; s/$/"/'
