@@ -1035,8 +1035,9 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     if let Some(s) = n.str("subtitle") {
         // at most two lines, ending in an ellipsis: a card in a sideways strip has a
         // fixed height, and a third line was cut through the middle of its letters
+        // (Home's Multiplayer card is the live server list: one line per server, six)
         let l = label(&s, &["dim-label"]);
-        l.set_lines(if n.id == "home/tiles/mp" { 3 } else { 2 });
+        l.set_lines(if n.id == "home/tiles/mp" { 6 } else { 2 });
         l.set_ellipsize(gtk::pango::EllipsizeMode::End);
         t.append(&l);
     }
@@ -1062,7 +1063,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
                 if l.has_css_class("gn-card-title") {
                     l.set_wrap(false);
                 } else {
-                    l.set_lines(if n.id == "home/tiles/mp" { 3 } else { 2 });
+                    l.set_lines(if n.id == "home/tiles/mp" { 6 } else { 2 });
                 }
                 l.set_ellipsize(gtk::pango::EllipsizeMode::End);
             }

@@ -9,7 +9,7 @@
 #      the bridge's servers source and the summary, and how politely the
 #      servers were asked.
 #   3. tests/srvlist/test_home_preview.py: Home's Multiplayer card against fake
-#      servers (busiest first, "No servers yet", a map picture that is installed). Skipped (exit 77 if nothing else ran) without
+#      servers (busiest first, six lines, empty while none answer, no picture). Skipped (exit 77 if nothing else ran) without
 #      ENGINE and BASEDIR.
 #
 #   BASEDIR=<Godnotic basedir> scripts/test-srvlist.sh
@@ -40,6 +40,6 @@ else
 fi
 python3 "$ROOT/tests/srvlist/test_srvlist.py" --engine "$ENGINE" --basedir "$BASEDIR" --work "$WORK/e2e" --libs "${LIBS:-}" --port $((27960 + RANDOM % 500))
 rc=$?
-# Home's Multiplayer card: the busiest servers first, "No servers yet", a picture that exists
+# Home's Multiplayer card: the live server list, busiest first, empty while none answer
 python3 "$ROOT/tests/srvlist/test_home_preview.py" --engine "$ENGINE" --basedir "$BASEDIR" --work "$WORK/home" --port $((27960 + RANDOM % 500)) || rc=1
 exit $rc

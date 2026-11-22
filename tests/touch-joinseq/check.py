@@ -61,7 +61,8 @@ if len({next(iter(v)) for v in seen_pics.values() if len(v) == 1}) != len([v for
 if not fails:
     print("ok   picture identity per map (%s, %s, %s) incl. a second join to another map" % (map_a, map_b, map_c))
 
-# 2. screen-state sequence: from the first snapshot of a join until its first drawn world, the
+# 2. screen-state sequence: from the first snapshot of a join until its first drawn world (or, with
+#    the map's picture up, until the game is entered), the
 #    app never reads `menu` (the main menu) and the menu key-dest never opens; the connect stage
 #    never falls back to idle until the signon is complete.
 def joins():
@@ -90,6 +91,8 @@ for j in joins():
             if d.get("world"): world = True
             if d.get("stage") == "idle" and d.get("signon", 0) < d.get("signons", 4) and d.get("status", "").startswith("Connect"):
                 bad("join %d: stage went idle during the signon" % n, d)
+        if topic == "app" and d.get("state") == "ingame":
+            world = True # the game is entered: the map's picture covers the join until here, not a world frame
         if topic == "app" and not world and d.get("state") != "ingame" and d.get("state") != "paused":
             if d.get("state") == "menu":
                 bad("join %d: the main menu state shows during the join" % n, d)

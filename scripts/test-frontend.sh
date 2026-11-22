@@ -122,7 +122,8 @@ defer 48 \"fe_dump app; quit\"
 "
 L="$WORK/play.log"
 expect "$L" "fe play: a local match of the mode on the map" "^FE app .*\"state\":\"ingame\",\"menu\":false,.*\"local\":true.*\"map\":\"$MAP\""
-expect "$L" "the loading screen's progress reaches the connect topic" '^FE> connect .*"stage":"(loading|signon)".*"load":"[^"]+"'
+# (with the map's picture up the whole load is the "preview" stage: the picture, and the load as a bar)
+expect "$L" "the loading screen's progress reaches the connect topic" '^FE> connect .*"stage":"(loading|signon|preview)".*"load":"[^"]+"'
 expect "$L" "pause (the HUD MENU: menu_showgamemenudialog): the game menu opens hidden, the local game pauses" '^FE app .*"owns_menu":true.*"state":"paused","menu":true.*"paused":true'
 expect "$L" "the paused menu stays the native UI's (_fe_state 1)" '^STEP paused-fe-state 1'
 expect "$L" "resume" '^FE app .*"state":"ingame".*"paused":false'

@@ -820,7 +820,7 @@ class ViewRenderer(
         titleV.maxLines = 2
         titleV.ellipsize = null
         Kit.fitWords(titleV, Theme.SP_TITLE - 1f, 13f) // "Team Deathmatch" on a narrow card: smaller, never "Dea|thmatch"
-        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") 4 else 2)
+        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") 6 else 2) // Home's Multiplayer card: the live server list
         val badges = FlowGrid(ctx, 0, dp(6f), wrap = true)
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)

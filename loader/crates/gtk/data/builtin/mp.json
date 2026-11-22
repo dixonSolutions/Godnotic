@@ -115,15 +115,13 @@
     "type": "card",
     "props": {
      "title": "Multiplayer",
-     "subtitle": "Join by address or link, browse servers, host a LAN game",
-     "icon": "multiplayer",
-     "image": "pk3:maps/xoylent",
-     "aspect": "16:9",
+     "subtitle": "",
      "featured": true,
      "primary": {
       "id": "mp",
       "label": "Open"
-     }
+     },
+     "live": true
     },
     "children": []
    },

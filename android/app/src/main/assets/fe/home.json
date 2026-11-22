@@ -130,15 +130,14 @@
     "type": "card",
     "props": {
      "title": "Multiplayer",
-     "subtitle": "Internet, LAN and hosting",
-     "icon": "multiplayer",
-     "image": "pk3:gfx/menu/luma/gametype_ctf",
-     "aspect": "16:9",
+     "subtitle": "",
      "primary": {
       "id": "mp",
       "label": "Open",
       "icon": "chevron"
-     }
+     },
+     "featured": true,
+     "live": true
     },
     "children": []
    },

@@ -173,8 +173,8 @@ def modes_and_match():
         wait_for(c, lambda: "Test server 00000" in c.nodes.get("home/tiles/mp", {}).get("props", {}).get("subtitle", ""), 5)
         preview = c.nodes.get("home/tiles/mp", {}).get("props", {})
         check("Test server 00000" in preview.get("subtitle", "") and "afterslime" in preview.get("subtitle", "") and "/16" in preview.get("subtitle", "")
-              and preview.get("image") == "pk3:maps/afterslime",
-              f"Home previews the server name, map, players and its map image ({preview!r})")
+              and not preview.get("image"),
+              f"Home lists the server name, map and players, no picture ({preview!r})")
         c.send({"t": "ev", "ev": "action", "node": "home/tiles/mp", "action": "mp"})
         wait_for(c, lambda: "mp/servers" in c.nodes, 15)
         c.settle()

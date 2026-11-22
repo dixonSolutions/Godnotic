@@ -107,10 +107,7 @@
     "type": "card",
     "props": {
      "title": "Multiplayer",
-     "subtitle": "214 servers · 87 players",
-     "icon": "multiplayer",
-     "image": "pk3:maps/xoylent",
-     "aspect": "16:9",
+     "subtitle": "Alpha · stormkeep · 3/16\nBeta · xoylent · 1/8",
      "featured": true,
      "live": true,
      "primary": {

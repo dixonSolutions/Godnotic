@@ -62,10 +62,15 @@ int main(void)
 	}
 
 	/* a server join always has a picture, even with no map name yet */
-	CHECK_INT(1, TouchJoinPreview_ShowsPicture(1, 1, 0), "a join with no world: a picture, map name or not");
-	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 1, 1), "a drawable world: no picture");
-	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 0, 0), "not joining: no picture");
-	CHECK_INT(0, TouchJoinPreview_ShowsPicture(0, 1, 0), "touch_join_preview 0: no picture");
+	CHECK_INT(1, TouchJoinPreview_ShowsPicture(1, 1, 0, 0), "a join with no world: the backdrop, map name or not");
+	CHECK_INT(1, TouchJoinPreview_ShowsPicture(1, 1, 0, 1), "a join with no world and a picture: the picture");
+	CHECK_INT(1, TouchJoinPreview_ShowsPicture(1, 1, 1, 1), "a drawable world: the picture stays until the game is loaded");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 1, 1, 0), "a drawable world and no picture: the world");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(1, 0, 0, 1), "not joining: no picture");
+	CHECK_INT(0, TouchJoinPreview_ShowsPicture(0, 1, 0, 1), "touch_join_preview 0: no picture");
+	CHECK_INT(1, TouchJoinPreview_ShowsWorld(1, 0), "drawable, no picture: the live world");
+	CHECK_INT(0, TouchJoinPreview_ShowsWorld(1, 1), "drawable with a picture: the picture, not the bare world");
+	CHECK_INT(0, TouchJoinPreview_ShowsWorld(0, 0), "not drawable: no world");
 	/* own picture, else the list's, else a generic one, never the logo when any exists */
 	CHECK_INT(TJP_PIC_MAP, TouchJoinPreview_PictureChoice(1, 1, 1), "the map's own picture first");
 	CHECK_INT(TJP_PIC_LIST, TouchJoinPreview_PictureChoice(0, 1, 1), "then the server list's map");

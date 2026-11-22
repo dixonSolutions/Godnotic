@@ -123,8 +123,7 @@ def home(last="stormkeep", servers=None):
         N("home/tiles/campaign", "card", title="Campaign", subtitle="Level 3 of 31 · Capture the Flag: Implosion",
           icon="trophy", image="pk3:maps/implosion", aspect="16:9", featured=True, progress=2 / 31,
           primary=A("campaign", "Open", "chevron")),
-        N("home/tiles/mp", "card", title="Multiplayer", subtitle=(servers or "Join a server, or create a game"),
-          icon="multiplayer", image="pk3:maps/xoylent", aspect="16:9", featured=True, live=True,
+        N("home/tiles/mp", "card", title="Multiplayer", subtitle=(servers or ""), featured=True, live=True,
           primary=A("mp", "Open", "chevron")),
     ], minItem=150, maxColumns=3)
     # Settings, Credits and Quit: the bar of joined buttons along the bottom (none current on Home)
@@ -569,7 +568,7 @@ def main():
     write("home", fixture("home", "Home: the banner and exactly three cards (Singleplayer, Campaign, Multiplayer); Settings, Credits and Quit are header actions.",
                           app([h]), rows=None, caps=CAPS_PHONE))
     write("home-live", fixture("home-live", "Home with the server list known: the Multiplayer card says how many servers and players.",
-                               app([home(servers="214 servers · 87 players")]), rows=None))
+                               app([home(servers="Alpha · stormkeep · 3/16\nBeta · xoylent · 1/8")]), rows=None))
     write("campaign", fixture("campaign", "Campaign: the chosen level beside its picture, the levels as cards (won, next, locked).",
                               app([h, campaign_screen()]), rows={"campaign": campaign_rows()}))
     write("singleplayer", fixture("singleplayer", "Singleplayer: mode cards, map picker (cards over maps.dm), match options, recent.",

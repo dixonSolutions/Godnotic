@@ -155,7 +155,9 @@ fn home_is_the_banner_three_cards_and_a_bar_of_settings_credits_quit() {
         for c in &cards {
             assert_eq!(c.kind, "card");
             assert_eq!(c.bool("featured"), Some(true), "{name}: {} is a large card", c.id);
-            assert!(c.str("image").is_some_and(|i| i.starts_with("pk3:maps/")), "{name}: {} shows a picture from the game", c.id);
+            if c.id != "home/tiles/mp" {
+                assert!(c.str("image").is_some_and(|i| i.starts_with("pk3:maps/")), "{name}: {} shows a picture from the game", c.id);
+            }
             assert!(c.obj("primary").is_some());
         }
         // Settings, Credits and Quit: the bar along the bottom, none current on Home; not in the header
@@ -169,7 +171,13 @@ fn home_is_the_banner_three_cards_and_a_bar_of_settings_credits_quit() {
         let home = s.node("home").unwrap();
         assert!(home.arr("actions").is_empty(), "{name}: the header has no Settings, Credits or Quit");
     }
-    assert!(snap("home-live.json").node("home/tiles/mp").unwrap().str("subtitle").unwrap().contains("servers"));
+    // Home's Multiplayer card is the live server list: a line per server, no picture
+    let live = snap("home-live.json");
+    let mp = live.node("home/tiles/mp").unwrap();
+    assert!(mp.str("subtitle").unwrap().lines().all(|l| l.contains(" · ")));
+    assert!(mp.str("image").is_none(), "the server list card has no picture");
+    let cold = snap("home.json");
+    assert_eq!(cold.node("home/tiles/mp").unwrap().str("subtitle").as_deref().unwrap_or(""), "", "empty while the list loads");
 }
 
 #[test]

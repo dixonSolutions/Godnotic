@@ -130,10 +130,7 @@
     "type": "card",
     "props": {
      "title": "Multiplayer",
-     "subtitle": "Join a server, or create a game",
-     "icon": "multiplayer",
-     "image": "pk3:maps/xoylent",
-     "aspect": "16:9",
+     "subtitle": "",
      "featured": true,
      "live": true,
      "primary": {

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Home's Multiplayer card on a cold start (nothing saved) against fake servers that answer:
-the card must list the servers with the MOST players first, not the first three that answered
-(an order kept from the first reply made the preview useless), and with no server at all it
-says "No servers yet" (never a loading text) and still has its picture; the busiest servers play
-a map that is not installed, so the card's picture is the first listed map that has one.
+the card is the live server list: the servers with the MOST players first, not the first ones
+that answered (an order kept from the first reply made the preview useless), six lines, no
+picture; with no server at all it is empty (no placeholder, never a loading text).
 
   test_home_preview.py --engine E --basedir B --work W [--port 27991]
 """
@@ -139,9 +138,8 @@ try:
             c.pump(0.05)
         props = c.nodes.get("home/tiles/mp", {}).get("props", {})
         sub = props.get("subtitle", "")
-        check("No servers yet" in sub and "oad" not in sub and "ooking" not in sub and "refreshing" not in sub,
-              "empty: the card says 'No servers yet', no loading text (%r)" % sub)
-        check(props.get("image", "").startswith("pk3:maps/"), "empty: the card still has a map picture (%r)" % props.get("image"))
+        check(sub == "", "empty: the card lists nothing, no placeholder or loading text (%r)" % sub)
+        check(not props.get("image"), "empty: the card has no picture, it is a server list (%r)" % props.get("image"))
         # servers come alive: the card lists the busiest ones first
         for s in SERVERS:
             s["alive"] = True
@@ -155,15 +153,14 @@ try:
             c.pump(0.1)
             sub = c.nodes.get("home/tiles/mp", {}).get("props", {}).get("subtitle", "")
             lines = sub.split("\n")
-            if len(lines) == 3 and all(l.rstrip().split(" ")[-1].startswith("3/") for l in lines):
+            if len(lines) == 6 and all(l.rstrip().split(" ")[-1].startswith("3/") for l in lines):
                 break
-        check(len(lines) == 3 and all(l.rstrip().split(" ")[-1].startswith("3/") for l in lines),
-              "live: the three busiest servers (3 players each) lead the card (%r)" % lines)
+        check(len(lines) == 6 and all(l.rstrip().split(" ")[-1].startswith("3/") for l in lines),
+              "live: six of the busiest servers (3 players each) fill the card (%r)" % lines)
         check(len(set(lines)) == len(lines),
               "live: a server listed under two addresses (servers 0 and 10 here) is one line on the card (%r)" % lines)
         image = c.nodes.get("home/tiles/mp", {}).get("props", {}).get("image", "")
-        check(image.startswith("pk3:maps/") and "nopicmap" not in image,
-              "live: the busiest servers' map is not installed (no picture): the card takes one that has one (%r)" % image)
+        check(not image, "live: no picture on the server list card (%r)" % image)
     finally:
         p.terminate()
         p.wait()
