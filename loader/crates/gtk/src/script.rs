@@ -21,6 +21,7 @@
 //! submit <node> <text>  type into an entry and press Enter in it
 //! play                start the game the classic way
 //! waitvisible <ms>    wait until the window shows again (the session ended)
+//! waithidden <ms>     wait until no window of the app is on screen (the game took over)
 //! measure <file> [node...]  append the window's size and the width its content needs, the
 //!                     number of map pictures that arrived, then each node's widget box in
 //!                     window coordinates and its own minimum width
@@ -189,6 +190,15 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             let shown = win.as_ref().is_some_and(|w| w.is_visible());
             if !shown && left > 0 {
                 lines.push_front(format!("waitvisible {}", left - 200));
+                delay = 200;
+            }
+        }
+        "waithidden" => {
+            // Polls until no window of the app is on screen (the game took over), up to N ms.
+            let left: i64 = args.first().and_then(|a| a.parse().ok()).unwrap_or(30000);
+            let shown = gtk::Window::list_toplevels().iter().any(|w| w.is_mapped());
+            if shown && left > 0 {
+                lines.push_front(format!("waithidden {}", left - 200));
                 delay = 200;
             }
         }

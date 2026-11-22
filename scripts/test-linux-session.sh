@@ -13,12 +13,12 @@
 #   quit      the engine exits cleanly after a real session: the app quits with it
 #
 #   scripts/test-linux-session.sh      (needs loader/target/release/godnotic-loader:
-#                                       loader/build.sh, Xvfb and org.gnome.Platform//48)
+#                                       loader/build.sh, Xvfb and org.gnome.Platform//${XT_GNOME_VERSION:-48})
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${GODNOTIC_LOADER_BIN:-$ROOT/loader/target/release/godnotic-loader}"
-if [ ! -x "$BIN" ] || ! command -v Xvfb > /dev/null || ! flatpak info org.gnome.Platform//48 > /dev/null 2>&1; then
-	echo "SKIP: needs $BIN (loader/build.sh), Xvfb and org.gnome.Platform//48"
+if [ ! -x "$BIN" ] || ! command -v Xvfb > /dev/null || ! flatpak info org.gnome.Platform//${XT_GNOME_VERSION:-48} > /dev/null 2>&1; then
+	echo "SKIP: needs $BIN (loader/build.sh), Xvfb and org.gnome.Platform//${XT_GNOME_VERSION:-48}"
 	exit 0
 fi
 # under home: the Flatpak sandbox does not see the host's /tmp
@@ -36,10 +36,12 @@ wait 2500
 labels $out/labels-home.txt
 count $out/counts.txt
 join 127.0.0.1:26111
-wait 3000
+waithidden 12000
+wait 500
 count $out/counts.txt
 labels $out/labels-game.txt
-wait 9000
+waitvisible 15000
+wait 2500
 count $out/counts.txt
 labels $out/labels-after.txt
 click stopped:again

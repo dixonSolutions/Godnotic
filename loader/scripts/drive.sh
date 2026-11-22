@@ -21,5 +21,5 @@ else
     FX=(--fixture="${FIXTURE:-home}" --fixtures-dir="$HERE/../tests/uibridge/fixtures")
 fi
 exec "$HERE/scripts/run-headless.sh" --size 2000x1300 -- flatpak run --filesystem=home \
-    "${GN_DATA_FS[@]}" "${ENVS[@]}" --env=GODNOTIC_DATA_DIRS="$GN_DATA_DIRS" --command="$BIN" org.gnome.Platform//48 \
+    "${GN_DATA_FS[@]}" "${ENVS[@]}" --env=GODNOTIC_DATA_DIRS="$GN_DATA_DIRS" --command="$BIN" org.gnome.Platform//${XT_GNOME_VERSION:-48} \
     "${FX[@]}" --size="$SIZE" "--$SCHEME" --script="$TMP"
