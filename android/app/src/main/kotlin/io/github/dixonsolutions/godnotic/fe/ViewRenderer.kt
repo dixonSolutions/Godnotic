@@ -851,9 +851,11 @@ class ViewRenderer(
             val tagged = CardTags.tagged(p)
             col.textFirst = tagged
             tagsBox.removeAllViews()
-            if (p.str("display") == "table") {
+            val lines = CardTags.rows(p)
+            if (p.str("display") == "table" || lines.isNotEmpty()) {
                 summaryV.text = p.str("summary")
-                for (r in CardTags.rows(p)) tagsBox.addView(TagRow(ctx, r, Theme.TEXT_MUTED))
+                // no picture to fill the card: the lines take the room, each a little taller
+                for (r in lines) tagsBox.addView(TagRow(ctx, r, Theme.TEXT_MUTED).also { it.minimumHeight = dp(34f) })
             } else {
                 summaryV.text = ""
                 CardTags.of(p).takeIf { it.isNotEmpty() }?.let { tagsBox.addView(TagRow(ctx, it, Theme.TEXT_MUTED)) }

@@ -994,7 +994,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
         b.add_css_class("gn-selected");
     }
     let featured = n.bool("featured").unwrap_or(false);
-    if n.str("display").as_deref() == Some("table") || !card_tags(n).is_empty() {
+    if n.str("display").as_deref() == Some("table") || !card_tags(n).is_empty() || !card_lines(n).is_empty() {
         return tagged_card(app, n, b, featured);
     }
     let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1103,10 +1103,26 @@ fn card_tags(n: &Node) -> Vec<String> {
     if !tags.is_empty() {
         return tags;
     }
-    if n.bool("featured").unwrap_or(false) && n.str("display").is_none() {
+    if n.bool("featured").unwrap_or(false) && n.str("display").is_none() && n.str("image").is_some() {
         if let Some(s) = n.str("subtitle").filter(|s| s.contains(" · ")) {
             return s.split(" · ").map(str::to_string).collect();
         }
+    }
+    Vec::new()
+}
+
+/// A card's lines of cells: a `display: table` card's `rows`; for an older payload of a featured
+/// card with no picture and no `tags` (Home's Multiplayer card, its servers the lines of its
+/// `subtitle`), each line split at " · " into name, map, players (a name may hold " · " itself).
+fn card_lines(n: &Node) -> Vec<Vec<String>> {
+    if n.str("display").as_deref() == Some("table") {
+        return n.arr("rows").iter().filter_map(Value::as_array).take(6).map(|r| r.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()).collect();
+    }
+    if n.bool("featured").unwrap_or(false) && n.str("image").is_none() && n.arr("tags").is_empty() {
+        return n.str("subtitle").unwrap_or_default().lines().filter(|l| l.contains(" · ")).take(6).map(|l| {
+            let p: Vec<&str> = l.split(" · ").collect();
+            if p.len() <= 3 { p.iter().map(|s| s.to_string()).collect() } else { vec![p[..p.len() - 2].join(" · "), p[p.len() - 2].to_string(), p[p.len() - 1].to_string()] }
+        }).collect();
     }
     Vec::new()
 }
@@ -1142,7 +1158,7 @@ fn tag_row(cells: &[String]) -> gtk::Box {
 /// progress bar along its foot. Home's cards are this at every width.
 fn tagged_card(app: &App, n: &Node, b: gtk::Button, featured: bool) -> gtk::Button {
     let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let is_table = n.str("display").as_deref() == Some("table");
+    let is_table = n.str("display").as_deref() == Some("table") || !card_lines(n).is_empty();
     let head = gtk::Box::new(gtk::Orientation::Vertical, 4);
     head.add_css_class("gn-card-text");
     head.add_css_class("gn-card-head");
@@ -1222,10 +1238,11 @@ fn card_rows(app: &App, n: &Node, rows: &gtk::Box, summary: &gtk::Label) {
         while let Some(c) = rows.first_child() {
             rows.remove(&c);
         }
-        for row in n.arr("rows").iter().filter_map(Value::as_array).take(6) {
-            let cells: Vec<String> = row.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect();
+        for cells in card_lines(n) {
             if !cells.is_empty() {
-                rows.append(&tag_row(&cells));
+                let r = tag_row(&cells);
+                r.set_size_request(-1, 30);
+                rows.append(&r);
             }
         }
     };

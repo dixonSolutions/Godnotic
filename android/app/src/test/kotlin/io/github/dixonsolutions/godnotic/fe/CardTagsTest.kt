@@ -11,7 +11,7 @@ class CardTagsTest {
         val withTags = mapOf("featured" to true, "tags" to listOf("Stormkeep", "Deathmatch", "4 bots"), "subtitle" to "x · y")
         assertEquals(listOf("Stormkeep", "Deathmatch", "4 bots"), CardTags.of(withTags))
         // an older payload: only the subtitle, split at the separator
-        val old = mapOf("featured" to true, "subtitle" to "Level 3 of 31 · Mayhem: Warfare")
+        val old = mapOf("featured" to true, "image" to "pk3:maps/boil", "subtitle" to "Level 3 of 31 · Mayhem: Warfare")
         assertEquals(listOf("Level 3 of 31", "Mayhem: Warfare"), CardTags.of(old))
         // a card that is not on Home's row, or has one phrase, stays as it was
         assertTrue(CardTags.of(mapOf("subtitle" to "a · b")).isEmpty())
@@ -27,6 +27,14 @@ class CardTagsTest {
         assertEquals(listOf("Server 1", "stormkeep", "1/16", "x"), CardTags.rows(p)[0])
         assertTrue("a table card's lines are its rows, not tags", CardTags.of(p).isEmpty())
         assertTrue(CardTags.tagged(mapOf("display" to "table", "rows" to emptyList<Any>())))
+    }
+
+    @Test fun anOlderMultiplayerCardIsALinePerServer() {
+        val p = mapOf("featured" to true, "subtitle" to "Jeff & Julius · Server · circle_jerk · 12/32\nQuake 1 · qbj · 3/12")
+        assertTrue(CardTags.tagged(p))
+        assertEquals(listOf("Jeff & Julius · Server", "circle_jerk", "12/32"), CardTags.rows(p)[0])
+        assertEquals(listOf("Quake 1", "qbj", "3/12"), CardTags.rows(p)[1])
+        assertTrue(CardTags.of(p).isEmpty())
     }
 
     @Test fun cellTextStepsDownOnANarrowCard() {
