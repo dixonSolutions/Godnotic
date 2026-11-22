@@ -10,6 +10,9 @@
 #   Loading       one card: the step with its size and speed and one Cancel, and
 #                 no banner saying the same above it
 #   Map preview   on a phone on its side the title and Play are in view
+#   Home cards    the title on top of every card, under it the details as one line of equal
+#                 cells (no wrapping, one y), the picture below that line; Multiplayer a
+#                 line per server (name, map, players)
 #   Multiplayer   with a server chosen the engine's card for it (mp/details) is not docked into
 #                 the page: the bottom bar (address, Create, Join, "i") stays on screen at
 #                 1280x720, 1366x768, 1920x1080 and a phone; choosing opens the info dialog, Close
@@ -69,6 +72,39 @@ if has map-preview-915x412 Stormkeep && has map-preview-915x412 "Play Deathmatch
 else
 	bad "Map preview at 915x412: Play is out of view ($(tr '\n' '|' < "$WORK/map-preview-915x412.txt" | cut -c1-200))"
 fi
+
+# Home's cards: title, then one line of equal tag cells, then the picture (home-live: three servers)
+cards() { # fixture WxH -> $WORK/cards-<fixture>-<WxH>.txt: kind x y w h text
+	local f=$1 size=$2 out="$WORK/cards-$1-$2"
+	mkdir -p "$out"
+	printf 'wait 2500\ncards %s/cards.txt\nsnapshot %s/shot.png\nquit\n' "$out" "$out" > "$out/run.script"
+	FIXTURE="$f" timeout 90 "$ROOT/loader/scripts/drive.sh" "$out/run.script" "$out" "$size" dark > "$out/log.txt" 2>&1
+	cp "$out/cards.txt" "$WORK/cards-$f-$size.txt" 2> /dev/null || : > "$WORK/cards-$f-$size.txt"
+}
+for size in 1920x1200 1280x720 800x360 400x860; do
+	cards home-live "$size"
+	f="$WORK/cards-home-live-$size.txt"
+	# every card: its title above its tags, the tags in one row with equal widths, the picture under the tags
+	verdict=$(awk '
+		$1 == "gn-card-title" { n++; ty[n] = $3; tx[n] = $2 }
+		$1 == "gn-tag" { c = 0; for (i = 1; i <= n; i++) if (tx[i] <= $2 + 1) c = i; if (c) { cnt[c]++; y[c, cnt[c]] = $3; w[c, cnt[c]] = $4; if ($3 + $5 > bot[c]) bot[c] = $3 + $5; top[c] = (top[c] == "" || $3 < top[c]) ? $3 : top[c] } }
+		$1 == "gn-card-pic" { p++; px[p] = $2; py[p] = $3 }
+		END {
+			if (n != 3) { print "titles=" n; exit }
+			for (c = 1; c <= 3; c++) {
+				if (cnt[c] < 2) { print "card " c " has " cnt[c] " tags"; exit }
+				if (ty[c] >= top[c]) { print "card " c ": title not above tags"; exit }
+				for (i = 2; i <= cnt[c] && c < 3; i++) { if (y[c, i] != y[c, 1]) { print "card " c ": tags on two lines"; exit } }
+			}
+			for (i = 1; i <= p; i++) for (c = 1; c <= 3; c++) if (px[i] + 1 >= tx[c] && py[i] < bot[c] - 1 && px[i] < tx[c] + 400 && c < 3) { print "picture above the tags"; exit }
+			print "ok"
+		}' "$f")
+	if [ "$verdict" = ok ]; then
+		ok "Home at $size: titles on top, the details in one line of tags, the picture below"
+	else
+		bad "Home at $size: $verdict ($(tr '\n' '|' < "$f" | cut -c1-300))"
+	fi
+done
 
 # Multiplayer with a server chosen: the bar on screen at common sizes, the info dialog and its "i"
 for size in 1280x720 1366x768 1920x1080 400x860; do

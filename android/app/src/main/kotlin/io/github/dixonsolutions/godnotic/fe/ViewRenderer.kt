@@ -824,7 +824,10 @@ class ViewRenderer(
         val badges = FlowGrid(ctx, 0, dp(6f), wrap = true)
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)
-        texts.addView(badges); texts.addView(titleV); texts.addView(subtitle); texts.addView(meta); texts.addView(actions)
+        // Home's cards: the title, then the details as one line of equal cells (a table card: a line per server)
+        val summaryV = Kit.text(ctx, "", Theme.SP_CAPTION - 2f, Theme.TEXT_MUTED, lines = 1)
+        val tagsBox = Kit.column(ctx, 2f)
+        texts.addView(badges); texts.addView(titleV); texts.addView(summaryV); texts.addView(tagsBox); texts.addView(subtitle); texts.addView(meta); texts.addView(actions)
         row.addView(slot, LinearLayout.LayoutParams(dp(52f), dp(52f)))
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val chevron = View(ctx)
@@ -845,7 +848,21 @@ class ViewRenderer(
             // words are never broken: one line for one word (autosize shrinks it), two for more
             titleV.maxLines = if (title(p).trim().contains(' ')) 2 else 1
             subtitle.text = p.str("subtitle")
-            subtitle.visibility = if (subtitle.text.isEmpty()) View.GONE else View.VISIBLE
+            val tagged = CardTags.tagged(p)
+            col.textFirst = tagged
+            tagsBox.removeAllViews()
+            val lines = CardTags.rows(p)
+            if (p.str("display") == "table" || lines.isNotEmpty()) {
+                summaryV.text = p.str("summary")
+                // no picture to fill the card: the lines take the room, each a little taller
+                for (r in lines) tagsBox.addView(TagRow(ctx, r, Theme.TEXT_MUTED).also { it.minimumHeight = dp(34f) })
+            } else {
+                summaryV.text = ""
+                CardTags.of(p).takeIf { it.isNotEmpty() }?.let { tagsBox.addView(TagRow(ctx, it, Theme.TEXT_MUTED)) }
+            }
+            summaryV.visibility = if (summaryV.text.isEmpty()) View.GONE else View.VISIBLE
+            tagsBox.visibility = if (tagsBox.childCount == 0) View.GONE else View.VISIBLE
+            subtitle.visibility = if (subtitle.text.isEmpty() || tagged) View.GONE else View.VISIBLE
             badges.removeAllViews()
             for (b in p["badges"].list()) badges.addView(badge(b.obj()))
             badges.visibility = if (badges.childCount == 0) View.GONE else View.VISIBLE
@@ -858,7 +875,7 @@ class ViewRenderer(
             // the icon slot: the bridge's icon as a vector; artwork only when there is no icon
             val icon = Icons.drawable(p.str("icon"), dp(32f), Theme.BLUE)
             slotIcon.background = icon
-            slot.visibility = if (!photo && (icon != null)) View.VISIBLE else View.GONE
+            slot.visibility = if (!photo && !tagged && (icon != null)) View.VISIBLE else View.GONE
             // a chevron promises somewhere to go: only on a card that has a primary action
             // (the pause page's card for someone else's server has none, and did nothing when tapped)
             val tappable = p["primary"] is Map<*, *>

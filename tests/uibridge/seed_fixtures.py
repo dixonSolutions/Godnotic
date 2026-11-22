@@ -118,12 +118,15 @@ def home(last="stormkeep", servers=None):
     # the three cards, always one row
     tiles = N("home/tiles", "grid", [
         N("home/tiles/sp", "card", title="Singleplayer", subtitle=f"{m[1]} · Deathmatch · 4 bots",
-          icon="singleplayer", image=f"pk3:maps/{last}", aspect="16:9", featured=True,
+          tags=[m[1], "Deathmatch", "4 bots"], icon="singleplayer", image=f"pk3:maps/{last}", aspect="16:9", featured=True,
           primary=A("sp", "Open", "chevron")),
         N("home/tiles/campaign", "card", title="Campaign", subtitle="Level 3 of 31 · Capture the Flag: Implosion",
-          icon="trophy", image="pk3:maps/implosion", aspect="16:9", featured=True, progress=2 / 31,
+          tags=["Level 3 of 31", "Capture the Flag: Implosion"], icon="trophy", image="pk3:maps/implosion", aspect="16:9", featured=True, progress=2 / 31,
           primary=A("campaign", "Open", "chevron")),
         N("home/tiles/mp", "card", title="Multiplayer", subtitle=(servers or ""), featured=True, live=True,
+          display="table", columns=["Server", "Map", "Players"],
+          rows=[[c.strip() for c in l.split(" · ")] for l in (servers or "").splitlines()],
+          summary=(f"{len((servers or '').splitlines())} servers" if servers else ""),
           primary=A("mp", "Open", "chevron")),
     ], minItem=150, maxColumns=3)
     # Settings, Credits and Quit: the bar of joined buttons along the bottom (none current on Home)

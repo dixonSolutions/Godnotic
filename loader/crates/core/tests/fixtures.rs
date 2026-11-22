@@ -176,6 +176,16 @@ fn home_is_the_banner_three_cards_and_a_bar_of_settings_credits_quit() {
     let mp = live.node("home/tiles/mp").unwrap();
     assert!(mp.str("subtitle").unwrap().lines().all(|l| l.contains(" · ")));
     assert!(mp.str("image").is_none(), "the server list card has no picture");
+    assert_eq!(mp.str("display").as_deref(), Some("table"));
+    let rows = mp.arr("rows");
+    assert!(!rows.is_empty() && rows.iter().all(|r| r.as_array().is_some_and(|c| c.len() == 3)), "a line per server: name, map, players");
+    // Home's other cards: the details as a line of tags (equal cells), the same words as the subtitle
+    for id in ["home/tiles/sp", "home/tiles/campaign"] {
+        let c = live.node(id).unwrap();
+        let tags: Vec<String> = c.arr("tags").iter().filter_map(|t| t.as_str().map(str::to_string)).collect();
+        assert!(tags.len() >= 2 && tags.len() <= 6, "{id}: tags {tags:?}");
+        assert_eq!(tags.join(" · "), c.str("subtitle").unwrap(), "{id}: tags and subtitle say the same");
+    }
     let cold = snap("home.json");
     assert_eq!(cold.node("home/tiles/mp").unwrap().str("subtitle").as_deref().unwrap_or(""), "", "empty while the list loads");
 }

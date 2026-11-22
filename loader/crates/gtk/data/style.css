@@ -36,15 +36,16 @@ button.gn-play:hover { box-shadow: 0 6px 22px alpha(@gn_ember, 0.55); }
 .gn-narrow .gn-card.gn-featured .gn-card-text { padding: 10px 8px 12px 8px; }
 .gn-card.gn-featured progressbar > trough, .gn-card.gn-featured progressbar > trough > progress { min-width: 0; }
 .gn-card.gn-dim { opacity: 0.5; }
-/* Home's Multiplayer card: the server list's table, smaller, in the picture's place */
-.gn-card .gn-card-table { border-radius: 16px 16px 0 0; padding: 10px 8px 4px 8px; background: alpha(@gn_blue, 0.06); }
-.gn-card .gn-card-table .gn-th { font-size: 11px; font-weight: 700; color: alpha(@window_fg_color, 0.6); padding: 0 6px 5px 6px; border-bottom: 1px solid alpha(@gn_blue, 0.35); }
-.gn-card .gn-card-table .gn-td { font-size: 12px; padding: 4px 6px; }
-.gn-card .gn-card-table .gn-td-empty { font-size: 12px; color: alpha(@window_fg_color, 0.45); padding: 8px 6px; }
-.gn-card .gn-card-table .gn-td-alt { background: alpha(white, 0.03); }
-.gn-narrow .gn-card .gn-card-table .gn-th { font-size: 9px; }
-.gn-narrow .gn-card .gn-card-table .gn-td { font-size: 10px; padding: 2px 4px; }
-.gn-narrow .gn-card .gn-card-table .gn-th { padding: 0 4px 4px 4px; }
+/* Home's cards: the title on top, then the details as one line of equal cells with separators
+ * (Multiplayer: one such line per server), then the picture. */
+.gn-card .gn-card-head { padding: 14px 14px 10px 14px; }
+.gn-card .gn-tags { min-height: 20px; }
+.gn-card .gn-tags separator { background: alpha(@gn_blue, 0.45); min-width: 1px; margin: 3px 0; }
+.gn-card .gn-tag { font-size: 12px; padding: 0 6px; color: alpha(@window_fg_color, 0.75); }
+.gn-card .gn-card-summary { font-size: 11px; }
+.gn-card .gn-card-head + .gn-card-pic { border-radius: 0; }
+.gn-narrow .gn-card .gn-card-head { padding: 10px 6px 8px 6px; }
+.gn-narrow .gn-card .gn-tag { font-size: 10px; padding: 0 3px; }
 .gn-map-state { margin: 6px; padding: 2px 8px; border-radius: 10px; background: alpha(black, 0.7); color: white; }
 .gn-map-bar { margin: 0; min-height: 4px; }
 .gn-map-bar trough, .gn-map-bar progress { min-height: 4px; border-radius: 0; }

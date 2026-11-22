@@ -71,6 +71,11 @@
     "props": {
      "title": "Singleplayer",
      "subtitle": "Stormkeep · Deathmatch · 4 bots",
+     "tags": [
+      "Stormkeep",
+      "Deathmatch",
+      "4 bots"
+     ],
      "icon": "singleplayer",
      "image": "pk3:maps/stormkeep",
      "aspect": "16:9",
@@ -89,6 +94,10 @@
     "props": {
      "title": "Campaign",
      "subtitle": "Level 3 of 31 · Capture the Flag: Implosion",
+     "tags": [
+      "Level 3 of 31",
+      "Capture the Flag: Implosion"
+     ],
      "icon": "trophy",
      "image": "pk3:maps/implosion",
      "aspect": "16:9",
@@ -110,6 +119,14 @@
      "subtitle": "",
      "featured": true,
      "live": true,
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "primary": {
       "id": "mp",
       "label": "Open",

@@ -2358,6 +2358,14 @@
           "type": "string",
           "maxLength": 4096
          },
+         "tags": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "maxLength": 64
+          },
+          "maxItems": 6
+         },
          "columns": {
           "type": "array",
           "items": {
