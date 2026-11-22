@@ -235,8 +235,9 @@ text, line 3 a download's size/speed/time left):
    finished download that reads `idle` for a poll does not lose it (it could
    not be started again from the background on Android 12+). In front, an
    idle state stops it at once.
-2. **Wi-Fi lock while connected in the background**: from the first busy
-   poll while away until idle or back in front, a
+2. **Wi-Fi lock while connected** (in front too since 1289: a match on a
+   napping radio shows ping spikes): from the first busy
+   poll until idle, a
    `WIFI_MODE_FULL_LOW_LATENCY` lock (API 29+, else `FULL_HIGH_PERF`),
    "Godnotic:connected"; hosting keeps its own multicast and Wi-Fi locks.
 3. **Service type** `specialUse` for a connection (Android 14+), `dataSync`
@@ -618,7 +619,7 @@ last signon and, when it ends short of the game, says why:
 | `refused` | the server's `reject` | ADDRESS refused the join / The server says: TEXT (full, banned, wrong version: its own words) |
 | `network` | no socket for the address family | No network connection for ADDRESS / for an IPv6 address: this device has no IPv6 connection right now |
 | `dropped` | disconnected during the signon | ADDRESS closed the connection while joining / The server says: TEXT |
-| `files` | the map could not be loaded after its download failed | Missing files: could not get the map NAME / The download from the server did not finish... |
+| `files` | the map could not be loaded after its download failed | Could not download map NAME / Tap Retry: it picks up where it stopped. |
 | `error` | another `Host_Error` during the signon | The join stopped with an error / TEXT |
 
 For every front end: `_join_fail_serial` counts up with each failed join and
@@ -919,3 +920,32 @@ other shaping; `tc` is not installed on the build machine, so no netem rows), on
 server that throttles per connection is the common case for a map pack on a plain web
 host, and more than 6-8 connections to one host starts to trip per-IP connection limits
 (a rejected piece fails the download), so 8 stays an opt-in.
+
+
+## 1289: drops, downloads, a faster connect
+
+Measured and reasoned in the 1289 net hand-over note; what the code does now:
+
+- **A server's map pack no longer ends the join on one stumble** (`touch_curl.h`,
+  `curl_retries` 6). Stock DarkPlaces counts the first failed `curl --pak
+  --forthismap` download and then precaches without the file ("cannot load
+  map"). A failed download is now tried again 1, 2, 4, 8, 15, 15 s later,
+  resuming the partial; the join keeps waiting meanwhile, and every failure
+  prints its curl error code. A partial is kept with the server's ETag or
+  Last-Modified in `<file>.meta` and is resumed only onto the same file; a
+  partial with no record starts again from byte 0. A finished pack is read
+  before use (end-of-directory record, and every entry must start at a local
+  header); a bad one is emptied and fetched again. Startup and `join_retry`
+  delete pk3 files in `dlcache` that have no `.meta` and fail the same check.
+- **A server that drops the player mid-match with a bare "Server
+  disconnected"** is joined again once per 120 s (`net_reconnect_server`,
+  `net_reconnect_server_min` 20). Every disconnect prints a `NETDROP:` line
+  (reason, seconds in the game, last packet age, last frame age, ping, drops,
+  away) and a game prints `NETSTAT:` every 30 s, both reaching logcat; the
+  "Disconnected by" notice carries the same facts.
+- **`net_ack_twice`**: the client acknowledges a stock server's reliable data
+  twice; a lost ACK costs a stock sender a fixed second, and a backlog of
+  reliable data overflows its 64 KB buffer ("Buffer overflow in net message").
+- **`net_connect_retry`** 0.4: the first repeats of a lost `getchallenge` come
+  after 0.4 s and 0.8 s instead of 1 s each.
+- Android keeps the Wi-Fi low-latency lock while connected, in front too.

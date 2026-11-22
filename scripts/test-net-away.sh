@@ -37,6 +37,9 @@
 #   connect-again         connect to the same server while in the game (the
 #                         menu's join on the server you are on): back in the
 #                         game within seconds, no hang until a timeout
+#   svdrop                the server drops a player who has played a while (kick, no
+#                         reason): the client joins again once, a second drop within
+#                         2 minutes is left alone; NETDROP lines say why
 #   restart-signon        the client starts its connection over during the
 #                         signon and its disconnect is lost: the server starts
 #                         that connection over too and the join completes
@@ -458,6 +461,22 @@ EOF
 			kill "$CLPID" 2> /dev/null
 			finish
 			kill "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null ;;
+		svdrop) # the server drops a player who has been playing for a while and says nothing: joined again once
+			start svdrop "$JOIN\nset net_reconnect_server_min 4\ndefer 150 quit" ""
+			playing svdrop || { finish; return; }
+			sleep 6
+			once "$WORK/svdrop/sv/data/next.cfg" "kick Bench"
+			for _ in $(seq 1 60); do [ "$(count "$WORK/svdrop/server.log" "^Bench connected")" -ge 2 ] && break; sleep 0.5; done
+			if [ "$(count "$WORK/svdrop/server.log" "^Bench connected")" -ge 2 ]; then ok "svdrop: joined again by itself after the server dropped the player"; else bad "svdrop: no rejoin after the server's drop"; fi
+			grep -aq "^NETDROP: \"Server disconnected\"" "$WORK/svdrop/client.log" && ok "svdrop: the drop was logged with its cause (NETDROP)" || bad "svdrop: no NETDROP line"
+			sleep 7
+			# a second drop within 2 minutes is not joined again: it stays a disconnect, with the reason shown
+			once "$WORK/svdrop/sv/data/next.cfg" "kick Bench"
+			sleep 8
+			if [ "$(count "$WORK/svdrop/server.log" "^Bench connected")" -eq 2 ]; then ok "svdrop: the second drop in 2 minutes was left alone"; else bad "svdrop: joined a second time"; fi
+			grep -aq "Disconnected by" "$WORK/svdrop/client.log" || grep -aq "_net_reconnect_state" "$WORK/svdrop/client.log" || echo "note svdrop: reason line is in the UI state only"
+			kill "$CLPID" 2> /dev/null
+			finish ;;
 		*) bad "unknown case $1" ;;
 	esac
 }
