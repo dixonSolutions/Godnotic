@@ -410,7 +410,7 @@ def mod_page():
 
 
 def pause_screen(hosting=False):
-    host = [N("pause/host", "card", title="Hosting on your network", subtitle="Others join with one of these addresses",
+    host = [N("pause/host", "card", title="Hosting on your network", subtitle="Stormkeep · Deathmatch",
               icon="host", accent="ember", density="compact",
               badges=[{"icon": "lock", "text": "Password set", "tone": "warning"}],
               meta=[{"icon": "wifi", "text": "Wi-Fi 192.168.1.23:26000"}, {"icon": "vpn", "text": "VPN 100.64.0.5:26000"}],
@@ -418,8 +418,8 @@ def pause_screen(hosting=False):
               actions=[A("host.copy", "Copy address", "copy", kind="copy", text="192.168.1.23:26000"),
                        A("host.share", "Share", "share", kind="share", text="godnotic://join/192.168.1.23:26000")])] if hosting else []
     return N("pause", "screen", host + [
-        N("pause/match", "card", title="Stormkeep", subtitle="Deathmatch · 7:42 left · 3rd of 5", image="pk3:maps/stormkeep",
-          aspect="21:9", meta=[{"icon": "trophy", "text": "12 frags"}, {"icon": "players", "text": "5 players"}]),
+        *([] if hosting else [N("pause/match", "card", title="Stormkeep", subtitle="Deathmatch · 7:42 left · 3rd of 5",
+          meta=[{"icon": "trophy", "text": "12 frags"}, {"icon": "players", "text": "5 players"}])]),
         N("pause/actions", "grid", [
             N("pause/actions/resume", "button", label="Resume", action=A("resume", "Resume", "resume", style="primary"), style="primary"),
             N("pause/actions/settings", "button", label="Settings", action=A("settings", "Settings", "settings"), style="secondary"),
@@ -427,34 +427,29 @@ def pause_screen(hosting=False):
             N("pause/actions/spectate", "button", label="Spectate", action=A("spectate", "Spectate", "esp"), style="secondary"),
             N("pause/actions/disconnect", "button", label=("End the game" if hosting else "Leave match"),
               action=A("disconnect", "End the game" if hosting else "Leave match", "disconnect", style="destructive"), style="destructive"),
-        ], minItem=200),
+        ], minItem=160),
     ], title="Paused", kind="game", presentation="fullscreen")
 
 
 def lan_popup(players=None, autoclose=True, locked=True):
-    """The host's popup: addresses with Copy, the join link, the lock, who is in, Close when someone joins."""
+    """The host's popup: one row per address (icon, label, address, small copy), one status line with Share, Close when someone joins."""
     def addr(i, label, icon, a):
-        return N(f"lan.host/addresses/a{i}", "row", [
-            N(f"lan.host/addresses/a{i}/text", "text", body=a, style="mono", selectable=True),
-            N(f"lan.host/addresses/a{i}/copy", "button", label="Copy", style="secondary", action=A("host.copy", "Copy", "copy", kind="copy", text=a)),
+        return N(f"lan.host/a{i}", "row", [
+            N(f"lan.host/a{i}/text", "text", body=a, style="mono", selectable=True),
+            N(f"lan.host/a{i}/copy", "button", label="", style="secondary", action=A("host.copy", "", "copy", kind="copy", text=a)),
         ], align="spread", label=label, icon=icon)
     link = "godnotic://join/192.168.1.23:26000"
+    state = "Password set" if locked else "Open"
     return N("lan.host", "screen", [
-        N("lan.host/addresses", "section", [
-            addr(0, "Wi-Fi", "wifi", "192.168.1.23:26000"),
-            addr(1, "VPN (tailscale0)", "vpn", "100.64.0.5:26000"),
-            N("lan.host/addresses/link", "row", [
-                N("lan.host/addresses/link/text", "text", body=link, style="mono", selectable=True),
-                N("lan.host/addresses/link/copy", "button", label="Copy", style="secondary", action=A("host.copylink", "Copy", "copy", kind="copy", text=link)),
-                N("lan.host/addresses/link/share", "button", label="Share", style="secondary", action=A("host.share", "Share", "share", kind="share", text=link)),
-            ], align="spread", label="Link", icon="link"),
-        ], title="Addresses"),
-        N("lan.host/lock", "text", body=("Password set: players need it to join" if locked else "No password: anyone on your network can join"),
-          icon=("lock" if locked else "unlock"), tone=("warning" if locked else "neutral"), style="note"),
-        N("lan.host/players", "text", body=(f"In the game: {players}" if players else "Nobody has joined yet"), icon="players", style="caption", live=True),
-        N("lan.host/autoclose", "switch", label="Close when someone joins", bind="cvar:touch_lan_popup_autoclose", value=autoclose,
-          help="This popup goes away by itself when the first player joins"),
-    ], title="Your LAN game", subtitle="Others on your Wi-Fi or VPN join with one of these", presentation="dialog", dismissable=True,
+        addr(0, "Wi-Fi", "wifi", "192.168.1.23:26000"),
+        addr(1, "VPN (tailscale0)", "vpn", "100.64.0.5:26000"),
+        N("lan.host/status", "row", [
+            N("lan.host/status/players", "text", body=f"{state} · " + (f"In the game: {players}" if players else "nobody joined yet"),
+              icon=("lock" if locked else "unlock"), style="caption", live=True),
+            N("lan.host/status/share", "button", label="Share", style="secondary", action=A("host.share", "Share", "share", kind="share", text=link)),
+        ]),
+        N("lan.host/autoclose", "switch", label="Close when someone joins", bind="cvar:touch_lan_popup_autoclose", value=autoclose),
+    ], title="Your LAN game", presentation="dialog", dismissable=True,
         primary=A("host.close", "Close", "check", style="primary"))
 
 
@@ -594,7 +589,7 @@ def main():
     write("pause", fixture("pause", "In-game pause menu.", app([pause_screen()], context="game")))
     write("pause-hosting", fixture("pause-hosting", "Pause menu while hosting on LAN: compact card with labelled join addresses and lock state.",
                                    app([pause_screen(hosting=True)], context="game")))
-    write("lan-popup", fixture("lan-popup", "The host's LAN popup over the pause menu: addresses with Copy, the join link, lock, players, Close when someone joins, Close.",
+    write("lan-popup", fixture("lan-popup", "The host's LAN popup over the pause menu: addresses with a small copy button, one status line with Share, Close when someone joins, Close.",
                                app([pause_screen(hosting=True)], modal=[lan_popup()], context="game")))
     write("credits", fixture("credits", "Credits and licence.", app([h, credits_screen()])))
 
@@ -662,7 +657,7 @@ def main():
     with_p = app([ph], modal=[lp], context="game")
     write("seq-lan-popup", fixture("seq-lan-popup", "Hosting on LAN: the popup shows who joined, then closes by itself (Close when someone joins) with a toast.",
                                    with_p, steps=[
-        {"delay": 0.8, "msg": diff(1, [own(lp2, "lan.host/players")]), "note": "a player joined"},
+        {"delay": 0.8, "msg": diff(1, [own(lp2, "lan.host/status/players")]), "note": "a player joined"},
         {"delay": 0.2, "msg": diff(2, [own(app([ph], context="game", toasts=[tj]), "app"), tj], [n["id"] for n in lp["_all"]]), "note": "popup closed"},
     ]))
     # 5c. the host ended the LAN game: back at Home with the reason

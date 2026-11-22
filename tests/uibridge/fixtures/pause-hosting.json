@@ -35,7 +35,6 @@
     },
     "children": [
      "pause/host",
-     "pause/match",
      "pause/actions"
     ]
    },
@@ -44,7 +43,7 @@
     "type": "card",
     "props": {
      "title": "Hosting on your network",
-     "subtitle": "Others join with one of these addresses",
+     "subtitle": "Stormkeep · Deathmatch",
      "icon": "host",
      "accent": "ember",
      "density": "compact",
@@ -90,31 +89,10 @@
     "children": []
    },
    {
-    "id": "pause/match",
-    "type": "card",
-    "props": {
-     "title": "Stormkeep",
-     "subtitle": "Deathmatch · 7:42 left · 3rd of 5",
-     "image": "pk3:maps/stormkeep",
-     "aspect": "21:9",
-     "meta": [
-      {
-       "icon": "trophy",
-       "text": "12 frags"
-      },
-      {
-       "icon": "players",
-       "text": "5 players"
-      }
-     ]
-    },
-    "children": []
-   },
-   {
     "id": "pause/actions",
     "type": "grid",
     "props": {
-     "minItem": 200
+     "minItem": 160
     },
     "children": [
      "pause/actions/resume",

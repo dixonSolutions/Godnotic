@@ -661,7 +661,15 @@ class ViewRenderer(
         outer.gravity = Gravity.CENTER_VERTICAL
         val label = Kit.text(ctx, "", Theme.SP_BODY, Theme.TEXT_MUTED, bold = true, lines = 2)
         label.compoundDrawablePadding = dp(8f)
-        outer.addView(label, LinearLayout.LayoutParams(dp(200f), ViewGroup.LayoutParams.WRAP_CONTENT))
+        val spread = props.str("align") == "spread"
+        outer.addView(label, LinearLayout.LayoutParams(dp(if (spread) 120f else 200f), ViewGroup.LayoutParams.WRAP_CONTENT))
+        // spread: the first child (the address) takes the slack, so the buttons end in one column
+        if (spread) inner.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+            override fun onChildViewAdded(parent: View, child: View) {
+                if (inner.childCount == 1) child.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            override fun onChildViewRemoved(parent: View, child: View) {}
+        })
         outer.addView(inner, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val e = Entry(id, "row", outer, inner, props)
         e.bind = { x ->

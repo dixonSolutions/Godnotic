@@ -1288,7 +1288,7 @@ class StopgapActions(private val activity: Activity, private val client: UibClie
                 m + ("props" to (m["props"].obj() + mapOf(
                     "title" to map.replaceFirstChar { it.uppercase() },
                     "subtitle" to if (app.bool("local")) (if (app.bool("hosting")) "Hosting a LAN game" else "Local game") else app.str("server"),
-                    "image" to "pk3:maps/$map", "meta" to emptyList<Any>())))
+                    					"meta" to emptyList<Any>())))
             } else if (name == "pause" && m.str("id") in setOf("pause/actions/spectate", "pause/actions/team")) {
                 m + ("props" to (m["props"].obj() + ("hidden" to true)))
             } else m

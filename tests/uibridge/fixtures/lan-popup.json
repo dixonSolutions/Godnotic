@@ -1,6 +1,6 @@
 {
  "name": "lan-popup",
- "description": "The host's LAN popup over the pause menu: addresses with Copy, the join link, lock, players, Close when someone joins, Close.",
+ "description": "The host's LAN popup over the pause menu: addresses with a small copy button, one status line with Share, Close when someone joins, Close.",
  "generated": "seed",
  "snapshot": {
   "uib": 1,
@@ -38,7 +38,6 @@
     },
     "children": [
      "pause/host",
-     "pause/match",
      "pause/actions"
     ]
    },
@@ -47,7 +46,7 @@
     "type": "card",
     "props": {
      "title": "Hosting on your network",
-     "subtitle": "Others join with one of these addresses",
+     "subtitle": "Stormkeep · Deathmatch",
      "icon": "host",
      "accent": "ember",
      "density": "compact",
@@ -93,31 +92,10 @@
     "children": []
    },
    {
-    "id": "pause/match",
-    "type": "card",
-    "props": {
-     "title": "Stormkeep",
-     "subtitle": "Deathmatch · 7:42 left · 3rd of 5",
-     "image": "pk3:maps/stormkeep",
-     "aspect": "21:9",
-     "meta": [
-      {
-       "icon": "trophy",
-       "text": "12 frags"
-      },
-      {
-       "icon": "players",
-       "text": "5 players"
-      }
-     ]
-    },
-    "children": []
-   },
-   {
     "id": "pause/actions",
     "type": "grid",
     "props": {
-     "minItem": 200
+     "minItem": 160
     },
     "children": [
      "pause/actions/resume",
@@ -205,7 +183,6 @@
     "type": "screen",
     "props": {
      "title": "Your LAN game",
-     "subtitle": "Others on your Wi-Fi or VPN join with one of these",
      "presentation": "dialog",
      "dismissable": true,
      "primary": {
@@ -216,26 +193,14 @@
      }
     },
     "children": [
-     "lan.host/addresses",
-     "lan.host/lock",
-     "lan.host/players",
+     "lan.host/a0",
+     "lan.host/a1",
+     "lan.host/status",
      "lan.host/autoclose"
     ]
    },
    {
-    "id": "lan.host/addresses",
-    "type": "section",
-    "props": {
-     "title": "Addresses"
-    },
-    "children": [
-     "lan.host/addresses/a0",
-     "lan.host/addresses/a1",
-     "lan.host/addresses/link"
-    ]
-   },
-   {
-    "id": "lan.host/addresses/a0",
+    "id": "lan.host/a0",
     "type": "row",
     "props": {
      "align": "spread",
@@ -243,12 +208,12 @@
      "icon": "wifi"
     },
     "children": [
-     "lan.host/addresses/a0/text",
-     "lan.host/addresses/a0/copy"
+     "lan.host/a0/text",
+     "lan.host/a0/copy"
     ]
    },
    {
-    "id": "lan.host/addresses/a0/text",
+    "id": "lan.host/a0/text",
     "type": "text",
     "props": {
      "body": "192.168.1.23:26000",
@@ -258,14 +223,14 @@
     "children": []
    },
    {
-    "id": "lan.host/addresses/a0/copy",
+    "id": "lan.host/a0/copy",
     "type": "button",
     "props": {
-     "label": "Copy",
+     "label": "",
      "style": "secondary",
      "action": {
       "id": "host.copy",
-      "label": "Copy",
+      "label": "",
       "icon": "copy",
       "kind": "copy",
       "text": "192.168.1.23:26000"
@@ -274,7 +239,7 @@
     "children": []
    },
    {
-    "id": "lan.host/addresses/a1",
+    "id": "lan.host/a1",
     "type": "row",
     "props": {
      "align": "spread",
@@ -282,12 +247,12 @@
      "icon": "vpn"
     },
     "children": [
-     "lan.host/addresses/a1/text",
-     "lan.host/addresses/a1/copy"
+     "lan.host/a1/text",
+     "lan.host/a1/copy"
     ]
    },
    {
-    "id": "lan.host/addresses/a1/text",
+    "id": "lan.host/a1/text",
     "type": "text",
     "props": {
      "body": "100.64.0.5:26000",
@@ -297,14 +262,14 @@
     "children": []
    },
    {
-    "id": "lan.host/addresses/a1/copy",
+    "id": "lan.host/a1/copy",
     "type": "button",
     "props": {
-     "label": "Copy",
+     "label": "",
      "style": "secondary",
      "action": {
       "id": "host.copy",
-      "label": "Copy",
+      "label": "",
       "icon": "copy",
       "kind": "copy",
       "text": "100.64.0.5:26000"
@@ -313,47 +278,27 @@
     "children": []
    },
    {
-    "id": "lan.host/addresses/link",
+    "id": "lan.host/status",
     "type": "row",
-    "props": {
-     "align": "spread",
-     "label": "Link",
-     "icon": "link"
-    },
+    "props": {},
     "children": [
-     "lan.host/addresses/link/text",
-     "lan.host/addresses/link/copy",
-     "lan.host/addresses/link/share"
+     "lan.host/status/players",
+     "lan.host/status/share"
     ]
    },
    {
-    "id": "lan.host/addresses/link/text",
+    "id": "lan.host/status/players",
     "type": "text",
     "props": {
-     "body": "godnotic://join/192.168.1.23:26000",
-     "style": "mono",
-     "selectable": true
+     "body": "Password set · nobody joined yet",
+     "icon": "lock",
+     "style": "caption",
+     "live": true
     },
     "children": []
    },
    {
-    "id": "lan.host/addresses/link/copy",
-    "type": "button",
-    "props": {
-     "label": "Copy",
-     "style": "secondary",
-     "action": {
-      "id": "host.copylink",
-      "label": "Copy",
-      "icon": "copy",
-      "kind": "copy",
-      "text": "godnotic://join/192.168.1.23:26000"
-     }
-    },
-    "children": []
-   },
-   {
-    "id": "lan.host/addresses/link/share",
+    "id": "lan.host/status/share",
     "type": "button",
     "props": {
      "label": "Share",
@@ -369,35 +314,12 @@
     "children": []
    },
    {
-    "id": "lan.host/lock",
-    "type": "text",
-    "props": {
-     "body": "Password set: players need it to join",
-     "icon": "lock",
-     "tone": "warning",
-     "style": "note"
-    },
-    "children": []
-   },
-   {
-    "id": "lan.host/players",
-    "type": "text",
-    "props": {
-     "body": "Nobody has joined yet",
-     "icon": "players",
-     "style": "caption",
-     "live": true
-    },
-    "children": []
-   },
-   {
     "id": "lan.host/autoclose",
     "type": "switch",
     "props": {
      "label": "Close when someone joins",
      "bind": "cvar:touch_lan_popup_autoclose",
-     "value": true,
-     "help": "This popup goes away by itself when the first player joins"
+     "value": true
     },
     "children": []
    }
