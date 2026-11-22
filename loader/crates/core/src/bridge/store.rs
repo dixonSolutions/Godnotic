@@ -153,6 +153,16 @@ impl Store {
     }
 
     /// Applies one engine message. Unknown types change nothing.
+    /// Forgets the description: the engine that made it is gone, so nothing of it (a pause
+    /// page and its Resume, open dialogs) may stay on screen or be acted on.
+    pub fn reset(&mut self) {
+        self.nodes.clear();
+        self.rev = 0;
+        self.sources.clear();
+        self.asked_images.clear();
+        self.image_refs.clear();
+    }
+
     pub fn apply(&mut self, msg: &Map<String, Value>) -> Vec<Change> {
         if msg.i64_of("uib").is_some_and(|v| v != 1) {
             return vec![Change::Error { code: "version".into(), msg: "protocol major mismatch".into() }];

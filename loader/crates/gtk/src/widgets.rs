@@ -38,7 +38,7 @@ fn register_updater(app: &App, id: &str, f: Rc<dyn Fn(&Node)>) {
     }
 }
 
-fn register_activator(app: &App, id: &str, w: &impl IsA<gtk::Widget>) {
+pub fn register_activator(app: &App, id: &str, w: &impl IsA<gtk::Widget>) {
     if let Some(u) = app.ui.borrow_mut().as_mut() {
         u.activators.insert(id.to_string(), w.clone().upcast());
     }

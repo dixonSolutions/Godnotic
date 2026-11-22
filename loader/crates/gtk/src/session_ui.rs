@@ -11,6 +11,7 @@
 use crate::app::App;
 use adw::prelude::*;
 use godnotic_core::config::Config;
+use godnotic_core::desktop::{self, JoinRoute};
 use godnotic_core::link::ServerAddress;
 use godnotic_core::paths::GamePaths;
 use godnotic_core::session::{self, Action, Outcome};
@@ -35,8 +36,7 @@ pub fn start_backend() -> std::io::Result<session::Backend> {
     let mut command = std::process::Command::new(start);
     command.args(args);
     command.envs(env);
-    command.env("SDL_VIDEO_X11_WMCLASS", session::APP_ID);
-    command.env("SDL_VIDEO_WAYLAND_WMCLASS", session::APP_ID);
+    command.envs(session::window_identity_env());
     session::Backend::start_socket(command)
 }
 
@@ -46,8 +46,67 @@ fn toast(app: &App, text: &str) {
     }
 }
 
+/// Joins a server. The engine that is already running (the app's UI backend) is asked over
+/// the bridge, as the Multiplayer screen's address field does: a second engine would end at
+/// once on the instance lock, or be a second game window. Only with no engine (the offline
+/// page, fixtures) is one started with the address.
+pub fn join(app: &App, address: ServerAddress, password: Option<String>) {
+    match desktop::join_route(crate::backend::engine_live(app)) {
+        JoinRoute::Bridge => {
+            // The engine asks for the password itself (its own join dialog) when the server wants one.
+            *app.pending_join.borrow_mut() = Some(crate::app::PendingJoin { address: address.to_string(), asked: false, since: std::time::Instant::now() });
+            advance_join(app);
+            let w = std::rc::Rc::downgrade(app);
+            glib::timeout_add_local_once(JOIN_WAIT, move || {
+                if let Some(a) = w.upgrade() { advance_join(&a); }
+            });
+        }
+        JoinRoute::Spawn => start(app, Action::Connect { address, password }),
+    }
+}
+
+const JOIN_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Carries a pending join one step further (see desktop::join_step); called when one is asked
+/// for and after every description from the engine.
+pub fn advance_join(app: &App) {
+    let Some((address, asked, since)) = app.pending_join.borrow().as_ref().map(|p| (p.address.clone(), p.asked, p.since)) else { return };
+    let (context, has_node) = {
+        let core = app.core.borrow();
+        (core.store.context(), core.store.node(desktop::JOIN_NODE).is_some())
+    };
+    if since.elapsed() > JOIN_WAIT {
+        app.pending_join.borrow_mut().take();
+        toast(app, "Could not open the join screen");
+        return;
+    }
+    match desktop::join_step(&context, has_node, asked) {
+        desktop::JoinStep::Submit => {
+            app.pending_join.borrow_mut().take();
+            let m = app.core.borrow_mut().client.submit(desktop::JOIN_NODE, serde_json::json!(address));
+            crate::app::send(app, m);
+        }
+        desktop::JoinStep::OpenMultiplayer => {
+            if let Some(p) = app.pending_join.borrow_mut().as_mut() { p.asked = true; }
+            let (node, action) = desktop::OPEN_MULTIPLAYER;
+            let m = app.core.borrow_mut().client.action(node, action, None);
+            crate::app::send(app, m);
+        }
+        desktop::JoinStep::Wait => {}
+        desktop::JoinStep::Unavailable => {
+            app.pending_join.borrow_mut().take();
+            eprintln!("godnotic-loader: not joining {address}: a match is running");
+        }
+    }
+}
+
 /// Starts a session; the window hides until it ends.
 pub fn start(app: &App, action: Action) {
+    if crate::backend::engine_live(app) {
+        // One engine at a time: whatever asked for a game, the running one is it.
+        eprintln!("godnotic-loader: not starting a second engine for {action:?}");
+        return;
+    }
     let t0 = std::time::Instant::now();
     let (p, cfg) = paths();
     let Some(start) = p.start_script.clone() else {
@@ -122,7 +181,7 @@ pub fn confirm_join(app: &App, address: ServerAddress) {
     let w = Rc::downgrade(app);
     d.choose(Some(&win), gio::Cancellable::NONE, move |r| {
         if let (Some(a), "join") = (w.upgrade(), r.as_str()) {
-            start(&a, Action::Connect { address, password: None });
+            join(&a, address, None);
         }
     });
 }

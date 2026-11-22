@@ -72,12 +72,19 @@ pub fn base_args(cfg: &Config) -> (BTreeMap<String, String>, Vec<String>) {
     (env, args)
 }
 
+/// What names the engine's window after the app: the X11 class (`WM_CLASS`, the desktop file's
+/// `StartupWMClass`) and the Wayland `app_id` that the desktop matches to the .desktop file for
+/// its icon and its place in the dock. SDL reads them when it creates the window. Every way of
+/// starting the engine (a session, the app's UI backend) takes this one list.
+pub fn window_identity_env() -> BTreeMap<String, String> {
+    ["SDL_VIDEO_X11_WMCLASS", "SDL_VIDEO_WAYLAND_WMCLASS"].iter().map(|k| (k.to_string(), APP_ID.to_string())).collect()
+}
+
 pub fn plan(action: &Action, cfg: &Config, start_script: &str, result_path: &str) -> Plan {
     let (mut env, mut args) = base_args(cfg);
     env.insert(ENV_RESULT.into(), result_path.into());
     // SDL names the game window after the app (X11 WM_CLASS, Wayland app_id): one dock entry.
-    env.insert("SDL_VIDEO_X11_WMCLASS".into(), APP_ID.into());
-    env.insert("SDL_VIDEO_WAYLAND_WMCLASS".into(), APP_ID.into());
+    env.extend(window_identity_env());
     let mut secret = None;
     if let Action::Menu { dialog } = action {
         if !dialog.is_empty() && dialog.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -359,6 +366,20 @@ mod tests {
         assert!(bad.args.is_empty());
         let play = plan(&Action::Play, &Config::default(), "/s", "/r");
         assert!(!play.env.contains_key(ENV_MODE) && play.secret.is_none());
+    }
+
+    #[test]
+    fn the_engine_window_carries_the_app_id() {
+        // the .desktop file matches windows by this class (StartupWMClass) and names its icon by it
+        let desktop = include_str!("../../../../flatpak/io.github.dixonSolutions.Godnotic.desktop");
+        assert!(desktop.lines().any(|l| l == format!("StartupWMClass={APP_ID}")));
+        assert!(desktop.lines().any(|l| l == format!("Icon={APP_ID}")));
+        let id = window_identity_env();
+        assert_eq!(id.get("SDL_VIDEO_X11_WMCLASS").map(String::as_str), Some(APP_ID));
+        assert_eq!(id.get("SDL_VIDEO_WAYLAND_WMCLASS").map(String::as_str), Some(APP_ID));
+        // a session started by the app carries it too
+        let p = plan(&Action::Play, &Config::default(), "/s", "/r");
+        assert!(id.iter().all(|(k, v)| p.env.get(k) == Some(v)));
     }
 
     #[test]

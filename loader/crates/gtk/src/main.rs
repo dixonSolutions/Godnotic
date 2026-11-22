@@ -14,6 +14,7 @@ mod widgets;
 
 use adw::prelude::*;
 use backend::{Backend, FixtureBackend};
+use godnotic_core::desktop;
 use gtk::{gdk, gio, glib};
 use serde_json::json;
 use std::collections::VecDeque;
@@ -269,26 +270,27 @@ fn start_ui(a: &app::App, use_engine: bool) {
     backend::run_steps(a);
 }
 
-/// The engine process ended. Quit from the game (status 0) closes the app;
-/// a crash brings the window back with a way to start the game again. A clean exit
-/// within seconds of starting is not a quit: the launch script stops at once when
-/// another session holds its lock, and closing then made the window open and vanish.
+/// The engine process ended. Quit from the game (status 0) closes the app; a crash, or a
+/// clean exit within seconds of starting (the launch script stops at once when another
+/// session holds its lock), brings the window back with a way to start the game again.
+/// The decision is godnotic_core::desktop::engine_exit, shared with the other platforms.
 fn engine_exited(a: &app::App, status: std::process::ExitStatus, ran: std::time::Duration) {
     eprintln!("godnotic-loader: the engine exited ({status}) after {:.1}s", ran.as_secs_f32());
     *a.backend.borrow_mut() = Backend::Offline(String::new());
+    // The description died with the engine: no pause page, Resume or dialog of it stays.
+    a.core.borrow_mut().store.reset();
     let Some(win) = a.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
-    let early = ran < std::time::Duration::from_secs(5);
-    if status.success() && !early {
-        if let Some(app) = win.application() { app.quit(); }
-        return;
-    }
-    let Some(nav) = a.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
-    let (title, text) = if status.success() {
-        ("The game did not start", "Another Godnotic session may still be running. Close it, then start again.")
-    } else {
-        ("The game stopped", "Godnotic closed unexpectedly. Start it again to carry on.")
+    let stop = match desktop::engine_exit(status.success(), ran) {
+        desktop::EngineExit::QuitApp => {
+            if let Some(app) = win.application() { app.quit(); }
+            return;
+        }
+        desktop::EngineExit::StartAgain(stop) => stop,
     };
-    let s = adw::StatusPage::builder().icon_name("dialog-warning-symbolic").title(title).description(text).build();
+    let dialogs: Vec<_> = a.ui.borrow_mut().as_mut().map(|u| u.dialogs.drain().map(|(_, d)| d).collect()).unwrap_or_default();
+    for d in dialogs { d.force_close(); }
+    let Some(nav) = a.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
+    let s = adw::StatusPage::builder().icon_name("dialog-warning-symbolic").title(stop.title()).description(stop.text()).build();
     let again = gtk::Button::with_label("Start again");
     again.add_css_class("gn-play");
     again.add_css_class("pill");
@@ -297,6 +299,7 @@ fn engine_exited(a: &app::App, status: std::process::ExitStatus, ran: std::time:
     again.connect_clicked(move |_| {
         if let Some(a) = w.upgrade() { start_ui(&a, true); }
     });
+    widgets::register_activator(a, "stopped:again", &again);
     s.set_child(Some(&again));
     let page = adw::NavigationPage::builder().tag("stopped").title("Godnotic").child(&s).can_pop(false).build();
     nav.replace(&[page]);

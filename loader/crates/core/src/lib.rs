@@ -6,6 +6,8 @@
 //!   keys, tracks list windows and image requests, and produces events.
 //! - [`render`]: the operations a platform UI implements (GTK on Linux, the
 //!   Kotlin views on Android), so both are one interface.
+//! - [`desktop`]: which window owns the screen, where a join goes, what an engine exit means:
+//!   the decisions Linux and Android share.
 //! - [`session`]: starting the engine, the secret fd, how a session ended.
 //! - [`fetch`]: the resumable, CRC-checked pack downloader (same files on disk
 //!   as the Kotlin launcher and the Android app).
@@ -15,6 +17,7 @@
 
 pub mod bridge;
 pub mod config;
+pub mod desktop;
 pub mod fetch;
 pub mod link;
 pub mod paths;

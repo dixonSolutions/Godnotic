@@ -953,6 +953,16 @@ run_engine() {
         "$@"
 }
 
+# The game window carries the app id (X11 WM_CLASS, Wayland app_id), so the desktop matches it to
+# the .desktop file: its icon, one Godnotic entry in the dock. The app sets this for the sessions
+# it starts (loader/crates/core/src/session.rs window_identity_env); the desktop file's "Play
+# directly" action and any other way of running start.sh get it here.
+if [ -n "${FLATPAK_ID:-}" ]; then
+    : "${SDL_VIDEO_X11_WMCLASS:=$FLATPAK_ID}"
+    : "${SDL_VIDEO_WAYLAND_WMCLASS:=$FLATPAK_ID}"
+    export SDL_VIDEO_X11_WMCLASS SDL_VIDEO_WAYLAND_WMCLASS
+fi
+
 # A stale marker from a killed session must not relaunch this one.
 clear_restart_request
 clear_background_fetch_request

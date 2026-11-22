@@ -74,6 +74,14 @@ pub struct Shared {
     pub t0: std::time::Instant,
     /// Requests made while the core was borrowed (widget building, row binding): sent by the pump.
     pub deferred: RefCell<Vec<Deferred>>,
+    /// A join waiting for the engine's Multiplayer screen (session_ui::join).
+    pub pending_join: RefCell<Option<PendingJoin>>,
+}
+
+pub struct PendingJoin {
+    pub address: String,
+    pub asked: bool,
+    pub since: std::time::Instant,
 }
 
 pub enum Deferred {
@@ -111,6 +119,7 @@ impl Shared {
             first_snapshot_ms: Cell::new(None),
             t0: std::time::Instant::now(),
             deferred: RefCell::new(Vec::new()),
+            pending_join: RefCell::new(None),
         })
     }
 }
@@ -166,6 +175,7 @@ pub fn pump(app: &App) {
         for m in incoming {
             let changes = app.core.borrow_mut().store.apply(&m);
             handle_changes(app, &changes, &m);
+            crate::session_ui::advance_join(app);
         }
     }
 }

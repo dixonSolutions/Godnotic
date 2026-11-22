@@ -12,6 +12,7 @@
 use crate::app::{self, App};
 use godnotic_core::bridge::fixture::{pk3, Fixture, Player};
 use godnotic_core::bridge::Props;
+use godnotic_core::desktop;
 use gtk::glib;
 use gtk::prelude::*;
 use serde_json::{Map, Value};
@@ -245,7 +246,7 @@ pub fn context_changed(app: &App, context: &str) {
     if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
     CONTEXT.with(|c| *c.borrow_mut() = context.to_string());
     let Some(win) = app.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
-    if context == "game" {
+    if desktop::surface(context, engine_live(app)) == desktop::Surface::Game {
         if win.is_visible() { win.set_visible(false); }
         return;
     }
@@ -255,11 +256,18 @@ pub fn context_changed(app: &App, context: &str) {
         let Some(app) = w.upgrade() else { return };
         if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
         if CONTEXT.with(|c| c.borrow().as_str() == "game") { return; }
-        let live = match &mut *app.backend.borrow_mut() { Backend::Engine(e) => e.proc.child.try_wait().ok().flatten().is_none(), _ => false };
-        if !live { return; }
+        if !engine_live(&app) { return; }
         let win = app.ui.borrow().as_ref().map(|u| u.win.clone());
         if let Some(win) = win { if !win.is_visible() { present(&win); } }
     });
+}
+
+/// The engine process is running (not yet reaped).
+pub fn engine_live(app: &App) -> bool {
+    match &mut *app.backend.borrow_mut() {
+        Backend::Engine(e) => e.proc.child.try_wait().ok().flatten().is_none(),
+        _ => false,
+    }
 }
 
 /// pk3 image refs answered from the installed game data (fixture mode only; the engine does this itself).

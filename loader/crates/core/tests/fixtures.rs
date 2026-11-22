@@ -352,3 +352,32 @@ fn the_player_answers_a_choice_like_the_engine() {
     let r = p.handle(&obj(&c.row("mp/join", &key, "select")));
     assert_eq!(r[0]["t"], "error");
 }
+
+/// "Resume game" must not outlive the match: with the pause page described the context is
+/// `game` and Resume is in the tree; once the engine that described it is gone, the store holds
+/// nothing, so no window (the app's, shown again after a crash or an exit) can draw that page.
+#[test]
+fn resume_goes_with_the_engine() {
+    use godnotic_core::desktop;
+    let pause = all().into_iter().find(|(n, _)| n == "pause.json").expect("pause fixture").1;
+    let mut s = Store::new();
+    s.apply(&pause.snapshot);
+    assert_eq!(s.context(), "game");
+    assert!(s.stack().iter().any(|id| id == "pause"));
+    let has_resume = |s: &Store| s.node("pause/actions/resume").is_some() || s.stack().iter().any(|id| id.starts_with("pause"));
+    assert!(has_resume(&s));
+    // the engine is alive: the match owns the screen and Resume is on offer
+    assert!(desktop::resume_offered(&s.context(), true));
+    // the engine is gone
+    s.reset();
+    assert!(s.is_empty());
+    assert!(s.stack().is_empty() && s.modal().is_empty());
+    assert!(!has_resume(&s));
+    assert_eq!(s.context(), "menu");
+    assert!(!desktop::resume_offered("game", false));
+    // and a new engine's description takes it from a clean slate
+    let home = all().into_iter().find(|(n, _)| n == "home.json").expect("home fixture").1;
+    assert_eq!(s.apply(&home.snapshot), vec![Change::Snapshot]);
+    assert_eq!(s.context(), "menu");
+    assert!(s.node("pause").is_none());
+}

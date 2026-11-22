@@ -6,9 +6,9 @@ name: Loader
 on:
   push:
     branches-ignore: [main, master]
-    paths: ['loader/**', 'tests/uibridge/**', '.github/workflows/loader.yml']
+    paths: ['loader/**', 'tests/uibridge/**', 'tests/linux-session/**', 'scripts/test-linux-session.sh', '.github/workflows/loader.yml']
   pull_request:
-    paths: ['loader/**', 'tests/uibridge/**', '.github/workflows/loader.yml']
+    paths: ['loader/**', 'tests/uibridge/**', 'tests/linux-session/**', 'scripts/test-linux-session.sh', '.github/workflows/loader.yml']
   workflow_dispatch:
   workflow_call:
 
@@ -81,6 +81,12 @@ jobs:
           rustup toolchain install stable --profile minimal -c clippy
       - name: Build and clippy
         run: bash loader/build.sh --check
+      - name: Desktop session test (stand-in engine on a private Xvfb)
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get install -y -qq xvfb
+          flatpak install --user -y --noninteractive --no-related flathub "org.gnome.Platform//$XT_GNOME_VERSION"
+          bash scripts/test-linux-session.sh
       - uses: actions/upload-artifact@v4
         with:
           name: loader-bin-${{ matrix.arch }}

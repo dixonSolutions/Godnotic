@@ -73,6 +73,28 @@ app starts the game through `packaging/start.sh` (or `GODNOTIC_START`):
   is gone; the game window carries the app id (`SDL_VIDEO_X11_WMCLASS`,
   `SDL_VIDEO_WAYLAND_WMCLASS`), so the dock shows one Godnotic entry.
 
+## One engine, one window (Linux against Android)
+
+On Android the engine runs inside the app's process and its views are drawn over the game's
+surface: there is one window by construction. On Linux the app (GTK) and the game (the engine's
+SDL window) are two processes with a toplevel each, so what Android gets for free has to be
+decided. The decisions are in `loader/crates/core/src/desktop.rs`, shared and tested; the GTK
+app only carries them out.
+
+| Question | Shared (core) | Linux | Android |
+| --- | --- | --- | --- |
+| Which window owns the screen | `desktop::surface(context, engine_live)` | app window hidden while `app.context` is `game`, shown otherwise; the engine hides its own window when it is not `game` (`touch_uib_stream.c`) | the activity's views over the surface |
+| Resume and the pause page | `desktop::resume_offered`, `Store::reset` | drawn by the engine in the game; the app clears its description when the engine ends | drawn by `FrontendHost`/`ViewRenderer` while the app state is `paused` |
+| Where a join goes | `desktop::join_route`, `desktop::JOIN_NODE` | the running engine over the bridge (a `godnotic://` link, a typed address); an engine is started with the address only when there is none | bridge actions |
+| The engine ends | `desktop::engine_exit` | quit after a real session; "Start again" page after a crash or an instant exit | the process is the app |
+| Window identity (icon, dock entry) | `session::window_identity_env`, `.desktop` `StartupWMClass` | SDL window class / Wayland `app_id` = the app id, so one Godnotic entry with its icon | the launcher icon |
+
+A join never starts a second engine: it would end at once on the instance lock (the player
+sees nothing happen) or be a second game window. `session_ui::start` refuses while an engine
+is live, and `session_ui::join` sends the address as a `submit` on `mp/join/address`, exactly
+what pressing Enter in the Multiplayer address field does, so the engine's own join, password
+and loading screens apply.
+
 ## Game data: the storage popover
 
 A header-bar button opens a popover: packs installed, size, data set and why, free space,

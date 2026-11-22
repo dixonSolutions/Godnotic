@@ -16,7 +16,9 @@
 //! count <file>        append the number of mapped top-level windows of this process
 //! labels <file>       write the text of every label on screen (mapped and drawn), one per line
 //! type <node> <text>  set an entry's text
-//! join <addr> [pw]    start a session joining a server (as a godnotic:// link would)
+//! join <addr> [pw]    join a server (as a godnotic:// link would): over the bridge to the running
+//!                     engine, else by starting one
+//! submit <node> <text>  type into an entry and press Enter in it
 //! play                start the game the classic way
 //! waitvisible <ms>    wait until the window shows again (the session ended)
 //! measure <file> [node...]  append the window's size and the width its content needs, the
@@ -157,7 +159,23 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             let addr = args.first().and_then(|a| godnotic_core::link::parse_join(a));
             if let Some(addr) = addr {
                 let password = args.get(1).map(|p| p.to_string());
-                crate::session_ui::start(&app, godnotic_core::session::Action::Connect { address: addr, password });
+                crate::session_ui::join(&app, addr, password);
+            }
+            delay = 300;
+        }
+        "submit" => {
+            // submit <node id> <text>: types into an entry and presses Enter in it.
+            let w = args.first().and_then(|id| app.ui.borrow().as_ref().and_then(|u| u.activators.get(*id).cloned()));
+            let text = args.get(1..).map(|a| a.join(" ")).unwrap_or_default();
+            if let Some(e) = w.as_ref().and_then(|w| w.dynamic_cast_ref::<gtk::Editable>()) {
+                e.set_text(&text);
+            }
+            if let Some(r) = w.as_ref().and_then(|w| w.downcast_ref::<adw::EntryRow>()) {
+                r.emit_by_name::<()>("entry-activated", &[]);
+            } else if let Some(e) = w.as_ref().and_then(|w| w.downcast_ref::<gtk::Entry>()) {
+                e.emit_by_name::<()>("activate", &[]);
+            } else {
+                eprintln!("script: no entry {:?}", args.first());
             }
             delay = 300;
         }
