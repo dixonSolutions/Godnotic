@@ -124,6 +124,7 @@ public final class XonoticActivity extends SDLActivity {
         startUpdateService();
         modImport = new ModImport(this, new File(baseDir)); // Settings → Mobile → Mods → Import mod
         modImport.start();
+        ChatLogShare.start(this, GameData.userDir(new File(baseDir))); // chat log export -> share sheet
         watchNetState();
         DataService.start(this); // Touch: the rest of the split data set, behind the game (docs/DATA_FETCH.md)
         // A crash report the player has not seen yet is shown once from pollUpdates, when the
