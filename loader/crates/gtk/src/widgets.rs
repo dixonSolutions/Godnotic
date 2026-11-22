@@ -901,10 +901,63 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
                 r.upcast()
             }
         }
+        "colour" => {
+            // a row of swatches, one per palette entry (`labels` writes a short text on each)
+            let r = adw::ActionRow::builder().title(&title).subtitle(&sub).build();
+            let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(16).valign(gtk::Align::Center).row_spacing(6).column_spacing(6).build();
+            let labels: Vec<String> = n.arr("labels").iter().map(|v| v.as_str().unwrap_or("").to_string()).collect();
+            let mut btns: Vec<(String, gtk::Button)> = Vec::new();
+            for (i, v) in n.arr("palette").iter().enumerate() {
+                let Some(hex) = v.as_str().filter(|h| h.len() == 7 && h.starts_with('#') && h[1..].chars().all(|c| c.is_ascii_hexdigit())) else { continue };
+                let hex = hex.to_lowercase();
+                swatch_css(&hex);
+                let b = gtk::Button::builder().label(labels.get(i).map(String::as_str).unwrap_or("")).tooltip_text(&hex).build();
+                b.set_size_request(40, 40);
+                b.add_css_class("gn-swatch");
+                b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
+                let (w2, id2, hx) = (w.clone(), id.clone(), hex.clone());
+                b.connect_clicked(move |_| {
+                    if let Some(a) = w2.upgrade() {
+                        value(&a, &id2, json!(hx));
+                    }
+                });
+                fb.append(&b);
+                btns.push((hex, b));
+            }
+            let mark = move |cur: &str, btns: &[(String, gtk::Button)]| {
+                for (h, b) in btns {
+                    if h == cur { b.add_css_class("gn-sw-on") } else { b.remove_css_class("gn-sw-on") }
+                }
+            };
+            mark(&n.str("value").unwrap_or_default().to_lowercase(), &btns);
+            register_updater(app, &n.id, Rc::new(move |n: &Node| mark(&n.str("value").unwrap_or_default().to_lowercase(), &btns)));
+            r.add_suffix(&fb);
+            r.upcast()
+        }
         _ => adw::ActionRow::builder().title(&title).subtitle(&sub).build().upcast(),
     };
     r.set_sensitive(n.enabled());
     r
+}
+
+/// The CSS of one swatch colour, added to the display once per colour.
+fn swatch_css(hex: &str) {
+    thread_local!(static SEEN: RefCell<std::collections::HashSet<String>> = RefCell::new(Default::default()));
+    if !SEEN.with(|s| s.borrow_mut().insert(hex.to_string())) {
+        return;
+    }
+    let Some(d) = gtk::gdk::Display::default() else { return };
+    let lum = {
+        let c = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f64;
+        0.299 * c(1) + 0.587 * c(3) + 0.114 * c(5)
+    };
+    let p = gtk::CssProvider::new();
+    p.load_from_string(&format!(
+        "button.gn-sw-{h} {{ background: {x}; color: {fg}; min-width: 40px; min-height: 40px; padding: 0; border-radius: 999px; border: 2px solid alpha(currentColor, 0.35); font-weight: bold; }}\n\
+         button.gn-sw-{h}.gn-sw-on {{ border: 3px solid @accent_color; box-shadow: 0 0 0 2px @window_bg_color; }}",
+        h = &hex[1..], x = hex, fg = if lum > 140.0 { "#000000" } else { "#ffffff" }
+    ));
+    gtk::style_context_add_provider_for_display(&d, &p, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 fn chips(n: &Node, key: &str, class: &str) -> Option<gtk::Box> {

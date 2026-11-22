@@ -354,7 +354,7 @@ small note for anything but `immediate`.
 | `choice` | string | `options` (`[{value, label, icon, image, help}]`), `style` (`auto`, `segmented`, `dropdown`, `radio`, `cards`) |
 | `field` | string | `kind` (`text`, `name`, `number`, `password`, `url`, `search`, `address`), `placeholder`, `maxLength`, `private`, `hasValue`, `submit` (action) |
 | `button` | — | `action` (action), `style` (`primary`, `secondary`, `tonal`, `destructive`, `link`) |
-| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `preview` (image ref) |
+| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `labels` (short texts written on the swatches, parallel to `palette`), `preview` (image ref). Renderers draw one round swatch per palette entry, the current value ringed; a tap sends that entry |
 | `keybind` | string[] (key names) | `command`, `max` (keys per command, default 2) |
 | `progress` | see 4.4 | |
 
