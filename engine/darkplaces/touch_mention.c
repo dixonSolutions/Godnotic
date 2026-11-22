@@ -32,6 +32,10 @@ static cvar_t touch_typing = {CF_CLIENT, "_touch_typing", "",
 
 static cvar_t touch_mention_draws = {CF_CLIENT, "_touch_mention_draws", "0", "test: how many times the chat area drew the typing line"};
 
+static cvar_t touch_mention_pick = {CF_CLIENT, "_touch_mention_pick", "", "test: the engine @ list as \"count:first name\""};
+static cvar_t touch_sheet_pick = {CF_CLIENT, "_touch_sheet_pick", "", "test: the touch sheet @ list as \"count:first name\""};
+static cvar_t touch_mention_dbg = {CF_CLIENT, "_touch_mention_dbg", "", "test: key_dest, chat line and cursor the @ list sees"};
+static cvar_t touch_sheet_dbg = {CF_CLIENT, "_touch_sheet_dbg", "", "test: the touch sheet's open state and text"};
 static cvar_t touch_roster_n = {CF_CLIENT, "_touch_roster_n", "0", "test: how many names _touch_roster holds"};
 
 #define TM_ROSTER_MAX 64
@@ -51,43 +55,43 @@ static void TM_SetStr(cvar_t *c, const char *s)
 		Cvar_SetQuick(c, s);
 }
 
+/* The roster is published by QuakeC (touch_chat.qc Touch_Roster_Publish) from what
+ * the scoreboard knows: one line per player or spectator, "slot<TAB>p|s<TAB>name".
+ * The engine's own cl.scores names are not filled on Xonotic servers. */
+static int tm_roster_slot[TM_ROSTER_MAX];
+
 static void TM_BuildRoster(void)
 {
-	int i;
+	const char *p = touch_roster.string;
 	tm_roster_n = 0;
-	if (cls.state != ca_connected || !cl.scores)
+	if (cls.state != ca_connected)
 		return;
-	for (i = 0; i < cl.maxclients && tm_roster_n < TM_ROSTER_MAX; i++)
+	while (*p && tm_roster_n < TM_ROSTER_MAX)
 	{
+		const char *eol = strchr(p, '\n'), *t1, *t2;
+		size_t len = eol ? (size_t)(eol - p) : strlen(p);
+		char line[160];
 		tm_entry_t *e = &tm_roster[tm_roster_n];
-		if (!cl.scores[i].name[0] || i == cl.realplayerentity - 1)
+		if (len >= sizeof(line))
+			len = sizeof(line) - 1;
+		memcpy(line, p, len);
+		line[len] = 0;
+		p += len + (eol ? 1 : 0);
+		t1 = strchr(line, '\t');
+		t2 = t1 ? strchr(t1 + 1, '\t') : NULL;
+		if (!t2)
 			continue;
-		TouchMention_StripColors(cl.scores[i].name, e->name, sizeof(e->name));
+		TouchMention_StripColors(t2 + 1, e->name, sizeof(e->name));
 		if (!e->name[0])
 			continue;
-		e->spectator = cl.scores[i].frags == -666 /* FRAGS_SPECTATOR */;
+		e->spectator = t1[1] == 's';
+		tm_roster_slot[tm_roster_n] = atoi(line);
 		tm_roster_n++;
 	}
 }
 
 static void TM_PublishRoster(void)
 {
-	char buf[1024];
-	size_t o = 0;
-	int i;
-	for (i = 0; i < tm_roster_n; i++)
-	{
-		size_t l = strlen(tm_roster[i].name);
-		if (o + l + 3 >= sizeof(buf))
-			break;
-		if (tm_roster[i].spectator)
-			buf[o++] = '\t';
-		memcpy(buf + o, tm_roster[i].name, l);
-		o += l;
-		buf[o++] = '\n';
-	}
-	buf[o] = 0;
-	TM_SetStr(&touch_roster, buf);
 	if (touch_roster_n.integer != tm_roster_n)
 		Cvar_SetValueQuick(&touch_roster_n, tm_roster_n);
 }
@@ -113,9 +117,9 @@ static void TM_BuildTyping(char *out, size_t size)
 {
 	const char *names[TM_ROSTER_MAX];
 	char store[TM_ROSTER_MAX][TM_MAX_NAME];
-	int count = 0, i, model, n = min(cl.num_entities, MAX_EDICTS);
+	int count = 0, i, r, model, n = min(cl.num_entities, MAX_EDICTS);
 	out[0] = 0;
-	if (cls.state != ca_connected || !cl.scores || !touch_chat_typing.integer || !(model = TM_BubbleModel()))
+	if (cls.state != ca_connected || !touch_chat_typing.integer || !(model = TM_BubbleModel()))
 		return;
 	for (i = 1; i < n && count < TM_ROSTER_MAX; i++)
 	{
@@ -124,9 +128,11 @@ static void TM_BuildTyping(char *out, size_t size)
 		if (!s->active || s->modelindex != model || !s->tagentity)
 			continue;
 		slot = s->tagentity - 1;
-		if (slot < 0 || slot >= cl.maxclients || !cl.scores[slot].name[0])
+		for (r = 0; r < tm_roster_n && tm_roster_slot[r] != slot; r++)
+			;
+		if (r >= tm_roster_n)
 			continue;
-		TouchMention_StripColors(cl.scores[slot].name, store[count], TM_MAX_NAME);
+		dp_strlcpy(store[count], tm_roster[r].name, TM_MAX_NAME);
 		names[count] = store[count];
 		count++;
 	}
@@ -153,6 +159,12 @@ static void TM_Matches(void)
 	if (tm_sel >= tm_pick.n)
 		tm_sel = 0;
 	tm_off = bound(0, tm_off, max(0, tm_pick.n - TM_MAX_SHOWN));
+	{
+		char t[TM_MAX_NAME + 8];
+		dpsnprintf(t, sizeof(t), "%d:%s", tm_pick.n, tm_pick.n ? tm_roster[tm_pick.idx[0]].name : "");
+		if (strcmp(touch_mention_pick.string, t))
+			Cvar_SetQuick(&touch_mention_pick, t);
+	}
 }
 
 /* keeps the highlighted row among the rows shown */
@@ -228,6 +240,10 @@ void TouchMention_Init(void)
 	Cvar_RegisterVariable(&touch_typing);
 	Cvar_RegisterVariable(&touch_mention_draws);
 	Cvar_RegisterVariable(&touch_roster_n);
+	Cvar_RegisterVariable(&touch_sheet_dbg);
+	Cvar_RegisterVariable(&touch_mention_dbg);
+	Cvar_RegisterVariable(&touch_mention_pick);
+	Cvar_RegisterVariable(&touch_sheet_pick);
 }
 
 static char tm_typing[160];
@@ -260,6 +276,12 @@ void TouchMention_Draw(float x, float v, float size)
 		return;
 	Cvar_SetValueQuick(&touch_mention_draws, touch_mention_draws.value + 1);
 
+	{
+		char t[160];
+		dpsnprintf(t, sizeof(t), "dest=%d mode=%d pos=%d buf=%s", (int)key_dest, (int)chat_mode, chat_bufferpos, chat_buffer);
+		if (strcmp(touch_mention_dbg.string, t))
+			Cvar_SetQuick(&touch_mention_dbg, t);
+	}
 	if (key_dest == key_message)
 		y += size; /* the input line sits at v */
 	if (typing[0])

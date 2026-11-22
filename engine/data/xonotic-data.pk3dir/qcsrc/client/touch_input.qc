@@ -895,6 +895,7 @@ void Touch_DeskFrame(void)
 void Touch_Frame(void)
 {
 	Touch_EnsureReady();
+	Touch_Roster_Publish(); // the @ list reads the players and spectators from here (touch_chat.qc)
 	Touch_Mode_PublishHints();
 	touch_debug_fills = 0;
 	Touch_TickDebugCmds();

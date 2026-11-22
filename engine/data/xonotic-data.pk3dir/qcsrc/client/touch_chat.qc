@@ -142,6 +142,35 @@ string Touch_Chat_Mark(string msg)
 	return strcat(out, substring(msg, from, strlen(msg) - from));
 }
 
+// The roster the engine's @ list and this sheet share: one line per player or
+// spectator, "slot<TAB>p|s<TAB>name", names with their colour codes (the readers
+// strip them for matching). Built from what the scoreboard already knows
+// (playerslots / entcs), published to _touch_roster when it changes.
+string touch_roster_last;
+
+void Touch_Roster_Publish(void)
+{
+	string out = "";
+	int i;
+	for (i = 0; i < maxclients; i += 1)
+	{
+		if (!playerslots[i].gotscores || i == player_localentnum - 1)
+			continue;
+		string name = entcs_GetName(i);
+		if (name == "")
+			continue;
+		string kind = "p";
+		if (entcs_GetSpecState(i) == ENTCS_SPEC_PURE)
+			kind = "s";
+		out = strcat(out, ftos(i), "\t", kind, "\t", name, "\n");
+	}
+	if (out != touch_roster_last)
+	{
+		strcpy(touch_roster_last, out);
+		cvar_set("_touch_roster", out);
+	}
+}
+
 // The picker over the field: players and spectators from _touch_roster (the
 // engine's copy of the scoreboard names, colour codes stripped).
 
@@ -160,6 +189,7 @@ int Touch_Chat_Token(string s)
 
 void Touch_Chat_PickRefresh(void)
 {
+	cvar_set("_touch_sheet_dbg", strcat("open=", ftos(touch_chat_open), " text=", touch_chat_text, " caret=", ftos(touch_chat_caret)));
 	string key = strcat(ftos(touch_chat_caret), ":", touch_chat_text);
 	if (key == touch_chat_pick_for)
 		return;
@@ -184,8 +214,13 @@ void Touch_Chat_PickRefresh(void)
 	for (i = 0; i < count; i += 1)
 	{
 		string raw = argv(i);
-		spec[i] = substring(raw, 0, 1) == "\t";
-		names[i] = spec[i] ? substring(raw, 1, strlen(raw) - 1) : raw;
+		// "slot<TAB>p|s<TAB>name"
+		int t1 = strstrofs(raw, "\t", 0);
+		int t2 = (t1 < 0) ? -1 : strstrofs(raw, "\t", t1 + 1);
+		spec[i] = false;
+		if (t2 > 0 && substring(raw, t1 + 1, 1) == "s")
+			spec[i] = true;
+		names[i] = (t2 > 0) ? strdecolorize(substring(raw, t2 + 1, strlen(raw) - t2 - 1)) : "";
 	}
 	for (pass = 2; pass >= 1; pass -= 1)
 		for (i = 0; i < count && touch_chat_pick_n < TOUCH_CHAT_PICK_MAX; i += 1)
@@ -200,6 +235,7 @@ void Touch_Chat_PickRefresh(void)
 			touch_chat_pick_spec[touch_chat_pick_n] = spec[i];
 			touch_chat_pick_n += 1;
 		}
+	cvar_set("_touch_sheet_pick", strcat(ftos(touch_chat_pick_n), ":", (touch_chat_pick_n ? touch_chat_pick_name[0] : "")));
 }
 
 void Touch_Chat_PickAccept(int row)

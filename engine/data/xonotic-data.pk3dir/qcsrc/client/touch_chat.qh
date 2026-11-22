@@ -23,6 +23,7 @@ string Touch_Chat_Mark(string msg);
 bool Touch_Chat_IsEcho(string msg);
 
 bool Touch_ChatLog_Hit(vector p);
+void Touch_Roster_Publish(void);
 
 bool Touch_Chat_Active(void);
 void Touch_Chat_Open(bool team);
