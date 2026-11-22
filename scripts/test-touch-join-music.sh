@@ -20,6 +20,7 @@ client() { # dir joincommand: starts the client in the menu, waits for the theme
 	mkdir -p "$1/data"
 	cat > "$1/data/t.cfg" <<CFG
 set touch_profile_done 1
+set touch_always_autojoin 0
 set _cl_name MusicTest
 set vid_touchscreen 1
 set fe_echo 1

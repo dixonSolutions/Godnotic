@@ -5,6 +5,7 @@
                                        (two densities) the same swipe in
                                        centimetres must turn the same angle
   check_live.py join <log> <dm|ctf>    the join dialog on a stock server
+  check_live.py autojoin <log> <dm|ctf> <auto|red|blue>   auto-join on a stock server
   check_live.py rects <log>            no two controls intersect in any state
 """
 import math
@@ -107,6 +108,23 @@ def join_case(path, gametype):
         check("is now playing on the" in text, "ctf: joined a team")
     check(" ours=1" not in "".join(l for l in text.splitlines() if l.startswith("TOUCHHUD")), f"{gametype}: the server's own game code ran (the public-server path)")
 
+def autojoin_case(path, gametype, team):
+    """Auto-join: no dialog, playing at once, on the default team; never a team the server lacks."""
+    log = samples(path)
+    f = at(log, "joined", "TOUCHHUD")
+    m = at(log, "joined", "TOUCHMENU")
+    check(f is not None and f["mode"] in ("playing", "dead"), f"{gametype}/{team}: auto-join puts the player in the game (mode {f and f['mode']})")
+    check(m is not None and m["up"] == "0", f"{gametype}/{team}: no join dialog was needed")
+    check(at(log, "later", "TOUCHMENU") and at(log, "later", "TOUCHMENU")["up"] == "0", f"{gametype}/{team}: and none comes up later")
+    text = open(path, errors="replace").read()
+    if gametype == "ctf":
+        check("Touch HUD: auto-join: joining" in text, f"ctf/{team}: the auto-join fired (no dialog answered it)")
+        names = {"red": "Red", "blue": "Blue"}
+        if team in names:
+            check(re.search(r"is now playing on the.*" + names[team], text, re.I) is not None, f"ctf/{team}: now playing on the {team} team")
+        else:
+            check("is now playing on the" in text, "ctf/auto: joined a team")
+
 def hit(a, b):
     def box(r):
         if r[0] == "r":
@@ -159,6 +177,8 @@ if kind == "input":
               f"the same 2 cm swipe turns {slows[0]:.2f} at one density and {slows[1]:.2f} at the other (within 4%)")
 elif kind == "join":
     join_case(sys.argv[2], sys.argv[3])
+elif kind == "autojoin":
+    autojoin_case(sys.argv[2], sys.argv[3], sys.argv[4])
 elif kind == "rects":
     rects_case(sys.argv[2])
 elif kind == "mouse_keyboard":

@@ -16,6 +16,8 @@
 #           for an observer at match start; Spectate keeps observing and it
 #           does not come back; MENU > Join game reopens it; choosing Join
 #           (a team in CTF) gives mode playing and the dialog closes itself.
+#   autojoin   Deathmatch and CTF with auto-join on (the default): no dialog, straight
+#           into the game, on touch_autojoin_team (auto, blue, red) in CTF.
 #   rects   on the stock server at 1920x1200, 2340x1080 and 1280x720:
 #           spectating, playing, scoreboard, dead, intermission and the map
 #           vote; no two controls (nor the score list, clock and info
@@ -55,7 +57,7 @@ cc -shared -fPIC -O2 -o "$WORK/finj.so" "$T/finj.c" $(sdl2-config --cflags) -ldl
 fail=0
 
 # the helpers that move and aim for the player are off: the fingers are measured
-QUIET='set cl_touch_practice_pilot 0; set cl_touch_autoshoot 0; set cl_touch_aimassist 0; set cl_touch_ledgeguard 0; set cl_touch_autododge 0; set cl_welcome 0; set xt_go 0'
+QUIET='set cl_touch_practice_pilot 0; set cl_touch_autoshoot 0; set cl_touch_aimassist 0; set cl_touch_ledgeguard 0; set cl_touch_autododge 0; set cl_welcome 0; set touch_always_autojoin 0; set xt_go 0'
 
 dims() { # dev -> W H and the touch cvars
 	case $1 in
@@ -126,6 +128,23 @@ case_join() {
 	done
 }
 
+# Auto-join (the default): no dialog, straight into the game, on the default team.
+case_autojoin() {
+	local gt map team p
+	for spec in "dm stormkeep auto" "ctf implosion auto" "ctf implosion blue" "ctf implosion red"; do
+		set -- $spec; gt=$1 map=$2 team=$3
+		{ mark 0 arrived; mark 9 joined; mark 12 later; echo "13 cmd quit"; } > "$WORK/autojoin_${gt}_$team.txt"
+		p=$(port); server "srv_autojoin_${gt}_$team" $p $gt $map 3
+		client "autojoin_${gt}_$team" tablet "$WORK/autojoin_${gt}_$team.txt" "$QUIET; set touch_always_autojoin 1; set touch_autojoin_team $team; set developer 1; connect 127.0.0.1:$p; defer 30 \"set xt_go 1\"" 80
+		kill %1 2> /dev/null; wait 2> /dev/null
+		python3 "$T/check_live.py" autojoin "$WORK/autojoin_${gt}_$team/client.log" $gt $team || fail=1
+	done
+	# a team game hosted here (the port's CSQC): straight in on the default team as well
+	{ mark 0 arrived; mark 9 joined; mark 12 later; echo "13 cmd quit"; } > "$WORK/autojoin_local.txt"
+	client autojoin_local tablet "$WORK/autojoin_local.txt" "$QUIET; set touch_always_autojoin 1; set touch_autojoin_team red; set developer 1; set g_dm 0; set g_ctf 1; set g_warmup 0; set bot_number 2; set skill 1; map implosion; defer 16 \"set xt_go 1\"" 90
+	python3 "$T/check_live.py" autojoin "$WORK/autojoin_local/client.log" ctf red || fail=1
+}
+
 rmark() { echo "$1 cmd echo MARK $2"; echo "$1.05 cmd touch_hud_state rects"; echo "$1.1 cmd screenshot shots/$2.png"; }
 
 case_rects() {
@@ -182,7 +201,7 @@ case_mouse_keyboard() {
 # A case that fails is run once more: these are timed scripts against a
 # real engine, and a machine busy with other work can stall one for a second.
 for c in ${*:-input join rects local}; do
-	case $c in input|join|rects|local|mouse_keyboard) ;; *) echo "unknown case $c"; exit 2 ;; esac
+	case $c in input|join|autojoin|rects|local|mouse_keyboard) ;; *) echo "unknown case $c"; exit 2 ;; esac
 	fail=0
 	"case_$c" > "$WORK/$c.out" 2>&1
 	if [ $fail != 0 ]; then
