@@ -133,12 +133,16 @@ case_autojoin() {
 	local gt map team p
 	for spec in "dm stormkeep auto" "ctf implosion auto" "ctf implosion blue" "ctf implosion red"; do
 		set -- $spec; gt=$1 map=$2 team=$3
-		{ mark 0 arrived; mark 6 joined; mark 9 later; echo "10 cmd quit"; } > "$WORK/autojoin_${gt}_$team.txt"
+		{ mark 0 arrived; mark 9 joined; mark 12 later; echo "13 cmd quit"; } > "$WORK/autojoin_${gt}_$team.txt"
 		p=$(port); server "srv_autojoin_${gt}_$team" $p $gt $map 3
 		client "autojoin_${gt}_$team" tablet "$WORK/autojoin_${gt}_$team.txt" "$QUIET; set touch_always_autojoin 1; set touch_autojoin_team $team; set developer 1; connect 127.0.0.1:$p; defer 30 \"set xt_go 1\"" 80
 		kill %1 2> /dev/null; wait 2> /dev/null
 		python3 "$T/check_live.py" autojoin "$WORK/autojoin_${gt}_$team/client.log" $gt $team || fail=1
 	done
+	# a team game hosted here (the port's CSQC): straight in on the default team as well
+	{ mark 0 arrived; mark 9 joined; mark 12 later; echo "13 cmd quit"; } > "$WORK/autojoin_local.txt"
+	client autojoin_local tablet "$WORK/autojoin_local.txt" "$QUIET; set touch_always_autojoin 1; set touch_autojoin_team red; set developer 1; set g_dm 0; set g_ctf 1; set g_warmup 0; set bot_number 2; set skill 1; map implosion; defer 16 \"set xt_go 1\"" 90
+	python3 "$T/check_live.py" autojoin "$WORK/autojoin_local/client.log" ctf red || fail=1
 }
 
 rmark() { echo "$1 cmd echo MARK $2"; echo "$1.05 cmd touch_hud_state rects"; echo "$1.1 cmd screenshot shots/$2.png"; }

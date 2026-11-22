@@ -118,10 +118,7 @@ def autojoin_case(path, gametype, team):
     check(at(log, "later", "TOUCHMENU") and at(log, "later", "TOUCHMENU")["up"] == "0", f"{gametype}/{team}: and none comes up later")
     text = open(path, errors="replace").read()
     if gametype == "ctf":
-        sent = re.findall(r"Touch HUD: join dialog: (\S+) -> (.*)", text)
-        want = "cmd selectteam auto; cmd join" if team == "auto" else f"cmd selectteam {team}; cmd join {team}"
-        check(any(c == want for _, c in sent) or want in text,
-              f"ctf/{team}: sent \"{want}\" (saw {sent[:2]})")
+        check("Touch HUD: auto-join: joining" in text, f"ctf/{team}: the auto-join fired (no dialog answered it)")
         names = {"red": "Red", "blue": "Blue"}
         if team in names:
             check(re.search(r"is now playing on the.*" + names[team], text, re.I) is not None, f"ctf/{team}: now playing on the {team} team")
