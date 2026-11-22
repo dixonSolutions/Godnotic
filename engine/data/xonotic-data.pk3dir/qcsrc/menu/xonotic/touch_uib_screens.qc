@@ -1499,8 +1499,8 @@ void UIB_BuildLanPopup()
 	UIB_Open("status", "row");
 		UIB_Open("players", "text");
 			float others = max(0, cvar("touch_lan_playercount") - 1);
-			uib_s("body", sprintf("%s · %s", pw ? _("Password set") : _("Open"),
-				others ? sprintf(_("In the game: %s"), cvar_string("touch_lan_players")) : _("nobody joined yet")));
+			uib_s("body", sprintf("%s · %s", (pw ? _("Password set") : _("Open")),
+				(others ? sprintf(_("In the game: %s"), cvar_string("touch_lan_players")) : _("nobody joined yet"))));
 			uib_s("icon", pw ? "lock" : "unlock");
 			uib_s("style", "caption");
 			uib_b("live", 1);
