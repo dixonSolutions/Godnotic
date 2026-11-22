@@ -275,6 +275,10 @@ the sticky header, section 4.10). Children: content and containers.
 **`card`** — `title`, `subtitle`, `image` (image ref), `aspect`, `badges` (badge[]),
 `meta` (chip[]), `progress` (0..1; absent: no bar), `primary` (action: tapping the card),
 `actions` (secondary), `selected` (bool), `featured`.
+`display: "table"` with `columns` (header strings) and `rows` (arrays of cell strings, at most 8)
+puts a small table where the picture goes, title still in the bottom bar: Home's Multiplayer
+card is the live server list this way, with `summary` (how many servers and players) as the
+bar's second line. A renderer that does not know `display` shows `subtitle`.
 A badge is `{text, icon, tone}`, a chip `{icon, text}`; `tone` is one of `neutral`,
 `accent`, `positive`, `warning`, `danger`.
 

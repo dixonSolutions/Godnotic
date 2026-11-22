@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -208,9 +216,22 @@
      "kind": "page"
     },
     "children": [
+     "settings/search",
      "settings/split",
      "settings/nav"
     ]
+   },
+   {
+    "id": "settings/search",
+    "type": "field",
+    "props": {
+     "label": "Search settings",
+     "bind": "vm:settings.query",
+     "kind": "search",
+     "placeholder": "Name, description or what it does",
+     "value": ""
+    },
+    "children": []
    },
    {
     "id": "settings/split",
@@ -233,7 +254,8 @@
      "settings/split/updates",
      "settings/split/data",
      "settings/split/menu",
-     "settings/split/mods"
+     "settings/split/mods",
+     "settings/split/accessibility"
     ]
    },
    {
@@ -303,7 +325,10 @@
     "children": [
      "settings/split/esp/note",
      "settings/split/esp/enabled",
-     "settings/split/esp/seethrough"
+     "settings/split/esp/seethrough",
+     "settings/split/esp/position",
+     "settings/split/esp/objectives",
+     "settings/split/esp/threat"
     ]
    },
    {
@@ -317,11 +342,23 @@
    },
    {
     "id": "settings/split/esp/enabled",
-    "type": "switch",
+    "type": "choice",
     "props": {
      "label": "ESP in local matches",
      "bind": "cvar:cl_touch_esp_enabled",
-     "value": false
+     "style": "segmented",
+     "options": [
+      {
+       "value": "local",
+       "label": "On"
+      },
+      {
+       "value": "off",
+       "label": "Off"
+      }
+     ],
+     "help": "Off by default. A server can also forbid it with sv_touch_esp 0",
+     "value": "off"
     },
     "children": []
    },
@@ -331,6 +368,36 @@
     "props": {
      "label": "Outline enemies behind walls",
      "bind": "cvar:cl_touch_practice_seethrough",
+     "value": true
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/esp/position",
+    "type": "switch",
+    "props": {
+     "label": "Move to good positions",
+     "bind": "cvar:cl_touch_practice_position",
+     "value": false
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/esp/objectives",
+    "type": "switch",
+    "props": {
+     "label": "Play the objective",
+     "bind": "cvar:cl_touch_practice_objectives",
+     "value": true
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/esp/threat",
+    "type": "switch",
+    "props": {
+     "label": "Watch the biggest threat",
+     "bind": "cvar:cl_touch_practice_threat",
      "value": true
     },
     "children": []
@@ -353,7 +420,7 @@
      "key": "privacy",
      "label": "Privacy",
      "icon": "privacy",
-     "subtitle": "Statistics and identity"
+     "subtitle": "Statistics, identity, web players"
     },
     "children": []
    },
@@ -398,6 +465,17 @@
      "label": "Mods",
      "icon": "mods",
      "subtitle": "Client and server mods, pages from mods"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/accessibility",
+    "type": "pane",
+    "props": {
+     "key": "accessibility",
+     "label": "Accessibility",
+     "icon": "accessibility",
+     "subtitle": "Desktop assistance"
     },
     "children": []
    },

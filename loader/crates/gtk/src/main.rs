@@ -127,7 +127,9 @@ fn main() -> glib::ExitCode {
     gapp.connect_activate(move |gapp| {
         if let Some(a) = st.borrow().as_ref() {
             if let Some(u) = a.ui.borrow().as_ref() {
-                u.win.present();
+                // a running match owns the screen; activating the app does not pull a stale menu over it
+                let in_game = matches!(&*a.backend.borrow(), Backend::Engine(_)) && !u.win.is_visible();
+                if !in_game { backend::present(&u.win); }
             }
             return;
         }
@@ -140,6 +142,7 @@ fn main() -> glib::ExitCode {
         a.images.borrow_mut().preload_brand();
         let win = app::build_window(&a, gapp, o2.size);
         if (!test_run || std::env::var_os("GODNOTIC_TEST_FULLSCREEN").is_some()) && o2.size.is_none() {
+            win.add_css_class("gn-fs");
             win.fullscreen();
         }
         if a.reduced_motion.get() {
@@ -239,11 +242,18 @@ fn start_ui(a: &app::App, use_engine: bool) {
             Ok(proc) => {
                 *a.backend.borrow_mut() = Backend::Engine(backend::EngineBackend { proc });
                 let weak = Rc::downgrade(a);
+                let started = std::time::Instant::now();
                 glib::timeout_add_local(std::time::Duration::from_millis(80), move || {
-                    if let Some(a) = weak.upgrade() {
-                        app::schedule(&a);
-                        glib::ControlFlow::Continue
-                    } else { glib::ControlFlow::Break }
+                    let Some(a) = weak.upgrade() else { return glib::ControlFlow::Break };
+                    // Reap the engine: an exit no longer leaves a hidden or stale window behind.
+                    let gone = match &mut *a.backend.borrow_mut() {
+                        Backend::Engine(e) => e.proc.child.try_wait().ok().flatten(),
+                        _ => return glib::ControlFlow::Break,
+                    };
+                    match gone {
+                        Some(status) => { engine_exited(&a, status, started.elapsed()); glib::ControlFlow::Break }
+                        None => { app::schedule(&a); glib::ControlFlow::Continue }
+                    }
                 });
             }
             Err(e) => { *a.backend.borrow_mut() = Backend::Offline(e.to_string()); }
@@ -257,6 +267,40 @@ fn start_ui(a: &app::App, use_engine: bool) {
     let m = a.core.borrow_mut().client.hello("godnotic-gtk", env!("CARGO_PKG_VERSION"), caps);
     app::send(a, m);
     backend::run_steps(a);
+}
+
+/// The engine process ended. Quit from the game (status 0) closes the app;
+/// a crash brings the window back with a way to start the game again. A clean exit
+/// within seconds of starting is not a quit: the launch script stops at once when
+/// another session holds its lock, and closing then made the window open and vanish.
+fn engine_exited(a: &app::App, status: std::process::ExitStatus, ran: std::time::Duration) {
+    eprintln!("godnotic-loader: the engine exited ({status}) after {:.1}s", ran.as_secs_f32());
+    *a.backend.borrow_mut() = Backend::Offline(String::new());
+    let Some(win) = a.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
+    let early = ran < std::time::Duration::from_secs(5);
+    if status.success() && !early {
+        if let Some(app) = win.application() { app.quit(); }
+        return;
+    }
+    let Some(nav) = a.ui.borrow().as_ref().map(|u| u.nav.clone()) else { return };
+    let (title, text) = if status.success() {
+        ("The game did not start", "Another Godnotic session may still be running. Close it, then start again.")
+    } else {
+        ("The game stopped", "Godnotic closed unexpectedly. Start it again to carry on.")
+    };
+    let s = adw::StatusPage::builder().icon_name("dialog-warning-symbolic").title(title).description(text).build();
+    let again = gtk::Button::with_label("Start again");
+    again.add_css_class("gn-play");
+    again.add_css_class("pill");
+    again.set_halign(gtk::Align::Center);
+    let w = Rc::downgrade(a);
+    again.connect_clicked(move |_| {
+        if let Some(a) = w.upgrade() { start_ui(&a, true); }
+    });
+    s.set_child(Some(&again));
+    let page = adw::NavigationPage::builder().tag("stopped").title("Godnotic").child(&s).can_pop(false).build();
+    nav.replace(&[page]);
+    backend::present(&win);
 }
 
 /// Section 7's capabilities from the window and the system.

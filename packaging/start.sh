@@ -924,7 +924,7 @@ cd "$USER_BASE" 2>/dev/null || xonotic_log "cannot enter $USER_BASE — engine m
 # Arguments given to start.sh (the launcher's choices, e.g. +vid_fullscreen 0)
 # come last so they win over the defaults above them.
 run_engine() {
-    "$BIN" -xonotic \
+    "$BIN" -xonotic 7>&- \
         -customgamename "Godnotic" \
         -customgamenetworkfiltername Xonotic \
         +exec xonotic.cfg \

@@ -103,6 +103,9 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": ["Server", "Map", "Players"],
+     "rows": [],
      "featured": true,
      "primary": {
       "id": "mp",

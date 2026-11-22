@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -208,9 +216,22 @@
      "kind": "page"
     },
     "children": [
+     "settings/search",
      "settings/split",
      "settings/nav"
     ]
+   },
+   {
+    "id": "settings/search",
+    "type": "field",
+    "props": {
+     "label": "Search settings",
+     "bind": "vm:settings.query",
+     "kind": "search",
+     "placeholder": "Name, description or what it does",
+     "value": ""
+    },
+    "children": []
    },
    {
     "id": "settings/split",
@@ -233,7 +254,8 @@
      "settings/split/updates",
      "settings/split/data",
      "settings/split/menu",
-     "settings/split/mods"
+     "settings/split/mods",
+     "settings/split/accessibility"
     ]
    },
    {
@@ -343,7 +365,8 @@
      "sticky": true
     },
     "children": [
-     "settings/split/game/content/gentle"
+     "settings/split/game/content/gentle",
+     "settings/split/game/content/autojoin"
     ]
    },
    {
@@ -353,6 +376,16 @@
      "label": "Gentle mode",
      "bind": "cvar:cl_gentle",
      "help": "No blood or gibs",
+     "value": false
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/game/content/autojoin",
+    "type": "switch",
+    "props": {
+     "label": "Always auto-join",
+     "bind": "cvar:touch_always_autojoin",
      "value": false
     },
     "children": []
@@ -430,7 +463,7 @@
      "key": "privacy",
      "label": "Privacy",
      "icon": "privacy",
-     "subtitle": "Statistics and identity"
+     "subtitle": "Statistics, identity, web players"
     },
     "children": []
    },
@@ -475,6 +508,17 @@
      "label": "Mods",
      "icon": "mods",
      "subtitle": "Client and server mods, pages from mods"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/accessibility",
+    "type": "pane",
+    "props": {
+     "key": "accessibility",
+     "label": "Accessibility",
+     "icon": "accessibility",
+     "subtitle": "Desktop assistance"
     },
     "children": []
    },

@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -208,9 +216,22 @@
      "kind": "page"
     },
     "children": [
+     "settings/search",
      "settings/split",
      "settings/nav"
     ]
+   },
+   {
+    "id": "settings/search",
+    "type": "field",
+    "props": {
+     "label": "Search settings",
+     "bind": "vm:settings.query",
+     "kind": "search",
+     "placeholder": "Name, description or what it does",
+     "value": ""
+    },
+    "children": []
    },
    {
     "id": "settings/split",
@@ -233,7 +254,8 @@
      "settings/split/updates",
      "settings/split/data",
      "settings/split/menu",
-     "settings/split/mods"
+     "settings/split/mods",
+     "settings/split/accessibility"
     ]
    },
    {
@@ -305,11 +327,9 @@
     },
     "children": [
      "settings/split/touch/tabs/feel",
-     "settings/split/touch/tabs/controls",
      "settings/split/touch/tabs/hud",
      "settings/split/touch/tabs/aim",
-     "settings/split/touch/tabs/auto",
-     "settings/split/touch/tabs/tactics"
+     "settings/split/touch/tabs/auto"
     ]
    },
    {
@@ -412,7 +432,6 @@
     },
     "children": [
      "settings/split/touch/tabs/feel/stick/sticksize",
-     "settings/split/touch/tabs/feel/stick/float",
      "settings/split/touch/tabs/feel/stick/deadzone",
      "settings/split/touch/tabs/feel/stick/analog"
     ]
@@ -427,18 +446,7 @@
      "max": 0.449999988,
      "step": 0.00999999978,
      "format": "x",
-     "value": 0.3
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/touch/tabs/feel/stick/float",
-    "type": "switch",
-    "props": {
-     "label": "Appears under your thumb",
-     "bind": "cvar:touch_stick_float",
-     "help": "The stick starts wherever your left thumb lands and follows it; off, it stays where it is drawn",
-     "value": true
+     "value": 0.4
     },
     "children": []
    },
@@ -453,7 +461,7 @@
      "step": 0.00999999978,
      "format": "percent",
      "help": "How far the thumb moves before you do",
-     "value": 0.12
+     "value": 0.14
     },
     "children": []
    },
@@ -477,6 +485,8 @@
     "children": [
      "settings/split/touch/tabs/feel/buttons/size",
      "settings/split/touch/tabs/feel/buttons/opacity",
+     "settings/split/touch/tabs/feel/buttons/fire",
+     "settings/split/touch/tabs/feel/buttons/dodge",
      "settings/split/touch/tabs/feel/buttons/firedrag",
      "settings/split/touch/tabs/feel/buttons/buttondrag",
      "settings/split/touch/tabs/feel/buttons/hop",
@@ -508,6 +518,37 @@
      "step": 0.0500000007,
      "format": "percent",
      "value": 0.9
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/buttons/fire",
+    "type": "choice",
+    "props": {
+     "label": "Fire button",
+     "bind": "cvar:touch_fire_mode",
+     "style": "segmented",
+     "options": [
+      {
+       "value": "0",
+       "label": "Hold"
+      },
+      {
+       "value": "1",
+       "label": "Toggle"
+      }
+     ],
+     "value": "0"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/buttons/dodge",
+    "type": "switch",
+    "props": {
+     "label": "Dodge button",
+     "bind": "cvar:touch_dodge_visible",
+     "value": false
     },
     "children": []
    },
@@ -587,7 +628,7 @@
     "type": "choice",
     "props": {
      "label": "Preset",
-     "bind": "cvar:touch_preset",
+     "bind": "vm:touch.preset",
      "style": "segmented",
      "options": [
       {
@@ -607,7 +648,7 @@
        "label": "Minimal"
       }
      ],
-     "value": "standard"
+     "value": ""
     },
     "children": []
    },
@@ -657,15 +698,6 @@
     "children": []
    },
    {
-    "id": "settings/split/touch/tabs/controls",
-    "type": "pane",
-    "props": {
-     "key": "controls",
-     "label": "Controls"
-    },
-    "children": []
-   },
-   {
     "id": "settings/split/touch/tabs/hud",
     "type": "pane",
     "props": {
@@ -689,15 +721,6 @@
     "props": {
      "key": "auto",
      "label": "Auto-shoot"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/touch/tabs/tactics",
-    "type": "pane",
-    "props": {
-     "key": "tactics",
-     "label": "Tactics"
     },
     "children": []
    },
@@ -730,7 +753,7 @@
      "key": "privacy",
      "label": "Privacy",
      "icon": "privacy",
-     "subtitle": "Statistics and identity"
+     "subtitle": "Statistics, identity, web players"
     },
     "children": []
    },
@@ -775,6 +798,17 @@
      "label": "Mods",
      "icon": "mods",
      "subtitle": "Client and server mods, pages from mods"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/accessibility",
+    "type": "pane",
+    "props": {
+     "key": "accessibility",
+     "label": "Accessibility",
+     "icon": "accessibility",
+     "subtitle": "Desktop assistance"
     },
     "children": []
    },

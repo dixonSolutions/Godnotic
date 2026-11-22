@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -208,9 +216,22 @@
      "kind": "page"
     },
     "children": [
+     "settings/search",
      "settings/split",
      "settings/nav"
     ]
+   },
+   {
+    "id": "settings/search",
+    "type": "field",
+    "props": {
+     "label": "Search settings",
+     "bind": "vm:settings.query",
+     "kind": "search",
+     "placeholder": "Name, description or what it does",
+     "value": ""
+    },
+    "children": []
    },
    {
     "id": "settings/split",
@@ -233,7 +254,8 @@
      "settings/split/updates",
      "settings/split/data",
      "settings/split/menu",
-     "settings/split/mods"
+     "settings/split/mods",
+     "settings/split/accessibility"
     ]
    },
    {
@@ -338,7 +360,10 @@
      "label": "Profile"
     },
     "children": [
-     "settings/split/player/tabs/profile/name"
+     "settings/split/player/tabs/profile/name",
+     "settings/split/player/tabs/profile/colourcodes",
+     "settings/split/player/tabs/profile/colours",
+     "settings/split/player/tabs/profile/model"
     ]
    },
    {
@@ -346,11 +371,183 @@
     "type": "field",
     "props": {
      "label": "Name",
-     "bind": "cvar:_cl_name",
+     "bind": "vm:player.name",
+     "value": "",
      "kind": "name",
      "maxLength": 32,
-     "apply": "reconnect",
-     "value": ""
+     "apply": "reconnect"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colourcodes",
+    "type": "text",
+    "props": {
+     "body": "Name colour codes:  to , written into the name",
+     "style": "caption"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours",
+    "type": "row",
+    "props": {
+     "wrap": true
+    },
+    "children": [
+     "settings/split/player/tabs/profile/colours/c0",
+     "settings/split/player/tabs/profile/colours/c1",
+     "settings/split/player/tabs/profile/colours/c2",
+     "settings/split/player/tabs/profile/colours/c3",
+     "settings/split/player/tabs/profile/colours/c4",
+     "settings/split/player/tabs/profile/colours/c5",
+     "settings/split/player/tabs/profile/colours/c6",
+     "settings/split/player/tabs/profile/colours/c7",
+     "settings/split/player/tabs/profile/colours/c8",
+     "settings/split/player/tabs/profile/colours/c9"
+    ]
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c0",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.0",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c1",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.1",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c2",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.2",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c3",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.3",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c4",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.4",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c5",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.5",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c6",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.6",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c7",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.7",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c8",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.8",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/colours/c9",
+    "type": "button",
+    "props": {
+     "label": "",
+     "action": {
+      "id": "player.colour.9",
+      "label": ""
+     },
+     "style": "tonal"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/tabs/profile/model",
+    "type": "button",
+    "props": {
+     "label": "Player model",
+     "action": {
+      "id": "settings.model",
+      "label": "Player model",
+      "icon": "player"
+     },
+     "style": "secondary"
     },
     "children": []
    },
@@ -370,7 +567,7 @@
      "key": "privacy",
      "label": "Privacy",
      "icon": "privacy",
-     "subtitle": "Statistics and identity"
+     "subtitle": "Statistics, identity, web players"
     },
     "children": []
    },
@@ -415,6 +612,17 @@
      "label": "Mods",
      "icon": "mods",
      "subtitle": "Client and server mods, pages from mods"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/accessibility",
+    "type": "pane",
+    "props": {
+     "key": "accessibility",
+     "label": "Accessibility",
+     "icon": "accessibility",
+     "subtitle": "Desktop assistance"
     },
     "children": []
    },

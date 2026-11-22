@@ -994,10 +994,23 @@ fn card(app: &App, n: &Node) -> gtk::Button {
         b.add_css_class("gn-selected");
     }
     let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let featured = n.bool("featured").unwrap_or(false);
+    let is_table = n.str("display").as_deref() == Some("table");
     // Map shots are pictures; other artwork (mode emblems) gives way to the card's symbolic icon,
     // so every card on a screen looks alike.
     let image = n.str("image").filter(|r| r.starts_with("pk3:maps/") || n.str("icon").is_none());
-    match image {
+    if is_table {
+        // Home's Multiplayer card: the server table where the other cards have their picture.
+        let t = card_table(app, n);
+        t.set_height_request(if featured { if app.narrow.get() { 90 } else { 110 } } else { 140 });
+        if featured {
+            t.set_vexpand(!app.narrow.get());
+            b.add_css_class("gn-featured");
+        }
+        v.append(&t);
+    }
+    match image.filter(|_| !is_table) {
+        _ if is_table => {}
         Some(r) => {
             let p = picture(app, &r, 480, 270);
             // Map shots fill the card; artwork (mode icons) is shown whole.
@@ -1032,12 +1045,12 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     let t = gtk::Box::new(gtk::Orientation::Vertical, 4);
     t.add_css_class("gn-card-text");
     t.append(&label(&n.title(), &["gn-card-title"]));
-    if let Some(s) = n.str("subtitle") {
+    // A table card's rows are its table, not a subtitle.
+    if let Some(s) = n.str("subtitle").filter(|_| !is_table) {
         // at most two lines, ending in an ellipsis: a card in a sideways strip has a
         // fixed height, and a third line was cut through the middle of its letters
-        // (Home's Multiplayer card is the live server list: one line per server, six)
         let l = label(&s, &["dim-label"]);
-        l.set_lines(if n.id == "home/tiles/mp" { 6 } else { 2 });
+        l.set_lines(2);
         l.set_ellipsize(gtk::pango::EllipsizeMode::End);
         t.append(&l);
     }
@@ -1050,25 +1063,44 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     if let Some(p) = n.f64("progress") {
         let pb = gtk::ProgressBar::new();
         pb.set_fraction(p);
-        t.append(&pb);
+        if featured {
+            // a strip along the picture's foot: the bar keeps two lines like its neighbours
+            pb.add_css_class("gn-card-progress");
+            v.append(&pb);
+        } else {
+            t.append(&pb);
+        }
     }
     v.append(&t);
-    if n.bool("featured").unwrap_or(false) && !app.narrow.get() {
+    if featured {
         // Home's cards stay side by side at every width, never stacked: on a phone each has a
-        // third of it. The picture shrinks and the subtitle and title end in an ellipsis
-        // rather than hold the row wider than the window (a word set the minimum).
+        // third of it. Each is its section on top (picture or table) and a bottom bar of one
+        // title line and one subtitle line, ending in an ellipsis rather than wrapping, so the
+        // three bars are the same height and line up (a word set the minimum width before).
+        t.add_css_class("gn-card-bar");
+        t.set_valign(gtk::Align::End);
         let mut c = t.first_child();
         while let Some(w) = c {
             if let Some(l) = w.downcast_ref::<gtk::Label>() {
-                if l.has_css_class("gn-card-title") {
-                    l.set_wrap(false);
-                } else {
-                    l.set_lines(if n.id == "home/tiles/mp" { 6 } else { 2 });
-                }
+                l.set_wrap(false);
+                l.set_lines(1);
+                l.set_max_width_chars(1);
+                l.set_hexpand(true);
                 l.set_ellipsize(gtk::pango::EllipsizeMode::End);
             }
             c = w.next_sibling();
         }
+    }
+    if is_table {
+        // the bottom bar's second line: how many servers and players (the same height as the
+        // other cards' subtitle even while the list loads)
+        let l = label(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()), &["dim-label", "gn-card-summary"]);
+        l.set_wrap(false);
+        l.set_lines(1);
+        l.set_max_width_chars(1);
+        l.set_hexpand(true);
+        l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        t.append(&l);
     }
     b.set_child(Some(&v));
     b.set_sensitive(n.enabled());
@@ -1083,6 +1115,98 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     }
     register_activator(app, &n.id, &b);
     b
+}
+
+/// A card's `display: table` section (Home's Multiplayer card): the Multiplayer screen's table,
+/// smaller, with `columns` for the header and `rows` (arrays of cells) under it, the first column
+/// taking the room left and the last aligned to the end. New rows refill it in place, so the live
+/// list does not rebuild Home every refresh; any other change rebuilds the screen as before.
+fn card_table(app: &App, n: &Node) -> gtk::Widget {
+    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    frame.add_css_class("gn-card-table");
+    frame.set_overflow(gtk::Overflow::Hidden);
+    let grid = gtk::Grid::new();
+    grid.set_column_spacing(0);
+    grid.set_row_spacing(0);
+    grid.set_hexpand(true);
+    frame.append(&grid);
+    let fill = |grid: &gtk::Grid, n: &Node| {
+        while let Some(c) = grid.first_child() {
+            grid.remove(&c);
+        }
+        let cols: Vec<String> = n.arr("columns").iter().map(|c| c.as_str().map(str::to_string).or_else(|| c.get("label").and_then(Value::as_str).map(str::to_string)).unwrap_or_default()).collect();
+        let last = cols.len().saturating_sub(1);
+        let cell = |text: &str, col: usize, classes: &[&str]| {
+            let l = gtk::Label::new(Some(text));
+            l.set_xalign(if col == last && col > 0 { 1.0 } else { 0.0 });
+            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            l.set_single_line_mode(true);
+            // the name takes the room left; the map is cut before the player count is
+            l.set_hexpand(col == 0);
+            l.set_max_width_chars(if col == 0 { 1 } else if col == last { 8 } else { 12 });
+            l.set_width_chars(if col == 0 { 4 } else if col == last && col > 0 { 7 } else { 0 });
+            for c in classes {
+                l.add_css_class(c);
+            }
+            l
+        };
+        for (i, c) in cols.iter().enumerate() {
+            grid.attach(&cell(c, i, &["gn-th"]), i as i32, 0, 1, 1);
+        }
+        let rows: Vec<&Vec<Value>> = n.arr("rows").iter().filter_map(Value::as_array).collect();
+        if rows.is_empty() {
+            // the live list fills in as servers answer
+            // empty while it loads (no loading text); the summary once the list says there are none
+            let wait = n.str("summary").filter(|s| !s.trim().is_empty()).unwrap_or_default();
+            let l = gtk::Label::new(Some(&wait));
+            l.add_css_class("gn-td-empty");
+            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            l.set_vexpand(true);
+            l.set_hexpand(true);
+            grid.attach(&l, 0, 1, cols.len().max(1) as i32, 1);
+        }
+        for (r, row) in rows.into_iter().enumerate() {
+            for (i, v) in row.iter().enumerate().take(cols.len().max(1)) {
+                let text = v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string());
+                let classes: &[&str] = if r % 2 == 1 { &["gn-td", "gn-td-alt"] } else { &["gn-td"] };
+                grid.attach(&cell(&text, i, classes), i as i32, r as i32 + 1, 1, 1);
+            }
+        }
+    };
+    fill(&grid, n);
+    let rest = |n: &Node| {
+        let mut p = n.props.clone();
+        for k in ["rows", "subtitle", "summary"] {
+            p.remove(k);
+        }
+        Value::Object(p).to_string()
+    };
+    let before = rest(n);
+    let (w, gw, screen_id) = (Rc::downgrade(app), grid.downgrade(), n.id.split('/').next().unwrap_or_default().to_string());
+    register_updater(app, &n.id, Rc::new(move |n: &Node| {
+        let Some(grid) = gw.upgrade() else { return };
+        if rest(n) == before {
+            fill(&grid, n);
+            // the summary line under the title
+            if let Some(bar) = grid.parent().and_then(|f| f.next_sibling()) {
+                let mut c = bar.first_child();
+                while let Some(x) = c {
+                    if let Some(l) = x.downcast_ref::<gtk::Label>().filter(|l| l.has_css_class("gn-card-summary")) {
+                        l.set_text(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()));
+                    }
+                    c = x.next_sibling();
+                }
+            }
+            return;
+        }
+        let (w, id) = (w.clone(), screen_id.clone());
+        glib::idle_add_local_once(move || {
+            if let Some(a) = w.upgrade() {
+                app::refresh_screen(&a, &id);
+            }
+        });
+    }));
+    frame.upcast()
 }
 
 /// Home's bar (`tabbar`: Settings, Credits, Quit): one strip of buttons joined edge to edge
@@ -1907,20 +2031,35 @@ fn table(app: &App, n: &Node, lv: &Rc<RefCell<ListView>>) -> gtk::Widget {
     }
     // Header clicks re-window with the engine's sort (the model itself is never sorted here).
     if let Some(sorter) = cv.sorter().and_downcast::<gtk::ColumnViewSorter>() {
-        let (w, lv2) = (Rc::downgrade(app), lv.clone());
+        let (w, lv2, cvw) = (Rc::downgrade(app), lv.clone(), cv.downgrade());
         sorter.connect_changed(move |s, _| {
-            let Some(app) = w.upgrade() else { return };
+            // A screen rebuild disposes the old table with the store borrowed, and disposing
+            // removes its sort column, which lands here: acting then panicked ("RefCell already
+            // borrowed") and closed the app. Only a header click on a table still on screen
+            // re-sorts, and it does so from the main loop, not inside GTK's signal.
+            let Some(cv) = cvw.upgrade() else { return };
+            if cv.root().is_none() {
+                return;
+            }
             let col = s.primary_sort_column().and_then(|c| c.id()).map(|g| g.to_string());
-            {
-                let mut l = lv2.borrow_mut();
-                l.sort = col;
-                l.desc = s.primary_sort_order() == gtk::SortType::Descending;
-            }
-            let src = lv2.borrow().source.clone();
-            if let Some(win) = app.core.borrow_mut().store.sources.get_mut(&src) {
-                win.invalidate();
-            }
-            want_rows(&app, &lv2);
+            let desc = s.primary_sort_order() == gtk::SortType::Descending;
+            let (w, lv2) = (w.clone(), lv2.clone());
+            glib::idle_add_local_once(move || {
+                let Some(app) = w.upgrade() else { return };
+                {
+                    let Ok(mut l) = lv2.try_borrow_mut() else { return };
+                    if l.sort == col && l.desc == desc {
+                        return;
+                    }
+                    l.sort = col;
+                    l.desc = desc;
+                }
+                let src = lv2.borrow().source.clone();
+                if let Some(win) = app.core.borrow_mut().store.sources.get_mut(&src) {
+                    win.invalidate();
+                }
+                want_rows(&app, &lv2);
+            });
         });
     }
     let (w, list_id, src) = (Rc::downgrade(app), n.id.clone(), source.clone());
@@ -2163,14 +2302,20 @@ pub fn dialog(app: &App, id: &str) -> adw::Dialog {
     let w = Rc::downgrade(app);
     let id2 = id.to_string();
     d.connect_closed(move |_| {
-        if let Some(a) = w.upgrade() {
-            let still = a.core.borrow().store.modal().contains(&id2);
+        // A rebuild can close a dialog with the store borrowed: act from the main loop instead
+        // of inside GTK's signal, so that never panics ("RefCell already borrowed").
+        let (w, id2) = (w.clone(), id2.clone());
+        glib::idle_add_local_once(move || {
+            let Some(a) = w.upgrade() else { return };
+            let Ok(core) = a.core.try_borrow() else { return };
+            let still = core.store.modal().contains(&id2);
+            drop(core);
             if still {
                 let m = a.core.borrow_mut().client.simple("dismiss", Some(&id2));
                 app::send(&a, m);
                 crate::backend::fixture_dismiss(&a, &id2);
             }
-        }
+        });
     });
     d
 }

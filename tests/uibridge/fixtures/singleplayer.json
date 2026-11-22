@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -731,7 +739,7 @@
      "title": "Darkzone",
      "author": "Cortez, CuBe0wL, SavageX, Mossepo",
      "description": "Xonotic remake of a classic map from Quake1: Q1DM6. Recommended for cut-throat duels",
-     "modes": "dm ca duel ft ka kh lms mayhem surv tdm tka tmayhem",
+     "modes": "dm ca duel ft ka lms mayhem surv tdm tka tmayhem",
      "state": "ready",
      "progress": -1
     }
@@ -757,7 +765,7 @@
      "title": "Final Rage",
      "author": "Munyul Verminard, tZork, L0, proraide",
      "description": "Small map with brutal fast vertical action",
-     "modes": "dm ca dom duel ft ka kh lms mayhem surv tdm tka tmayhem",
+     "modes": "dm ca dom duel ft ka lms mayhem surv tdm tka tmayhem",
      "state": "ready",
      "progress": -1
     }
@@ -770,7 +778,7 @@
      "title": "Fuse",
      "author": "Ferdinand 'cityy' List",
      "description": "Duel Mapping Contest Winner of 2012",
-     "modes": "dm ca duel ft ka kh lms mayhem surv tdm tka tmayhem",
+     "modes": "dm ca duel ft ka lms mayhem surv tdm tka tmayhem",
      "state": "ready",
      "progress": -1
     }
@@ -822,7 +830,7 @@
      "title": "Running Man",
      "author": "FruitieX, Cortez, Strahlemann, Debugger",
      "description": "Medium-sized, fast enclosed map",
-     "modes": "dm duel ka lms mayhem surv tka tmayhem",
+     "modes": "dm ca duel ft ka kh lms mayhem surv tdm tka tmayhem",
      "state": "ready",
      "progress": -1
     }
@@ -887,7 +895,7 @@
      "title": "Warfare",
      "author": "Maddin, Tymo",
      "description": "Medium sized map with a central area. Well suited and optimized for duel matches.",
-     "modes": "dm ca duel ft ka kh lms mayhem surv tdm tka tmayhem",
+     "modes": "dm ca duel ft ka lms mayhem surv tdm tka tmayhem",
      "state": "ready",
      "progress": -1
     }

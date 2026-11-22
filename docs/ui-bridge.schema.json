@@ -2347,6 +2347,36 @@
          },
          "selected": {
           "type": "boolean"
+         },
+         "display": {
+          "type": "string",
+          "enum": [
+           "table"
+          ]
+         },
+         "summary": {
+          "type": "string",
+          "maxLength": 4096
+         },
+         "columns": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "maxLength": 64
+          },
+          "maxItems": 6
+         },
+         "rows": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "string",
+            "maxLength": 128
+           },
+           "maxItems": 6
+          }
          }
         },
         "additionalProperties": false

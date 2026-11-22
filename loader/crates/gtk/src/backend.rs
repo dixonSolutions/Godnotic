@@ -225,15 +225,41 @@ pub fn engine_gone(_app: &App, reason: &str) {
     eprintln!("godnotic-loader: engine said bye: {reason}");
 }
 
+thread_local! {
+    static CONTEXT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// Shows the menu window again; a fullscreen app comes back fullscreen (a hidden
+/// toplevel loses that state, which left black margins and odd geometry).
+pub fn present(win: &adw::ApplicationWindow) {
+    win.present();
+    if win.has_css_class("gn-fs") && !win.is_fullscreen() { win.fullscreen(); }
+}
+
 /// `app.context`: in a match the engine's window takes over (see docs/LAUNCHER.md, one window).
+/// Coming back waits a moment: a quick game, loading, game hop (or the game
+/// quitting) no longer flashes the menu window open and shut. The engine hides its
+/// window 300 ms after the match ends (touch_uib_stream.c window_policy), so this
+/// one is up first and the screen is never empty in between.
 pub fn context_changed(app: &App, context: &str) {
     if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
+    CONTEXT.with(|c| *c.borrow_mut() = context.to_string());
     let Some(win) = app.ui.borrow().as_ref().map(|u| u.win.clone()) else { return };
     if context == "game" {
         if win.is_visible() { win.set_visible(false); }
-    } else if !win.is_visible() {
-        win.present();
+        return;
     }
+    if win.is_visible() { return; }
+    let w = std::rc::Rc::downgrade(app);
+    glib::timeout_add_local_once(std::time::Duration::from_millis(120), move || {
+        let Some(app) = w.upgrade() else { return };
+        if !matches!(&*app.backend.borrow(), Backend::Engine(_)) { return; }
+        if CONTEXT.with(|c| c.borrow().as_str() == "game") { return; }
+        let live = match &mut *app.backend.borrow_mut() { Backend::Engine(e) => e.proc.child.try_wait().ok().flatten().is_none(), _ => false };
+        if !live { return; }
+        let win = app.ui.borrow().as_ref().map(|u| u.win.clone());
+        if let Some(win) = win { if !win.is_visible() { present(&win); } }
+    });
 }
 
 /// pk3 image refs answered from the installed game data (fixture mode only; the engine does this itself).

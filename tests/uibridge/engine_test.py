@@ -207,6 +207,11 @@ def modes_and_match():
               "refresh keeps the filter chips and selected server")
         c.send({"t": "ev", "ev": "value", "node": "mp/join/address", "value": "example.org:26001"})
         c.settle()
+        # A typed value is not echoed back (the renderer owns the field while someone types):
+        # the next rebuild shows whether the engine kept it, so make one instead of waiting
+        # for a server reply to happen to cause one.
+        c.send({"t": "ev", "ev": "action", "node": "mp/bar/filters/refresh", "action": "refresh"})
+        c.settle()
         check(c.nodes.get("mp/join/address", {}).get("props", {}).get("value") == "example.org:26001",
               f"the selected address can be edited ({c.nodes.get('mp/join/address', {}).get('props', {}).get('value')!r})")
         c.send({"t": "ev", "ev": "back"})

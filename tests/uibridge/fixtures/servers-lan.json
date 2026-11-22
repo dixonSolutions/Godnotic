@@ -133,6 +133,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -206,7 +214,7 @@
     "props": {
      "title": "Multiplayer",
      "kind": "page",
-     "subtitle": "Looking for servers…",
+     "subtitle": "No servers yet",
      "header": {
       "collapsible": true
      }

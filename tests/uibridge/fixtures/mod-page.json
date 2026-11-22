@@ -135,6 +135,14 @@
     "props": {
      "title": "Multiplayer",
      "subtitle": "",
+     "display": "table",
+     "columns": [
+      "Server",
+      "Map",
+      "Players"
+     ],
+     "rows": [],
+     "summary": "",
      "featured": true,
      "live": true,
      "primary": {
@@ -210,9 +218,22 @@
      "kind": "page"
     },
     "children": [
+     "settings/search",
      "settings/split",
      "settings/nav"
     ]
+   },
+   {
+    "id": "settings/search",
+    "type": "field",
+    "props": {
+     "label": "Search settings",
+     "bind": "vm:settings.query",
+     "kind": "search",
+     "placeholder": "Name, description or what it does",
+     "value": ""
+    },
+    "children": []
    },
    {
     "id": "settings/split",
@@ -235,7 +256,8 @@
      "settings/split/updates",
      "settings/split/data",
      "settings/split/menu",
-     "settings/split/mods"
+     "settings/split/mods",
+     "settings/split/accessibility"
     ]
    },
    {
@@ -322,7 +344,7 @@
      "key": "privacy",
      "label": "Privacy",
      "icon": "privacy",
-     "subtitle": "Statistics and identity"
+     "subtitle": "Statistics, identity, web players"
     },
     "children": []
    },
@@ -503,6 +525,17 @@
       "label": "Open",
       "icon": "chevron"
      }
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/accessibility",
+    "type": "pane",
+    "props": {
+     "key": "accessibility",
+     "label": "Accessibility",
+     "icon": "accessibility",
+     "subtitle": "Desktop assistance"
     },
     "children": []
    },
