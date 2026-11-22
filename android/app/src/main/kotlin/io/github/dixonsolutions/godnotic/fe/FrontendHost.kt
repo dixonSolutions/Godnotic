@@ -1038,6 +1038,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             Log.i(tag, "Native UI: skeleton replaced by $id after ${SystemClock.elapsedRealtime() - started} ms")
         }
         Log.i(tag, "Native UI: screen $id ($transition) ${SystemClock.elapsedRealtime() - started} ms after onCreate")
+        // The engine prepares a local game's map (touch_warm) only while the player is on the Singleplayer screen,
+        // choosing one: never at start-up, never behind Home or a join.
+        reportPower("touch_warm", if (id == "sp") "1" else "0")
     }
 
     override fun showDialog(view: View?) {
