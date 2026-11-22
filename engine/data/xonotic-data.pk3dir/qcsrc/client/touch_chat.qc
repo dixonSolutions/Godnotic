@@ -8,6 +8,17 @@
 #include "touch_input.qh"
 #include <lib/cvar.qh>
 
+const int TOUCH_CHAT_PICK_MAX = 4;
+int touch_chat_pick_n;
+string touch_chat_pick_name[TOUCH_CHAT_PICK_MAX];
+bool touch_chat_pick_spec[TOUCH_CHAT_PICK_MAX];
+int touch_chat_pick_at;
+int touch_chat_pick_hot;
+string touch_chat_pick_for;
+
+vector Touch_Chat_FieldCenter(void);
+vector Touch_Chat_FieldHalf(void);
+
 bool touch_chat_open;
 bool touch_chat_team;
 string touch_chat_text;
@@ -39,6 +50,9 @@ void Touch_Chat_Reset(void)
 	touch_chat_hot_row = -1;
 	touch_chat_hot_cell = -1;
 	touch_chat_hot_button = TOUCH_CHAT_BTN_NONE;
+	touch_chat_pick_n = 0;
+	touch_chat_pick_hot = -1;
+	strcpy(touch_chat_pick_for, "");
 	strcpy(touch_chat_text, "");
 }
 
@@ -70,6 +84,151 @@ void Touch_Chat_Capture(string msg)
 	touch_chat_head = (touch_chat_head + 1) % TOUCH_CHAT_HISTORY;
 	if (touch_chat_count < TOUCH_CHAT_HISTORY)
 		touch_chat_count += 1;
+}
+
+// ---------------------------------------------------------------------------
+// @mentions
+// ---------------------------------------------------------------------------
+
+bool Touch_Chat_IsWordChar(string c)
+{
+	if (c == "" || c == "_")
+		return c == "_";
+	float k = str2chr(c, 0);
+	return (k >= 48 && k <= 57) || (k >= 65 && k <= 90) || (k >= 97 && k <= 122) || k >= 128;
+}
+
+// Same rule as touch_mention_logic.h: "@name" in any case, not followed by more
+// of a word, and the @ not glued to a word before it.
+string Touch_Chat_Mark(string msg)
+{
+	if (msg == "" || str2chr(msg, 0) != 1 || !cvar("touch_chat_mentions"))
+		return msg;
+	string me = strtolower(strdecolorize(cvar_string("_cl_name")));
+	if (me == "")
+		return msg;
+	string key = strcat("@", me);
+	string low = strtolower(msg);
+	int klen = strlen(key);
+	string out = "";
+	int from = 0, hit = 0;
+	for (;;)
+	{
+		int pos = strstrofs(low, key, from);
+		if (pos < 0)
+			break;
+		bool ok = (pos == 0 || !Touch_Chat_IsWordChar(substring(low, pos - 1, 1)))
+			&& !Touch_Chat_IsWordChar(substring(low, pos + klen, 1));
+		if (ok)
+		{
+			out = strcat(out, substring(msg, from, pos - from), "^xfc0", substring(msg, pos, klen), "^7");
+			hit += 1;
+		}
+		else
+			out = strcat(out, substring(msg, from, pos - from + klen));
+		from = pos + klen;
+	}
+	if (!hit)
+		return msg;
+	localcmd("\nplay2 misc/talk2.wav\n");
+	return strcat(out, substring(msg, from, strlen(msg) - from));
+}
+
+// The picker over the field: players and spectators from _touch_roster (the
+// engine's copy of the scoreboard names, colour codes stripped).
+
+int Touch_Chat_Token(string s)
+{
+	int n = strlen(s), i;
+	for (i = n - 1; i >= 0; i -= 1)
+	{
+		if (substring(s, i, 1) == "@")
+			return (i == 0 || substring(s, i - 1, 1) == " ") ? i : -1;
+		if (n - i > 64)
+			return -1;
+	}
+	return -1;
+}
+
+void Touch_Chat_PickRefresh(void)
+{
+	if (touch_chat_text == touch_chat_pick_for)
+		return;
+	strcpy(touch_chat_pick_for, touch_chat_text);
+	touch_chat_pick_n = 0;
+	touch_chat_pick_hot = -1;
+	if (!cvar("touch_chat_mentions"))
+		return;
+	int at = Touch_Chat_Token(touch_chat_text);
+	if (at < 0)
+		return;
+	touch_chat_pick_at = at;
+	string q = strtolower(substring(touch_chat_text, at + 1, strlen(touch_chat_text) - at - 1));
+	int count = tokenizebyseparator(cvar_string("_touch_roster"), "\n");
+	string names[64];
+	bool spec[64];
+	int i, pass;
+	if (count > 64)
+		count = 64;
+	for (i = 0; i < count; i += 1)
+	{
+		string raw = argv(i);
+		spec[i] = substring(raw, 0, 1) == "\t";
+		names[i] = spec[i] ? substring(raw, 1, strlen(raw) - 1) : raw;
+	}
+	for (pass = 2; pass >= 1; pass -= 1)
+		for (i = 0; i < count && touch_chat_pick_n < TOUCH_CHAT_PICK_MAX; i += 1)
+		{
+			if (names[i] == "")
+				continue;
+			int p = (q == "") ? 0 : strstrofs(strtolower(names[i]), q, 0);
+			int score = (p == 0) ? 2 : ((p > 0) ? 1 : 0);
+			if (score != pass)
+				continue;
+			strcpy(touch_chat_pick_name[touch_chat_pick_n], names[i]);
+			touch_chat_pick_spec[touch_chat_pick_n] = spec[i];
+			touch_chat_pick_n += 1;
+		}
+}
+
+void Touch_Chat_PickAccept(int row)
+{
+	if (row < 0 || row >= touch_chat_pick_n)
+		return;
+	string next = strcat(substring(touch_chat_text, 0, touch_chat_pick_at), "@",
+		touch_chat_pick_name[row], " ");
+	if (strlen(next) <= autocvar_touch_kb_maxlen)
+		strcpy(touch_chat_text, next);
+	touch_chat_pick_n = 0;
+}
+
+float Touch_Chat_PickRowH(void)
+{
+	return Touch_MMToUnits(TOUCH_MM_COMFORT) * 0.8;
+}
+
+vector Touch_Chat_PickRowCenter(int row)
+{
+	vector fc = Touch_Chat_FieldCenter();
+	vector fh = Touch_Chat_FieldHalf();
+	float h = Touch_Chat_PickRowH();
+	// above the typing line, which is above the field
+	float top = fc.y - fh.y - h * 0.8;
+	return eX * fc.x + eY * (top - (row + 0.5) * h);
+}
+
+vector Touch_Chat_PickRowHalf(void)
+{
+	return eX * Touch_Chat_FieldHalf().x + eY * (Touch_Chat_PickRowH() * 0.5);
+}
+
+int Touch_Chat_PickHit(vector p)
+{
+	int i;
+	for (i = 0; i < touch_chat_pick_n; i += 1)
+		if (Touch_HitRectPx(p, Touch_Chat_PickRowCenter(i), Touch_Chat_PickRowHalf(), 1.0))
+			return i;
+	return -1;
 }
 
 // 0 is the oldest line still held.
@@ -213,7 +372,10 @@ bool Touch_Chat_KeyEvent(float bInputType, float nPrimary, float nSecondary)
 		return false;
 	if (bInputType == 1)
 		return true;
-	if (nPrimary == K_ENTER || nPrimary == K_KP_ENTER)
+	Touch_Chat_PickRefresh();
+	if ((nPrimary == K_ENTER || nPrimary == K_KP_ENTER || nPrimary == K_TAB) && touch_chat_pick_n > 0)
+		Touch_Chat_PickAccept(0);
+	else if (nPrimary == K_ENTER || nPrimary == K_KP_ENTER)
 		Touch_Chat_Send();
 	else
 	{
@@ -345,6 +507,10 @@ void Touch_Chat_PointerDown(vector p)
 	touch_chat_hot_button = Touch_Chat_HitButton(p);
 	if (touch_chat_hot_button != TOUCH_CHAT_BTN_NONE)
 		return;
+	Touch_Chat_PickRefresh();
+	touch_chat_pick_hot = Touch_Chat_PickHit(p);
+	if (touch_chat_pick_hot >= 0)
+		return;
 	if (Touch_Kb_Hit(p))
 	{
 		touch_chat_hot_row = Touch_Kb_HitRow();
@@ -380,6 +546,13 @@ void Touch_Chat_PointerMove(vector p)
 
 void Touch_Chat_PointerUp(void)
 {
+	if (touch_chat_pick_hot >= 0)
+	{
+		int row = touch_chat_pick_hot;
+		touch_chat_pick_hot = -1;
+		Touch_Chat_PickAccept(row);
+		return;
+	}
 	if (touch_chat_hot_button == TOUCH_CHAT_BTN_CLOSE)
 	{
 		Touch_Chat_Close();
@@ -519,6 +692,19 @@ void Touch_Chat_Draw(void)
 		touch_chat_hot_button == TOUCH_CHAT_BTN_CLOSE, false, false, alpha,
 		TOUCH_C_DANGER);
 	Touch_Chat_DrawHistory(alpha);
+	Touch_Chat_PickRefresh();
+	// Who is typing, from the engine (the server's chat bubbles), over the field.
+	string typing = cvar_string("_touch_typing");
+	if (typing != "")
+		Touch_Shape_LabelAligned(eX * (sc.x - inner.x) + eY * (Touch_Chat_FieldCenter().y - Touch_Chat_FieldHalf().y - Touch_Chat_PickRowH() * 0.4),
+			TOUCH_FONT_READOUT_SM * Touch_UIScale(), typing, -1, TOUCH_C_INK, alpha * TOUCH_A_INK);
+	int pi;
+	for (pi = 0; pi < touch_chat_pick_n; pi += 1)
+	{
+		Touch_Widget_Key(Touch_Chat_PickRowCenter(pi), Touch_Chat_PickRowHalf(),
+			strcat("@", touch_chat_pick_name[pi], (touch_chat_pick_spec[pi] ? "   spectator" : "")),
+			touch_chat_pick_hot == pi, pi == 0, false, alpha, TOUCH_C_ACCENT);
+	}
 
 	Touch_Widget_Field(Touch_Chat_FieldCenter(), Touch_Chat_FieldHalf(),
 		touch_chat_text, "tap to type…", alpha, TOUCH_C_ACCENT);
