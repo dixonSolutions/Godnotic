@@ -993,24 +993,15 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     if n.bool("selected").unwrap_or(false) {
         b.add_css_class("gn-selected");
     }
-    let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let featured = n.bool("featured").unwrap_or(false);
-    let is_table = n.str("display").as_deref() == Some("table");
+    if n.str("display").as_deref() == Some("table") || !card_tags(n).is_empty() {
+        return tagged_card(app, n, b, featured);
+    }
+    let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
     // Map shots are pictures; other artwork (mode emblems) gives way to the card's symbolic icon,
     // so every card on a screen looks alike.
     let image = n.str("image").filter(|r| r.starts_with("pk3:maps/") || n.str("icon").is_none());
-    if is_table {
-        // Home's Multiplayer card: the server table where the other cards have their picture.
-        let t = card_table(app, n);
-        t.set_height_request(if featured { if app.narrow.get() { 90 } else { 110 } } else { 140 });
-        if featured {
-            t.set_vexpand(!app.narrow.get());
-            b.add_css_class("gn-featured");
-        }
-        v.append(&t);
-    }
-    match image.filter(|_| !is_table) {
-        _ if is_table => {}
+    match image {
         Some(r) => {
             let p = picture(app, &r, 480, 270);
             // Map shots fill the card; artwork (mode icons) is shown whole.
@@ -1045,8 +1036,7 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     let t = gtk::Box::new(gtk::Orientation::Vertical, 4);
     t.add_css_class("gn-card-text");
     t.append(&label(&n.title(), &["gn-card-title"]));
-    // A table card's rows are its table, not a subtitle.
-    if let Some(s) = n.str("subtitle").filter(|_| !is_table) {
+    if let Some(s) = n.str("subtitle") {
         // at most two lines, ending in an ellipsis: a card in a sideways strip has a
         // fixed height, and a third line was cut through the middle of its letters
         let l = label(&s, &["dim-label"]);
@@ -1091,16 +1081,123 @@ fn card(app: &App, n: &Node) -> gtk::Button {
             c = w.next_sibling();
         }
     }
-    if is_table {
-        // the bottom bar's second line: how many servers and players (the same height as the
-        // other cards' subtitle even while the list loads)
-        let l = label(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()), &["dim-label", "gn-card-summary"]);
+    b.set_child(Some(&v));
+    b.set_sensitive(n.enabled());
+    if let Some(p) = n.obj("primary").cloned() {
+        let w = Rc::downgrade(app);
+        let id = n.id.clone();
+        b.connect_clicked(move |_| {
+            if let Some(a) = w.upgrade() {
+                invoke(&a, &id, &p);
+            }
+        });
+    }
+    register_activator(app, &n.id, &b);
+    b
+}
+
+/// A card's details as cells: `tags`, or, for a featured card of an older payload that only has a
+/// `subtitle`, its " · "-separated parts. A `display: table` card's cells are its `rows`, not these.
+fn card_tags(n: &Node) -> Vec<String> {
+    let tags: Vec<String> = n.arr("tags").iter().filter_map(|t| t.as_str().map(str::to_string)).filter(|t| !t.is_empty()).collect();
+    if !tags.is_empty() {
+        return tags;
+    }
+    if n.bool("featured").unwrap_or(false) && n.str("display").is_none() {
+        if let Some(s) = n.str("subtitle").filter(|s| s.contains(" · ")) {
+            return s.split(" · ").map(str::to_string).collect();
+        }
+    }
+    Vec::new()
+}
+
+/// One line of equal-width cells with a separator between them: each cell one line, ending in an
+/// ellipsis rather than wrapping.
+fn tag_row(cells: &[String]) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    row.set_homogeneous(true);
+    row.add_css_class("gn-tags");
+    for (i, text) in cells.iter().enumerate() {
+        let cell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        if i > 0 {
+            cell.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+        }
+        let l = gtk::Label::new(Some(text));
+        l.add_css_class("gn-tag");
+        l.set_xalign(0.0);
         l.set_wrap(false);
-        l.set_lines(1);
+        l.set_single_line_mode(true);
         l.set_max_width_chars(1);
         l.set_hexpand(true);
         l.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        t.append(&l);
+        l.set_tooltip_text(Some(text));
+        cell.append(&l);
+        row.append(&cell);
+    }
+    row
+}
+
+/// A card with its title on top, under it the details as one line of equal cells (`tags`; a
+/// `display: table` card has one line per server: name, map, players), then the picture with the
+/// progress bar along its foot. Home's cards are this at every width.
+fn tagged_card(app: &App, n: &Node, b: gtk::Button, featured: bool) -> gtk::Button {
+    let v = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let is_table = n.str("display").as_deref() == Some("table");
+    let head = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    head.add_css_class("gn-card-text");
+    head.add_css_class("gn-card-head");
+    let title = label(&n.title(), &["gn-card-title"]);
+    title.set_wrap(false);
+    title.set_lines(1);
+    title.set_max_width_chars(1);
+    title.set_hexpand(true);
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    head.append(&title);
+    if featured {
+        b.add_css_class("gn-featured");
+    }
+    if is_table {
+        // the summary (how many servers and players) under the title; the lines under it fill in
+        // as the list answers, empty while it loads
+        let sum = label(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()), &["dim-label", "gn-card-summary"]);
+        sum.set_wrap(false);
+        sum.set_lines(1);
+        sum.set_max_width_chars(1);
+        sum.set_hexpand(true);
+        sum.set_xalign(0.0);
+        sum.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        head.append(&sum);
+        let rows = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        rows.add_css_class("gn-card-rows");
+        head.append(&rows);
+        card_rows(app, n, &rows, &sum);
+        v.append(&head);
+        let fill = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        fill.set_vexpand(featured && !app.narrow.get());
+        v.append(&fill);
+    } else {
+        head.append(&tag_row(&card_tags(n)));
+        v.append(&head);
+        if let Some(r) = n.str("image").filter(|r| r.starts_with("pk3:maps/") || n.str("icon").is_none()) {
+            let p = picture(app, &r, 480, 270);
+            if r.starts_with("pk3:maps/") {
+                p.set_height_request(if featured { if app.narrow.get() { 90 } else { 110 } } else { aspect_height(n.str("aspect"), 240).clamp(80, 200) });
+                // Home's cards share the window's height with the banner above them
+                p.set_vexpand(featured && !app.narrow.get());
+            } else {
+                p.set_content_fit(gtk::ContentFit::Contain);
+                p.set_height_request(88);
+            }
+            p.add_css_class("gn-card-pic");
+            v.append(&p);
+        }
+        if let Some(f) = n.f64("progress") {
+            let pb = gtk::ProgressBar::new();
+            pb.set_fraction(f);
+            pb.add_css_class("gn-card-progress");
+            v.append(&pb);
+        }
     }
     b.set_child(Some(&v));
     b.set_sensitive(n.enabled());
@@ -1117,63 +1214,22 @@ fn card(app: &App, n: &Node) -> gtk::Button {
     b
 }
 
-/// A card's `display: table` section (Home's Multiplayer card): the Multiplayer screen's table,
-/// smaller, with `columns` for the header and `rows` (arrays of cells) under it, the first column
-/// taking the room left and the last aligned to the end. New rows refill it in place, so the live
-/// list does not rebuild Home every refresh; any other change rebuilds the screen as before.
-fn card_table(app: &App, n: &Node) -> gtk::Widget {
-    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    frame.add_css_class("gn-card-table");
-    frame.set_overflow(gtk::Overflow::Hidden);
-    let grid = gtk::Grid::new();
-    grid.set_column_spacing(0);
-    grid.set_row_spacing(0);
-    grid.set_hexpand(true);
-    frame.append(&grid);
-    let fill = |grid: &gtk::Grid, n: &Node| {
-        while let Some(c) = grid.first_child() {
-            grid.remove(&c);
+/// A `display: table` card's lines (Home's Multiplayer card): each `row` (arrays of cells) one
+/// line of equal cells, at most six. New rows refill them in place, so the live list does not
+/// rebuild Home every refresh; any other change rebuilds the screen as before.
+fn card_rows(app: &App, n: &Node, rows: &gtk::Box, summary: &gtk::Label) {
+    let fill = |rows: &gtk::Box, n: &Node| {
+        while let Some(c) = rows.first_child() {
+            rows.remove(&c);
         }
-        let cols: Vec<String> = n.arr("columns").iter().map(|c| c.as_str().map(str::to_string).or_else(|| c.get("label").and_then(Value::as_str).map(str::to_string)).unwrap_or_default()).collect();
-        let last = cols.len().saturating_sub(1);
-        let cell = |text: &str, col: usize, classes: &[&str]| {
-            let l = gtk::Label::new(Some(text));
-            l.set_xalign(if col == last && col > 0 { 1.0 } else { 0.0 });
-            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            l.set_single_line_mode(true);
-            // the name takes the room left; the map is cut before the player count is
-            l.set_hexpand(col == 0);
-            l.set_max_width_chars(if col == 0 { 1 } else if col == last { 8 } else { 12 });
-            l.set_width_chars(if col == 0 { 4 } else if col == last && col > 0 { 7 } else { 0 });
-            for c in classes {
-                l.add_css_class(c);
-            }
-            l
-        };
-        for (i, c) in cols.iter().enumerate() {
-            grid.attach(&cell(c, i, &["gn-th"]), i as i32, 0, 1, 1);
-        }
-        let rows: Vec<&Vec<Value>> = n.arr("rows").iter().filter_map(Value::as_array).collect();
-        if rows.is_empty() {
-            // the live list fills in as servers answer
-            // empty while it loads (no loading text); the summary once the list says there are none
-            let wait = n.str("summary").filter(|s| !s.trim().is_empty()).unwrap_or_default();
-            let l = gtk::Label::new(Some(&wait));
-            l.add_css_class("gn-td-empty");
-            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            l.set_vexpand(true);
-            l.set_hexpand(true);
-            grid.attach(&l, 0, 1, cols.len().max(1) as i32, 1);
-        }
-        for (r, row) in rows.into_iter().enumerate() {
-            for (i, v) in row.iter().enumerate().take(cols.len().max(1)) {
-                let text = v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string());
-                let classes: &[&str] = if r % 2 == 1 { &["gn-td", "gn-td-alt"] } else { &["gn-td"] };
-                grid.attach(&cell(&text, i, classes), i as i32, r as i32 + 1, 1, 1);
+        for row in n.arr("rows").iter().filter_map(Value::as_array).take(6) {
+            let cells: Vec<String> = row.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect();
+            if !cells.is_empty() {
+                rows.append(&tag_row(&cells));
             }
         }
     };
-    fill(&grid, n);
+    fill(rows, n);
     let rest = |n: &Node| {
         let mut p = n.props.clone();
         for k in ["rows", "subtitle", "summary"] {
@@ -1182,21 +1238,12 @@ fn card_table(app: &App, n: &Node) -> gtk::Widget {
         Value::Object(p).to_string()
     };
     let before = rest(n);
-    let (w, gw, screen_id) = (Rc::downgrade(app), grid.downgrade(), n.id.split('/').next().unwrap_or_default().to_string());
+    let (w, rw, sw, screen_id) = (Rc::downgrade(app), rows.downgrade(), summary.downgrade(), n.id.split('/').next().unwrap_or_default().to_string());
     register_updater(app, &n.id, Rc::new(move |n: &Node| {
-        let Some(grid) = gw.upgrade() else { return };
+        let (Some(rows), Some(sum)) = (rw.upgrade(), sw.upgrade()) else { return };
         if rest(n) == before {
-            fill(&grid, n);
-            // the summary line under the title
-            if let Some(bar) = grid.parent().and_then(|f| f.next_sibling()) {
-                let mut c = bar.first_child();
-                while let Some(x) = c {
-                    if let Some(l) = x.downcast_ref::<gtk::Label>().filter(|l| l.has_css_class("gn-card-summary")) {
-                        l.set_text(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()));
-                    }
-                    c = x.next_sibling();
-                }
-            }
+            fill(&rows, n);
+            sum.set_text(&n.str("summary").filter(|s| !s.is_empty()).unwrap_or_else(|| " ".into()));
             return;
         }
         let (w, id) = (w.clone(), screen_id.clone());
@@ -1206,7 +1253,6 @@ fn card_table(app: &App, n: &Node) -> gtk::Widget {
             }
         });
     }));
-    frame.upcast()
 }
 
 /// Home's bar (`tabbar`: Settings, Credits, Quit): one strip of buttons joined edge to edge

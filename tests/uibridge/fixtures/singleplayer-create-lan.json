@@ -98,6 +98,11 @@
     "props": {
      "title": "Singleplayer",
      "subtitle": "Stormkeep · Deathmatch · 4 bots",
+     "tags": [
+      "Stormkeep",
+      "Deathmatch",
+      "4 bots"
+     ],
      "icon": "singleplayer",
      "image": "pk3:maps/stormkeep",
      "aspect": "16:9",
@@ -116,6 +121,10 @@
     "props": {
      "title": "Campaign",
      "subtitle": "Level 1 of 31 · Deathmatch: Boil",
+     "tags": [
+      "Level 1 of 31",
+      "Deathmatch: Boil"
+     ],
      "image": "pk3:maps/boil",
      "progress": 0,
      "icon": "trophy",

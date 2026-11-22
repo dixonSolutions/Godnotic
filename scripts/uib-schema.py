@@ -112,6 +112,8 @@ TYPES = {
              "primary": ref("action"), "selected": B,
              # a small table where the picture goes (Home's Multiplayer card: the live servers)
              "display": enum("table"), "summary": S,
+             # the details as one line of equal cells (Home's cards): up to six short strings
+             "tags": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 6},
              "columns": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 6},
              "rows": {"type": "array", "maxItems": 8,
                       "items": {"type": "array", "items": {"type": "string", "maxLength": 128}, "maxItems": 6}}},

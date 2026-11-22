@@ -102,15 +102,36 @@ class FitBody(ctx: Context, spacingPx: Int) : LinearLayout(ctx) {
 class CardColumn(ctx: Context, private val img: View, private val bar: View, private val text: View) : LinearLayout(ctx) {
     private var wide = false
     private var custom = false
+    private var topText = false
+
+    /** Home's cards: the text (title and details) on top, the picture and its bar under it. */
+    var textFirst = false
+        set(v) {
+            if (field == v) return
+            field = v
+            removeAllViews()
+            val order = if (v) listOf(text, img, bar) else listOf(img, bar, text)
+            for (c in order) addView(c, c.layoutParams ?: LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            requestLayout()
+        }
 
     init { orientation = VERTICAL }
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
+        topText = false
         if (MeasureSpec.getMode(wSpec) != MeasureSpec.EXACTLY || MeasureSpec.getMode(hSpec) != MeasureSpec.EXACTLY || img.visibility == GONE) { custom = false; wide = false; super.onMeasure(wSpec, hSpec); return }
         custom = true
         val w = MeasureSpec.getSize(wSpec)
         val h = MeasureSpec.getSize(hSpec)
         val barH = if (bar.visibility == GONE) 0 else (bar.layoutParams?.height ?: 0)
+        if (textFirst) {
+            topText = true
+            text.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.AT_MOST))
+            img.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(max(0, h - barH - text.measuredHeight), MeasureSpec.EXACTLY))
+            bar.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(barH, MeasureSpec.EXACTLY))
+            setMeasuredDimension(w, h)
+            return
+        }
         wide = w > h * 1.3f
         if (wide) {
             val iw = (w * 0.42f).toInt()
@@ -128,7 +149,11 @@ class CardColumn(ctx: Context, private val img: View, private val bar: View, pri
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         if (!custom) { super.onLayout(changed, l, t, r, b); return }
         val w = r - l; val h = b - t
-        if (wide) {
+        if (topText) {
+            text.layout(0, 0, w, text.measuredHeight)
+            img.layout(0, text.measuredHeight, w, text.measuredHeight + img.measuredHeight)
+            bar.layout(0, text.measuredHeight + img.measuredHeight, w, text.measuredHeight + img.measuredHeight + bar.measuredHeight)
+        } else if (wide) {
             val iw = img.measuredWidth
             img.layout(0, 0, iw, h)
             val blockH = text.measuredHeight + bar.measuredHeight

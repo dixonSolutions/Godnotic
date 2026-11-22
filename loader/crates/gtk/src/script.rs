@@ -15,6 +15,8 @@
 //! snapshot <file.png> render the window
 //! count <file>        append the number of mapped top-level windows of this process
 //! labels <file>       write the text of every label on screen (mapped and drawn), one per line
+//! cards <file>        write the box of every card title (gn-card-title), tag (gn-tag), picture
+//!                     (gn-card-pic): "<kind> x y w h text", window coordinates, mapped ones only
 //! type <node> <text>  set an entry's text
 //! join <addr> [pw]    start a session joining a server (as a godnotic:// link would)
 //! play                start the game the classic way
@@ -218,6 +220,32 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             }
             if let Some(p) = args.first() {
                 let _ = std::fs::write(p, out.join("\n") + "\n");
+            }
+        }
+        "cards" => {
+            fn walk(w: &gtk::Widget, top: &gtk::Widget, out: &mut String) {
+                if !w.is_mapped() || !w.is_child_visible() {
+                    return;
+                }
+                let kind = ["gn-card-title", "gn-tag", "gn-card-pic"].into_iter().find(|c| w.has_css_class(c));
+                if let (Some(kind), Some(b)) = (kind, w.compute_bounds(top)) {
+                    let text = w.downcast_ref::<gtk::Label>().map(|l| l.text().to_string()).unwrap_or_default();
+                    out.push_str(&format!("{kind} {:.0} {:.0} {:.0} {:.0} {text}\n", b.x(), b.y(), b.width(), b.height()));
+                }
+                let mut c = w.first_child();
+                while let Some(k) = c {
+                    walk(&k, top, out);
+                    c = k.next_sibling();
+                }
+            }
+            let mut out = String::new();
+            for t in gtk::Window::list_toplevels() {
+                if t.is_mapped() {
+                    walk(&t, &t, &mut out);
+                }
+            }
+            if let Some(p) = args.first() {
+                let _ = std::fs::write(p, out);
             }
         }
         "count" => {

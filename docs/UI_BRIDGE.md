@@ -279,6 +279,12 @@ the sticky header, section 4.10). Children: content and containers.
 puts a small table where the picture goes, title still in the bottom bar: Home's Multiplayer
 card is the live server list this way, with `summary` (how many servers and players) as the
 bar's second line. A renderer that does not know `display` shows `subtitle`.
+`tags` (at most 6 short strings) are the card's details: Home's cards (title on top) show them as
+one line of equal-width cells with separators between, each cut with an ellipsis and never
+wrapped, with the picture below that line (`progress` stays with the picture); a `table` card
+shows each of its `rows` the same way (name, map, players) and no header. `subtitle` carries the
+same details joined with " · " for a renderer that does not know `tags`; a renderer given a
+featured card with `subtitle` and no `tags` splits it at " · " itself.
 A badge is `{text, icon, tone}`, a chip `{icon, text}`; `tone` is one of `neutral`,
 `accent`, `positive`, `warning`, `danger`.
 
