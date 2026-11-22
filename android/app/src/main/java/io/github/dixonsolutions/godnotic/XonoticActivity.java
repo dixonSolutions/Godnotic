@@ -924,8 +924,10 @@ public final class XonoticActivity extends SDLActivity {
                 }
                 boolean front = inFront;
                 LanLocks.hosting(this, kind.equals("hosting")); // LAN game: Wi-Fi and multicast locks while hosting
-                // connected, joining or downloading while away: keep the radio out of power save
-                LanLocks.connected(this, !idle && !front);
+                // connected, joining or downloading: keep the radio out of power save. In front too:
+                // an Android Wi-Fi radio naps between beacons while the game sends 60 small packets a
+                // second, and that shows up as ping spikes and, on a bad access point, a lost association
+                LanLocks.connected(this, !idle);
                 KeepAliveService.engineBusy = !idle;
                 if (andysuBridge != null) andysuBridge.onEngineBusy(!idle);
                 // A map change, a reconnect or a finished download can read idle
