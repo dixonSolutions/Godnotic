@@ -964,6 +964,7 @@ class ViewRenderer(
     fun picture(img: RoundImage, ref: String, sync: Boolean = false, blocking: Boolean = true) {
         val hadPicture = img.tag != null // a card whose map changes keeps the old picture until the new one is there
         img.tag = ref
+        img.label = if (ref.startsWith("pk3:maps/")) ref.removePrefix("pk3:maps/") else ""
         val ready: (String) -> Unit = { path ->
             if (img.tag == ref) {
                 if (path.isEmpty()) img.none()

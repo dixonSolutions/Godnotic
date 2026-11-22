@@ -32,7 +32,7 @@ defer 12 quit
 CFG
         timeout 90 "$ENGINE" -xonotic -basedir "$BASEDIR" -userdir "$u" +vid_fullscreen 0 \
             +vid_width "${size%x*}" +vid_height "${size#*x}" +set _touch_assets_ready 1 \
-            +set touch_warm_idle 2 +exec spawn.cfg > "$u.log" 2>&1
+            +set touch_warm 1 +set touch_warm_idle 2 +exec spawn.cfg > "$u.log" 2>&1
         rc=$?
         if grep -aq 'Engine Crash' "$u.log" || [ "$rc" -ge 124 ] || ! grep -aq 'SpawnServer: stormkeep' "$u.log"; then
             crashes=$((crashes + 1))

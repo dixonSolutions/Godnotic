@@ -439,6 +439,9 @@ class RoundImage(ctx: Context, private val radiusDp: Float = 12f) : FrameLayout(
     /** Fade the picture's start side into this colour (the hero's scrim); 0: none. */
     var fadeInto = 0
     private val fadePaint = Paint()
+    /** A picture the engine has none of (a custom map not on this device yet): its name on the panel, not a blank box. */
+    var label = ""
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; color = 0xFF7F93B8.toInt() }
 
     init {
         setWillNotDraw(false)
@@ -488,6 +491,11 @@ class RoundImage(ctx: Context, private val radiusDp: Float = 12f) : FrameLayout(
             m.setScale(s, s)
             m.postTranslate((width - b.width * s) / 2, (height - b.height * s) / 2)
             c.drawBitmap(b, m, paint)
+        }
+        if (bitmap == null && label.isNotEmpty() && shimmer.visibility != VISIBLE && width > 0) {
+            labelPaint.textSize = minOf(Theme.dp(context, 18f).toFloat(), width / 12f)
+            labelPaint.typeface = Theme.display
+            c.drawText(label, width / 2f, height / 2f + labelPaint.textSize / 3f, labelPaint)
         }
         if (fadeInto != 0 && bitmap != null) {
             val w = width * 0.55f

@@ -543,7 +543,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val bmp = shotBitmap
         val strip = showShot || lastTransparent
         previewStrip = strip
-        loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE
+        loadingBanner?.visibility = if (JoinFlow.banner(joinStage, previewSeen)) View.VISIBLE else View.GONE // never the logo in a join: a picture, the world, or plain dark
         when {
             showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash
@@ -1038,6 +1038,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             Log.i(tag, "Native UI: skeleton replaced by $id after ${SystemClock.elapsedRealtime() - started} ms")
         }
         Log.i(tag, "Native UI: screen $id ($transition) ${SystemClock.elapsedRealtime() - started} ms after onCreate")
+        // The engine prepares a local game's map (touch_warm) only while the player is on the Singleplayer screen,
+        // choosing one: never at start-up, never behind Home or a join.
+        reportPower("touch_warm", if (id == "sp") "1" else "0")
     }
 
     override fun showDialog(view: View?) {
