@@ -410,5 +410,5 @@ fn server_control_is_hidden_until_the_player_may_control_the_server() {
     assert!(own.node("ctl/form/pw").is_none() && own.node("ctl/forget").is_none());
     // the password is never described in a fixture or its field's value
     assert_eq!(locked.node("ctl/form/pw").unwrap().bool("private"), Some(true));
-    assert!(locked.node("ctl/form/pw").unwrap().str("value").map_or(true, |v| v.is_empty()));
+    assert!(locked.node("ctl/form/pw").unwrap().str("value").is_none_or(|v| v.is_empty()));
 }

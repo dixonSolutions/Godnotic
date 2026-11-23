@@ -1563,7 +1563,8 @@ void UIB_BuildControl()
 	UIB_Close();
 	UIB_Section("cheats", _("Cheats"), false);
 		bool on = UIB_CtlCheats();
-		UIB_Button("toggle", on ? _("Turn cheats off") : _("Turn cheats on"), UIB_A("ctl.cheats", on ? _("Turn cheats off") : _("Turn cheats on"), ""), "secondary");
+		string cheatlabel = (on ? _("Turn cheats off") : _("Turn cheats on"));
+		UIB_Button("toggle", cheatlabel, UIB_A("ctl.cheats", cheatlabel, ""), "secondary");
 		if (on)
 		{
 			UIB_Open("cheatbtns", "row");
@@ -2296,7 +2297,7 @@ void UIB_Action(string node, string a, string payload)
 			{
 				bool want = !UIB_CtlCheats();
 				UIB_CtlCmd(sprintf("sv_cheats %d", want));
-				UIB_VMSet("ctl.cheats", want ? "1" : "");
+				UIB_VMSet("ctl.cheats", (want ? "1" : ""));
 				UIB_RebuildAll();
 			}
 			return;
