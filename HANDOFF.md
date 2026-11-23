@@ -39,3 +39,8 @@ GTK renders of the fixtures (flat footer): `gtk-control-locked.png`, `gtk-contro
 - Server info dialog's picture is a blank rectangle until loaded; a duplicate QC "Allow servers to store your name" prompt shows behind the native one.
 - Welcome dialog's Continue moves when the keyboard opens (first tap after typing missed).
 - GTK dialog sizing leaves about 170 px of empty space above the button on the password form (heuristic height).
+
+## Round 2 (coordinator's follow-ups), verified on the emulator with real taps
+- **Keyboard after Unlock**: hidden when the password is accepted (focus cleared, IME hidden); the dialog gets its room back and the whole Apply row shows: `w4-unlocked.png`. Dialog bodies (and pages) fade at the scroll edge instead of cutting a button in half: `w5-scrolled.png` (the Forget password row fades under Close).
+- **Debug builds do not self-update**: `AppUpdater.isEnabled` defaults check_on_launch to false for FLAG_DEBUGGABLE builds when the player never chose (an explicit pref wins; release unchanged). Unit test `AppUpdateStateTest.aDebuggableBuildDoesNotCheckForUpdatesUnlessAsked`. Emulator run: after `emu-shot.sh noupdate` and a full run (Home, Singleplayer, Server control) there is no `no_backup/updates` folder, so no 40 MB download. (The debug default alone was not tested separately from the `noupdate` helper; both write check_on_launch=false.)
+- Frames: /var/home/ratnode2/.cache/godnotic-work/srvctl-shots/w2-empty.png, w3-wrong.png, w4-unlocked.png, w5-scrolled.png.
