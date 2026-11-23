@@ -248,6 +248,8 @@ jobs:
           done
       - name: Missing maps stop signon with a visible recovery console
         run: bash scripts/test-join-world.sh
+      - name: Map picture from a Quake 1 BSP, ZIP directory reader
+        run: bash scripts/test-bspshot.sh
       - name: A failed join says why (classification, wording, connect back-off)
         run: bash scripts/test-joinfail.sh
       - name: Uploaded player models (compatibility check, zip reader and writer)

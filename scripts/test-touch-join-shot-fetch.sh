@@ -10,6 +10,8 @@ trap cleanup EXIT
 export SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy
 unset DISPLAY WAYLAND_DISPLAY
 cc -std=c99 -Wall -Wextra -Werror -I"$root/engine/darkplaces" "$root/tests/touch-zipshot/zipshot_test.c" -o "$work/unit"
+cc -std=c99 -Wall -Wextra -Werror -I"$root/engine/darkplaces" "$root/tests/touch-zipshot/bspshot_test.c" -o "$work/bspshot" -lm
+"$work/bspshot"
 "$work/unit"
 mkdir -p "$work/sv/data" "$work/client/data" "$work/www"
 python3 - "$BASEDIR/data/xonotic-20261107-maps.pk3" "$work/www/zzz-joinshot.pk3" <<'PY'

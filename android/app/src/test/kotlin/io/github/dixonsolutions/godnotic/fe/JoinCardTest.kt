@@ -69,3 +69,60 @@ class JoinBarTest {
         assertTrue(t, t.contains("3.0 of 22.8 MB") && t.contains("left") && t.contains("6 files"))
     }
 }
+
+/** The card's two lines (headline and numbers) in every phase of a join, and its docking. */
+class JoinDetailTest {
+    private val MB = 1048576.0
+
+    @org.junit.Test fun waitingShowsBytesAndSeconds() {
+        val l = JoinFlow.describe(JoinFlow.Snap(stage = "signon", waitS = 9, sigBytes = 24.0 * 1024))
+        assertEquals("Receiving game data from the server", l.head)
+        assertEquals("24 KB received  ·  9 s", l.detail)
+        assertEquals("", JoinFlow.describe(JoinFlow.Snap(stage = "signon", waitS = 0)).detail)
+    }
+
+    @org.junit.Test fun downloadNamesFileCountMbSpeedAndTimeLeft() {
+        val l = JoinFlow.describe(JoinFlow.Snap(
+            stage = "downloading", dlFile = "dlcache/zzz-weapons_020.pk3", filesDone = 1, filesTotal = 5,
+            dlBytes = 3.0 * MB, dlTotal = 22.8 * MB, speed = 1.0 * MB, running = 2, queued = 2))
+        assertEquals("Downloading zzz-weapons_020.pk3", l.head)
+        assertEquals("File 2 of 5  ·  3.0 of 22.8 MB  ·  1.0 MB/s  ·  0:19 left", l.detail)
+        // one file: no count; unknown total: just what arrived
+        val one = JoinFlow.describe(JoinFlow.Snap(stage = "downloading", dlFile = "a.pk3", filesTotal = 1, running = 1, dlBytes = 512.0 * 1024))
+        assertEquals("Downloading a.pk3", one.head)
+        assertEquals("512 KB received", one.detail)
+    }
+
+    @org.junit.Test fun precacheStepsAfterTheDownloads() {
+        assertEquals("Map textures 120 / 218", JoinFlow.precacheStep("world", 120, 218))
+        assertEquals("Models 40 / 332", JoinFlow.precacheStep("models", 40, 332))
+        assertEquals("Sounds", JoinFlow.precacheStep("sounds", 0, 0))
+        assertEquals("", JoinFlow.precacheStep("", 3, 4))
+        val l = JoinFlow.describe(JoinFlow.Snap(stage = "loading", loadStage = "world", loadN = 120, loadM = 218, map = "colstart"))
+        assertEquals("Loading map colstart", l.head)
+        assertEquals("Map textures 120 / 218", l.detail)
+        // older engines: the precache keys
+        assertEquals("Models 5 / 20", JoinFlow.describe(JoinFlow.Snap(stage = "loading", precache = "models", precacheN = 5, precacheTotal = 20)).detail)
+    }
+
+    @org.junit.Test fun etaNeedsSpeedAndTotal() {
+        assertEquals("", JoinFlow.eta(1.0, 10.0, 0.0))
+        assertEquals("1:05 left", JoinFlow.eta(0.0, 65.0 * MB, 1.0 * MB))
+    }
+
+    @org.junit.Test fun cardKeepsClearOfSystemBars() {
+        // bottom: the navigation bar, a cutout or the gesture area, whichever is larger
+        assertEquals(listOf(0, 0, 0, 96), JoinFlow.cardInsets(0, 0, 0, 96, IntArray(4), 40).toList())
+        assertEquals(listOf(0, 0, 0, 40), JoinFlow.cardInsets(0, 0, 0, 0, IntArray(4), 40).toList())
+        // landscape: the bar moved to the side
+        assertEquals(listOf(0, 24, 84, 0), JoinFlow.cardInsets(0, 24, 84, 0, intArrayOf(0, 0, 0, 0), 0).toList())
+        assertEquals(listOf(60, 0, 0, 0), JoinFlow.cardInsets(0, 0, 0, 0, intArrayOf(60, 0, 0, 0), 0).toList())
+    }
+
+    @org.junit.Test fun downloadsShowWhateverTheStage() {
+        assertEquals("downloading", JoinFlow.shownStage("preview", true))
+        assertEquals("downloading", JoinFlow.shownStage("loading", true))
+        assertEquals("preview", JoinFlow.shownStage("preview", false))
+        assertEquals("connecting", JoinFlow.shownStage("connecting", true))
+    }
+}
