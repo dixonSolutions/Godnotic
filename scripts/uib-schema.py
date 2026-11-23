@@ -153,7 +153,8 @@ TYPES = {
     "colour": {**CONTROL, "value": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                "palette": {"type": "array", "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                            "maxItems": 64},
-               "labels": {"type": "array", "items": {"type": "string", "maxLength": 8}, "maxItems": 64}, "preview": IMG},
+               "labels": {"type": "array", "items": {"type": "string", "maxLength": 8}, "maxItems": 64}, "preview": IMG,
+               "picker": enum("name"), "text": S, "maxLength": I},
     "keybind": {**CONTROL, "value": {"type": "array", "items": {"type": "string", "maxLength": 32}, "maxItems": 4},
                 "command": S, "max": I},
 }

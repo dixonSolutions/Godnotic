@@ -980,6 +980,7 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
                 r.upcast()
             }
         }
+        "colour" if n.str("picker").as_deref() == Some("name") => name_picker(n, &id, &w, &title, &sub),
         "colour" => {
             // a row of swatches, one per palette entry (`labels` writes a short text on each)
             let r = adw::ActionRow::builder().title(&title).subtitle(&sub).build();
@@ -1017,6 +1018,97 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
     };
     r.set_sensitive(n.enabled());
     r
+}
+
+/// h 0..360, s and v 0..1 to "#rrggbb".
+fn hsv_hex(h: f64, s: f64, v: f64) -> String {
+    let hh = h.rem_euclid(360.0) / 60.0;
+    let c = v * s;
+    let x = c * (1.0 - (hh % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match hh.floor() as i32 { 0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x) };
+    let ch = |f: f64| ((f + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    format!("#{:02x}{:02x}{:02x}", ch(r), ch(g), ch(b))
+}
+
+/// The player-name colour picker (`colour` with `picker: "name"`): sliders, the ^0 to ^9 chips,
+/// a live preview, and Whole name / Add at the end. Sends whole:#rrggbb, end:#rrggbb or chip:N.
+fn name_picker(n: &Node, id: &str, w: &std::rc::Weak<crate::app::Shared>, title: &str, sub: &str) -> gtk::Widget {
+    let r = adw::ActionRow::builder().title(title).subtitle(sub).build();
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    col.set_margin_top(8);
+    col.set_margin_bottom(8);
+    let preview = gtk::Label::builder().xalign(0.0).build();
+    preview.add_css_class("title-3");
+    let text = n.str("text").unwrap_or_default().replace("^^", "^");
+    let plain = {
+        // strip ^N and ^xRGB for the preview line
+        let cs: Vec<char> = text.chars().collect();
+        let mut o = String::new();
+        let mut i = 0;
+        while i < cs.len() {
+            if cs[i] == '^' && i + 1 < cs.len() && cs[i + 1].is_ascii_digit() { i += 2; continue }
+            if cs[i] == '^' && i + 4 < cs.len() && cs[i + 1] == 'x' && cs[i + 2..i + 5].iter().all(|c| c.is_ascii_hexdigit()) { i += 5; continue }
+            o.push(cs[i]);
+            i += 1;
+        }
+        o
+    };
+    let state = Rc::new(std::cell::Cell::new((20.0f64, 1.0f64, 1.0f64)));
+    let show = {
+        let (preview, plain, state) = (preview.clone(), plain.clone(), state.clone());
+        Rc::new(move || {
+            let (h, s, v) = state.get();
+            let hex = hsv_hex(h, s, v);
+            preview.set_markup(&format!("<span foreground=\"{}\">{}</span>", hex, glib::markup_escape_text(&plain)));
+        })
+    };
+    show();
+    col.append(&preview);
+    for (label, max, start, which) in [("Hue", 359.0, 20.0, 0), ("Saturation", 1.0, 1.0, 1), ("Brightness", 1.0, 1.0, 2)] {
+        let b = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let l = gtk::Label::builder().label(label).width_chars(11).xalign(0.0).build();
+        let sc = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, max, if which == 0 { 1.0 } else { 0.01 });
+        sc.set_value(start);
+        sc.set_hexpand(true);
+        sc.set_draw_value(false);
+        let (state, show) = (state.clone(), show.clone());
+        sc.connect_value_changed(move |s| {
+            let mut t = state.get();
+            match which { 0 => t.0 = s.value(), 1 => t.1 = s.value(), _ => t.2 = s.value() }
+            state.set(t);
+            show();
+        });
+        b.append(&l);
+        b.append(&sc);
+        col.append(&b);
+    }
+    let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(10).row_spacing(6).column_spacing(6).build();
+    for (i, v) in n.arr("palette").iter().enumerate() {
+        let Some(hex) = v.as_str().filter(|h| h.len() == 7 && h.starts_with('#')) else { continue };
+        let hex = hex.to_lowercase();
+        swatch_css(&hex);
+        let b = gtk::Button::builder().label(i.to_string()).build();
+        b.add_css_class("gn-swatch");
+        b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
+        let (w2, id2) = (w.clone(), id.to_string());
+        b.connect_clicked(move |_| { if let Some(a) = w2.upgrade() { value(&a, &id2, json!(format!("chip:{}", i))); } });
+        fb.append(&b);
+    }
+    col.append(&fb);
+    let acts = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    for (label, op) in [("Whole name", "whole"), ("Add at the end", "end")] {
+        let b = gtk::Button::with_label(label);
+        let (w2, id2, state) = (w.clone(), id.to_string(), state.clone());
+        b.connect_clicked(move |_| {
+            let (h, s, v) = state.get();
+            if let Some(a) = w2.upgrade() { value(&a, &id2, json!(format!("{}:{}", op, hsv_hex(h, s, v)))); }
+        });
+        acts.append(&b);
+    }
+    col.append(&acts);
+    r.set_child(Some(&col));
+    r.upcast()
 }
 
 /// The CSS of one swatch colour, added to the display once per colour.
