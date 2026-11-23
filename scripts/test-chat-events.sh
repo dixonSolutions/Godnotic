@@ -151,21 +151,19 @@ sleep 2
 T "screenshot events-feed.png"
 sleep 2
 TA "touch_chatlog_state"
-if grep -aq "^CHATLOG-TARGET log " "$d/t.ask" && grep -aq "^CHATLOG-TARGET clear " "$d/t.ask" && grep -aq "^CHATLOG-TARGET copy " "$d/t.ask"; then ok "tap: the feed has log, clear and copy icons"; else bad "tap: toolbar icons missing from the feed's targets: $(grep -a TARGET "$d/t.ask" | head -5 | tr '\n' ';')"; fi
+if ! grep -aq "^CHATLOG-TARGET \(log\|clear\|copy\|download\|share\) " "$d/t.ask" && grep -aq "^CHATLOG-TARGET row " "$d/t.ask"; then ok "tap: the feed in play has NO icon strip (lines only, tappable)"; else bad "tap: icons over plain gameplay or no rows: $(grep -a TARGET "$d/t.ask" | head -5 | tr '\n' ';')"; fi
 if grep -aq "^CHATLOG-TARGET name " "$d/t.ask"; then ok "tap: player names on the feed are targets"; else bad "tap: no name targets on the feed"; fi
-# every icon target is at least 44 dp: on this window 44 console units / conwidth
 w=${SIZE%x*}; h=${SIZE#*x}
-small=$(grep -a "^CHATLOG-TARGET \(log\|clear\|copy\|download\|share\) " "$d/t.ask" | awk -v w="$w" -v h="$h" '{ if ($6 * w < 43.5 || $7 * h < 43.5) print $2 }' | tr '\n' ' ')
-if [ -z "$small" ]; then ok "tap: every toolbar icon is a target of at least 44 px"; else bad "tap: toolbar targets under 44 px: $small"; fi
-
 [ -n "${QUICK:-}" ] && { T "screenshot events-feed2.png"; sleep 4; echo "quick: screenshots only"; exit 0; }
-# tap the log icon: the log opens
-read -r lx ly < <(grep -a "^CHATLOG-TARGET log " "$d/t.ask" | head -1 | awk '{print $4, $5}')
+# tap a feed line: the log opens (the only way in during play besides the pause menu)
+read -r lx ly < <(grep -a "^CHATLOG-TARGET row " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $lx $ly" "defer 0.1 \"touch_chatlog_ptr up $lx $ly\"" "defer 1 \"screenshot events-log.png\""
 sleep 3
 TA "touch_chatlog_state"
-if [ "$(field "$d/t" panel)" = 1 ]; then ok "tap: a tap on the log icon opens the log"; else bad "tap: the log did not open: $(state "$d/t")"; fi
+if [ "$(field "$d/t" panel)" = 1 ]; then ok "tap: a tap on a feed line opens the log"; else bad "tap: the log did not open: $(state "$d/t")"; fi
 if grep -aq "^CHATLOG-TARGET close " "$d/t.ask" && grep -aq "^CHATLOG-TARGET chip 2 " "$d/t.ask"; then ok "tap: the log has close and filter targets"; else bad "tap: log header targets missing"; fi
+small=$(grep -a "^CHATLOG-TARGET \(close\|clear\|copy\|download\|share\) " "$d/t.ask" | awk -v w="$w" -v h="$h" '{ if ($6 * w < 43.5 || $7 * h < 43.5) print $2 }' | tr '\n' ' ')
+if [ -z "$small" ] && grep -aq "^CHATLOG-TARGET share " "$d/t.ask"; then ok "tap: the log's icons (close, clear, copy, download, share) are targets of at least 44 px"; else bad "tap: log icon targets under 44 px or missing: $small"; fi
 # the engine-level finger path (what a finger does under ANY server's CSQC, stock included): a finger far from
 # the panel is taken only while the log is open, and a press outside the panel closes it
 TA "touch_chatlog_finger down 7 0.99 0.99"

@@ -1044,16 +1044,13 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	float areah = max((float)stock_lines * size, m->rowh * 2), top, ly, used = 0;
 	float pad = m->fs * 0.3f, iconw = m->fs * 1.1f + m->fs * 0.4f, textw;
 	float rowsh[TCL_FEED_MAX], rowsw[TCL_FEED_MAX];
-	float claim_top, claim_w;
-	float isz = max(m->fs * 1.5f, 18.0f * m->dp), pitch = max(isz * 1.5f, 40.0f * m->dp);
-	float tbx, tby, strip = isz * 1.24f + m->fs * 0.5f;
-	int j, show_strip;
+	float claim_top;
 
-	/* the toolbar belongs to the lines on show (and to a toast it just raised): once they have
-	 * faded or been cleared the strip goes with them, never alone over the game */
+	/* The feed is lines and nothing else: no icon strip over the game. The log (and its clear, copy,
+	 * download and share icons) opens from a tap on a line, the pause menu or touch_chatlog_open;
+	 * the icons live in the open log's header, and a toast shows where the lines are. */
 	n = TouchChatLog_FeedLines(&cl_log, mask, host.realtime, fade, idx, TCL_FEED_MAX);
-	show_strip = n > 0 || (tcl_toast[0] && host.realtime - tcl_toast_at < 1.8);
-	if (!show_strip)
+	if (n == 0 && !(tcl_toast[0] && host.realtime - tcl_toast_at < 1.8f))
 	{
 		TCL_Claim(0, 0, 0, 0);
 		return;
@@ -1062,36 +1059,9 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 		areah = bottom;
 	top = bottom - areah;
 	textw = max(w - iconw - pad * 2, m->fs * 8);
-	/* the toolbar is a strip of its own: above the box, or when the box is at the top of the
-	 * screen a header row inside it (the lines then get what is left): never on a message */
-	{
-		tcl_strip_t st;
-		if (show_strip)
-		{
-			TouchChatLog_Strip(bottom, areah, isz, m->fs, m->rowh, &st);
-			tby = st.tb_y + isz * 0.12f;
-			areah = st.lines_h;
-		}
-		else
-			tby = max(2.0f, top - strip);
-	}
-	top = bottom - areah;
-	pitch = min(pitch, max(isz * 1.3f, (w - pad) / (float)TCL_ICONS)); /* never wider than the box */
-	tbx = x + pad;
-	for (j = 0; j < TCL_ICONS && show_strip; j++)
-	{
-		static const int ic[TCL_ICONS] = {TCL_I_SHARE, TCL_I_DOWNLOAD, TCL_I_COPY, TCL_I_CLEAR, TCL_I_LOG};
-		static const int id[TCL_ICONS] = {TG_SHARE, TG_DOWNLOAD, TG_COPY, TG_CLEAR, TG_LOG};
-		float cx = tbx + isz * 0.5f + (float)(TCL_ICONS - 1 - j) * pitch;
-		float cy = tby + isz * 0.5f;
-		DrawQ_Fill(TCL_SnapX(m, cx - isz * 0.62f), TCL_SnapY(m, cy - isz * 0.62f), isz * 1.24f, isz * 1.24f, 0.02f, 0.04f, 0.08f, 0.5f, 0);
-		TCL_IconButton(m, ic[j], cx, cy, isz, id[j], 0.9f);
-	}
-	claim_top = tby - tcl_min_target * 0.3f;
-	claim_w = (float)TCL_ICONS * pitch + pad;
-	TCL_DrawToast(m, tbx + claim_w * 0.5f, tby - m->fs * 2.2f);
+	claim_top = top;
+	TCL_DrawToast(m, x + w * 0.5f, max(2.0f, top - m->fs * 2.2f));
 
-	/* the lines: newest at the bottom, as many as fit */
 	for (k = 0; k < n; k++)
 	{
 		const tcl_entry_t *e = TouchChatLog_Get(&cl_log, idx[k]);
@@ -1124,7 +1094,7 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 			TCL_AddTarget(x, ly, iconw + min(rowsw[k], m->fs * 10), min(rowsh[k], m->rowh + pad), TG_NAME, (int)idx[k]);
 		ly += rowsh[k];
 	}
-	TCL_Claim(x, claim_top, max(claim_w, w), bottom - claim_top);
+	TCL_Claim(x, claim_top, w, bottom - claim_top);
 }
 
 /* cl_screen.c, last thing drawn over the game: the open log is above every touch control (TURN, DUCK, the ammo,
