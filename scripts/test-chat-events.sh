@@ -178,8 +178,10 @@ T "touch_chatlog_finger down 5 $lx2 $ly2" "touch_chatlog_finger up 5 $lx2 $ly2"
 sleep 2
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" filter)" = 2 ]; then ok "finger: a finger tap on the Events chip is taken and acts"; else bad "finger: chip not pressed by a finger: $(state "$d/t")"; fi
-T "touch_chatlog_filter all"
+T "touch_chatlog_close" "touch_chatlog_open"
 sleep 1
+TA "touch_chatlog_state"
+if [ "$(field "$d/t" filter)" = 0 ]; then ok "filter: reopening starts on All"; else bad "filter: reopening did not select All: $(state "$d/t")"; fi
 # a tap on a name in the log: that player's actions
 read -r nx ny < <(grep -a "^CHATLOG-TARGET name " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $nx $ny" "defer 0.1 \"touch_chatlog_ptr up $nx $ny\"" "defer 1.5 \"screenshot events-popup.png\""

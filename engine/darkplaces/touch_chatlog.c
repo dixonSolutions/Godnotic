@@ -407,6 +407,8 @@ static void TCL_Open(int open)
 	if (open == tcl_panel)
 		return;
 	tcl_panel = open;
+	if (open)
+		tcl_filter = 0;
 	tcl_popup = 0;
 	tcl_ptr_down = 0;
 	memset(&tcl_sc, 0, sizeof(tcl_sc));
