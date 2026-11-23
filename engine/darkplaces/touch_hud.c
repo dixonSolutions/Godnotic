@@ -701,36 +701,55 @@ static void TouchHUD_TestView_f(cmd_state_t *cmd)
 
 static cvar_t touch_spectate_inputs = {CF_CLIENT | CF_ARCHIVE, "touch_spectate_inputs", "1", "show the followed player's inputs"};
 static int spec_test_mask = -1, spec_test_keyboard = -1;
-static void TouchHUD_TestInputs_f(cmd_state_t *cmd)
-{
- spec_test_mask = Cmd_Argc(cmd) > 1 ? atoi(Cmd_Argv(cmd, 1)) : -1;
- spec_test_keyboard = Cmd_Argc(cmd) > 2 ? atoi(Cmd_Argv(cmd, 2)) : -1;
- Con_Printf("SPECTATE_INPUTS mask=%d keyboard=%d\n", spec_test_mask, spec_test_keyboard);
-}
+static unsigned int spec_draw_count;
 static qbool spec_inputs_mask(int *mask)
 {
- prvm_prog_t *prog = CLVM_prog;
- mdef_t *g;
- int state = TouchUI_SpectatorState();
- if (!touch_spectate_inputs.integer || (state != 2 && state != 3)) return false;
- g = prog && prog->loaded ? PRVM_ED_FindGlobal(prog, "g_stat_PRESSED_KEYS") : NULL;
- if (!g || g->ofs < 0 || g->ofs >= prog->numglobals) return false;
- *mask = (g->type & ~DEF_SAVEGLOBAL) == ev_float ? (int)PRVM_GLOBALFIELDFLOAT(g->ofs) : PRVM_GLOBALFIELDVALUE(g->ofs)->_int;
- return true;
+	prvm_prog_t *prog = CLVM_prog;
+	mdef_t *g;
+	int state = TouchUI_SpectatorState();
+	if (!touch_spectate_inputs.integer || (state != 2 && state != 3))
+		return false;
+	g = prog && prog->loaded ? PRVM_ED_FindGlobal(prog, "g_stat_PRESSED_KEYS") : NULL;
+	if (!g || prog->numglobals <= 0 || g->ofs >= (unsigned int)prog->numglobals)
+		return false;
+	*mask = (g->type & ~DEF_SAVEGLOBAL) == ev_float ? (int)PRVM_GLOBALFIELDFLOAT(g->ofs) : PRVM_GLOBALFIELDVALUE(g->ofs)->_int;
+	return true;
 }
+
+static void TouchHUD_TestInputs_f(cmd_state_t *cmd)
+{
+	int mask = -1;
+	if (Cmd_Argc(cmd) > 1)
+	{
+		spec_test_mask = atoi(Cmd_Argv(cmd, 1));
+		spec_test_keyboard = Cmd_Argc(cmd) > 2 ? atoi(Cmd_Argv(cmd, 2)) : -1;
+	}
+	spec_inputs_mask(&mask);
+	Con_Printf("SPECTATE_INPUTS status=%d live=%d injected=%d keyboard=%d draws=%u\n", TouchUI_SpectateeStatus(), mask, spec_test_mask, spec_test_keyboard, spec_draw_count);
+}
+
 static char spec_saved_panel[128];
 static cvar_t *spec_panel;
 void TouchHUD_SpecInputsBegin(void)
 {
- int mask;
- spec_panel = NULL;
- if (!spec_inputs_mask(&mask)) return;
- spec_panel = Cvar_FindVar(&cvars_all, "hud_panel_pressedkeys", ~0);
- if (spec_panel) { dp_strlcpy(spec_saved_panel, spec_panel->string, sizeof(spec_saved_panel)); Cvar_SetQuick(spec_panel, "0"); }
+	int mask;
+	spec_panel = NULL;
+	if (!spec_inputs_mask(&mask))
+		return;
+	spec_panel = Cvar_FindVar(&cvars_all, "hud_panel_pressedkeys", ~0);
+	if (spec_panel)
+	{
+		dp_strlcpy(spec_saved_panel, spec_panel->string, sizeof(spec_saved_panel));
+		Cvar_SetQuick(spec_panel, "0");
+	}
 }
 void TouchHUD_SpecInputsEnd(void)
 {
- if (spec_panel) { Cvar_SetQuick(spec_panel, spec_saved_panel); spec_panel = NULL; }
+	if (spec_panel)
+	{
+		Cvar_SetQuick(spec_panel, spec_saved_panel);
+		spec_panel = NULL;
+	}
 }
 
 void TouchHUD_Init(void)
@@ -3639,37 +3658,91 @@ static void draw_chrome(float a)
 
 static void draw_spectate_inputs(void)
 {
- static const char *commands[] = {"+forward", "+back", "+moveleft", "+moveright", "+jump", "+crouch", "+fire", "+fire2"};
- static const char *labels[] = {"FIRE", "ALT", "JUMP", "CROUCH"};
- static const int bits[] = {64, 128, 16, 32};
- static int last_target = -999;
- int mask, i, target = TouchUI_SpectateeStatus();
- float u = ui_h() / 360.0f, x = 12*u, y = ui_h() - 92*u;
- qbool keyboard;
- if (!in_play() || cl.intermission || cursor_wanted() || TouchChatLog_PanelHasInput()) return;
- if (!spec_inputs_mask(&mask)) { if (spec_test_mask < 0 || !touch_spectate_inputs.integer) return; mask = spec_test_mask; }
- if (spec_test_mask >= 0) mask = spec_test_mask;
- if (target != last_target) { last_target = target; if (spec_test_mask < 0) mask = 0; }
- keyboard = spec_test_keyboard >= 0 ? spec_test_keyboard != 0 : VID_HasKeyboard();
- shapes_probe();
- if (keyboard) {
-  for (i = 0; i < 8; i++) {
-   int keys[2] = {-1, -1}; char buf[64]; const char *name;
-   Key_FindKeysForCommand(commands[i], keys, 2, -1);
-   if (keys[0] == K_MOUSE1) name = "M1";
-   else if (keys[0] == K_MOUSE2) name = "M2";
-   else if (keys[0] >= 0) name = Key_KeynumToString(keys[0], buf, sizeof(buf));
-   else name = "-";
-   widget_capsule(x + (i % 4)*35*u + 16*u, y + (i / 4)*25*u + 12*u, 15*u, 10*u, name, (mask & (1 << i)) != 0, false, 0.9f, C_ACCENT);
-  }
- } else {
-  float cx = x + 26*u, cy = y + 27*u, r = 23*u;
-  float dx = ((mask & 8) != 0) - ((mask & 4) != 0), dy = ((mask & 2) != 0) - ((mask & 1) != 0);
-  if (dx && dy) { dx *= 0.7071f; dy *= 0.7071f; }
-  widget_button(cx, cy, r, "", false, 0.9f, C_ACCENT);
-  widget_button(cx + dx*11*u, cy + dy*11*u, 9*u, "", dx || dy, 0.9f, C_ACCENT);
-  for (i = 0; i < 4; i++) widget_button(x + 67*u + (i % 2)*32*u, y + 13*u + (i / 2)*29*u, 13*u, labels[i], (mask & bits[i]) != 0, 0.9f, C_ACCENT);
- }
+	static const char *commands[] = {"+forward", "+back", "+moveleft", "+moveright", "+jump", "+crouch", "+fire", "+fire2"};
+	static const char *labels[] = {"FIRE", "ALT", "JUMP", "CROUCH"};
+	static const int bits[] = {64, 128, 16, 32};
+	static const float col[] = {1, 1, 0, 2, 3, 4, 5, 6};
+	static const float row[] = {0, 1, 1, 1, 1, 1, 1, 1};
+	int mask, i;
+	float in_l = 0, in_t = 0, in_r = 0, in_b = 0, density = 0;
+	float u = ui_h() / 360.0f, x, y, px2con;
+	const char *insets = Cvar_VariableString(&cvars_all, "_touch_safe_insets", ~0);
+	qbool keyboard;
+	if (!in_play() || cl.intermission || cursor_wanted() || TouchChatLog_PanelHasInput())
+		return;
+	if (!spec_inputs_mask(&mask))
+		return;
+	if (spec_test_mask >= 0)
+		mask = spec_test_mask;
+	if (insets && insets[0])
+		sscanf(insets, "%f %f %f %f %f", &in_l, &in_t, &in_r, &in_b, &density);
+	px2con = vid.mode.width > 0 ? ui_w() / vid.mode.width : 1.0f;
+	x = (in_l * px2con + ui_w() - in_r * px2con) * 0.5f;
+	y = min(ui_h() * 0.83f, ui_h() - in_b * px2con - 8 * u);
+	keyboard = spec_test_keyboard >= 0 ? spec_test_keyboard != 0 : VID_HasKeyboard();
+	shapes_probe();
+	spec_draw_count++;
+	if (keyboard)
+	{
+		for (i = 0; i < 8; i++)
+		{
+			int keys[MAX_KEYS], key;
+			char buf[64];
+			const char *name;
+			Key_FindKeysForCommand(commands[i], keys, MAX_KEYS, -1);
+			key = keys[0];
+			if (i >= 6)
+			{
+				int j;
+				for (j = 0; j < MAX_KEYS && keys[j] >= 0; j++)
+					if (keys[j] == K_MOUSE1 || keys[j] == K_MOUSE2)
+					{
+						key = keys[j];
+						break;
+					}
+			}
+			if (key == K_MOUSE1)
+				name = "M1";
+			else if (key == K_MOUSE2)
+				name = "M2";
+			else if (key >= 0)
+				name = Key_KeynumToString(key, buf, sizeof(buf));
+			else
+				name = "-";
+			if (name[0] >= 'a' && name[0] <= 'z' && !name[1])
+			{
+				buf[0] = name[0] - 'a' + 'A';
+				buf[1] = 0;
+				name = buf;
+			}
+			{
+				float cx = x + (col[i] - 3) * 23 * u;
+				float cy = y - (1 - row[i]) * 23 * u - 11 * u;
+				float fs = label_size(10 * u, 10 * u, name);
+				float width = label_width(fs, name);
+				if (width > 17 * u)
+					fs *= 17 * u / width;
+				DrawQ_RoundedBox(cx, cy, 10 * u, 10 * u, 3 * u, 0, (mask & (1 << i)) ? C_ACCENT[0] : C_SURFACE[0], (mask & (1 << i)) ? C_ACCENT[1] : C_SURFACE[1], (mask & (1 << i)) ? C_ACCENT[2] : C_SURFACE[2], 0.9f, 0);
+				DrawQ_RoundedBox(cx, cy, 10 * u, 10 * u, 3 * u, max(1.0f, u), (mask & (1 << i)) ? C_ACCENT[0] : C_RIM[0], (mask & (1 << i)) ? C_ACCENT[1] : C_RIM[1], (mask & (1 << i)) ? C_ACCENT[2] : C_RIM[2], 0.9f, 0);
+				shape_label(cx, cy, fs, name, C_INK, 0.9f);
+			}
+		}
+	}
+	else
+	{
+		float cx = x - 35 * u, cy = y - 26 * u, r = 23 * u;
+		float dx = ((mask & 8) != 0) - ((mask & 4) != 0);
+		float dy = ((mask & 2) != 0) - ((mask & 1) != 0);
+		if (dx && dy)
+		{
+			dx *= 0.7071f;
+			dy *= 0.7071f;
+		}
+		widget_button(cx, cy, r, "", false, 0.9f, C_ACCENT);
+		widget_button(cx + dx * 11 * u, cy + dy * 11 * u, 9 * u, "", dx || dy, 0.9f, C_ACCENT);
+		for (i = 0; i < 4; i++)
+			widget_button(x + 6 * u + (i % 2) * 32 * u, y - 40 * u + (i / 2) * 29 * u, 13 * u, labels[i], (mask & bits[i]) != 0, 0.9f, C_ACCENT);
+	}
 }
 
 void TouchHUD_Draw(void)

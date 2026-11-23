@@ -1314,7 +1314,7 @@ static int TouchUI_LayoutMouseSheet(touchui_sheet_t kind, float x, float y, floa
 	if (keys)
 		by = min(by, y + h - kb_h - bh - 6.0f);
 	by = bound(y, by, y + h - bh);
-	TouchUI_PushItem(out, &n, maxout, x + w - bw - 8.0f, by, bw, bh,
+	TouchUI_PushItem(out, &n, maxout, kind == TOUCHUI_SHEET_CHAT ? max(x, x + w * 0.86f - bw - 8.0f) : x + w - bw - 8.0f, by, bw, bh,
 		keys ? "HIDE KEYS" : "KEYBOARD", bh * 0.42f, TOUCHUI_STYLE_GLASS, TOUCHUI_ACT_KB_TOGGLE, 0);
 	if (kind == TOUCHUI_SHEET_CONSOLE) /* CLEAR beside it: the stock clear command */
 		TouchUI_PushItem(out, &n, maxout, x + w - bw - 8.0f - bw * 0.6f - 6.0f, by, bw * 0.6f, bh,
