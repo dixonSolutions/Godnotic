@@ -87,6 +87,12 @@ final class AndySUBridge {
     private boolean pendingNativeLive;
     /** How the staged release gets into this process (LiveApply), and the line that says so. */
     private LiveApply.How how = LiveApply.How.NONE;
+    /** Decides when the app confirms a trial the engine did not report on. */
+    private final AndySUState.TrialGate trialGate = new AndySUState.TrialGate();
+    /** What the last read of the core said about the running release's trial. */
+    private volatile boolean trialOpen;
+    private volatile boolean trialStuck;
+    private volatile long trialWaitMs;
     private String howWhy = "";
     /** What the staged slot changes against the running one, cached per staged release. */
     private LiveApply.Changes changes;
@@ -163,6 +169,12 @@ final class AndySUBridge {
                         return;
                     }
                     applyWanted = true;
+                    if (trialOpen && AndySUState.trialBlocksLive(true, how == LiveApply.How.HOST_LIVE, trialStuck)) {
+                        // The running version is still being confirmed: wait, then swap by itself.
+                        requestError = "";
+                        publish();
+                        return;
+                    }
                     if (!applySafe) {
                         // A match is running or loading: swapping the engine would end it.
                         requestError = "Update ready. It applies live when you are back in the menu.";
@@ -258,12 +270,15 @@ final class AndySUBridge {
             String release = status.optString("release", status.optString("id", ""));
             JSONObject core = confirmStableTrial(coreState());
             String pending = pendingRelease(core, r.installed);
+            // The host's apply_refused outlives the trial that caused it: it must not block the screen.
+            if ("apply_refused".equals(state)) {
+                state = AndySUState.settleApplyRefused(state, pending);
+                if (!pending.isEmpty()) release = pending;
+            }
             // A release whose engine and data already run here must be the one the next start
             // promotes, automatic updates or not: otherwise the next start goes back to the old one.
             if (core != null) syncNextStartRequest(pending, auto() || (!pending.isEmpty() && pending.equals(EngineSwap.liveRelease())));
-            String problem = "apply_refused".equals(state) ? AndySUState.applyRefusedMessage()
-                    : applyProblem(core, pending);
-            if (requestError.startsWith("Still confirming the current version")) requestError = "";
+            String problem = applyProblem(core, pending);
             r.message = requestError;
             if (!problem.isEmpty()) r.message = problem;
             // The host's status keeps saying "staged" after that release has committed.
@@ -437,7 +452,8 @@ final class AndySUBridge {
             return;
         }
         JSONObject core = coreState();
-        if (core == null || !core.isNull("trial")) {
+        if (core == null || (!core.isNull("trial")
+                && AndySUState.trialBlocksLive(true, how == LiveApply.How.HOST_LIVE, trialStuck))) {
             // Unknown state, or the running release is still being confirmed: a swap now would
             // be blamed on it. Settings shows why; the next poll tries again.
             announced = "";
@@ -486,7 +502,11 @@ final class AndySUBridge {
     private String applyLiveNow() {
         JSONObject core = coreState();
         if (core == null) return "the update state could not be read";
-        if (!core.isNull("trial")) return "the current version is still being confirmed";
+        if (!core.isNull("trial")
+                && AndySUState.trialBlocksLive(true, how == LiveApply.How.HOST_LIVE, trialStuck)) {
+            return trialStuck ? "AndySU has not confirmed the running version"
+                    : "the running version is still being confirmed";
+        }
         String pending = pendingRelease(core, AndySUCompat.payloadVersion());
         if (pending.isEmpty()) return "there is no staged update";
         if (how == LiveApply.How.HOST_LIVE) {
@@ -506,6 +526,17 @@ final class AndySUBridge {
         how = LiveApply.how(staged, shellUpdate, liveOn, pendingNativeLive, hostEntry, c, engineLive);
         String blocked = LiveApply.isLive(how) ? EngineSwap.liveBlockedReason(context) : null;
         howWhy = LiveApply.why(how, c, blocked, liveOn);
+        if (trialOpen && LiveApply.isLive(how)) {
+            boolean hostSwap = how == LiveApply.How.HOST_LIVE;
+            if (trialStuck && hostSwap) {
+                // The host refuses its own swap while the trial is open, and the trial will not
+                // close: Apply live cannot work, so the screen says why and offers Restart now.
+                how = LiveApply.How.RESTART;
+                howWhy = AndySUState.trialStuckText();
+            } else if (AndySUState.trialBlocksLive(true, hostSwap, trialStuck)) {
+                howWhy = AndySUState.trialWaitText(trialWaitMs);
+            }
+        }
     }
 
     /** What the staged slot changes against the slot the host runs, from both slot indexes. */
@@ -694,20 +725,49 @@ final class AndySUBridge {
     }
 
     /**
-     * An unconfirmed trial that this process has run stably is confirmed here, so a player who only
-     * uses menus (the engine's own gate never sees a world) is not stuck on "still confirming".
-     * A release that crashes dies before this long and is rolled back by the host as before.
+     * An unconfirmed trial that has run stably (by the time since it began, not since the process
+     * did) is confirmed here, so a player who only uses menus, or whose engine never reached a
+     * world, is not stuck. The engine's own healthy report is the normal way and usually gets
+     * there first. Several ways are tried in turn (AndySUState.TrialGate), each read back before
+     * the next, because an older or odd host can accept a call and keep the trial. A release that
+     * crashes dies before this long and is rolled back by the host as before.
      */
     private JSONObject confirmStableTrial(JSONObject core) {
-        if (core == null || core.isNull("trial")) return core;
-        long uptime = SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime();
-        if (!AndySUState.trialStable(true, uptime)) return core;
-        if (AndySUCompat.markHealthy()) {
-            Log.i(TAG, "Confirmed the stable trial after " + uptime / 1000 + "s");
-            JSONObject after = coreState();
-            if (after != null) return after;
+        long now = SystemClock.elapsedRealtime();
+        JSONObject trial = core == null ? null : core.optJSONObject("trial");
+        String key = "";
+        long age = -1;
+        if (core != null && !core.isNull("trial")) {
+            JSONObject current = core.optJSONObject("current");
+            long started = trial == null ? 0 : trial.optLong("started", 0);
+            key = (current == null ? "" : current.optString("id", "")) + "@" + started;
+            age = AndySUState.trialAgeMs(started, System.currentTimeMillis());
         }
-        return core;
+        boolean[] available = new boolean[AndySUState.CONFIRM_METHODS + 1];
+        if (!key.isEmpty()) {
+            for (int m = 1; m <= AndySUState.CONFIRM_METHODS; m++) available[m] = AndySUCompat.canConfirm(m);
+        }
+        int method = trialGate.poll(key, now, age, EngineSwap.swapInFlight(), available);
+        JSONObject result = core;
+        if (method != 0) {
+            boolean went = AndySUCompat.confirmTrial(method, hostRoot.getPath());
+            Log.i(TAG, "Confirming the running release (way " + method + (went ? ", accepted" : ", failed")
+                    + ", try " + trialGate.attempts() + ")");
+            if (went) {
+                // The host commits on its main thread: give it a moment before reading back.
+                try {
+                    Thread.sleep(150);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                JSONObject after = coreState();
+                if (after != null) result = after;
+            }
+        }
+        trialOpen = result != null && !result.isNull("trial");
+        trialStuck = trialOpen && trialGate.stuck(now);
+        trialWaitMs = trialOpen ? trialGate.waitMs(now, age) : 0;
+        return result;
     }
 
     private String applyProblem(JSONObject core, String pending) {
@@ -725,7 +785,9 @@ final class AndySUBridge {
         }
         JSONObject core = confirmStableTrial(coreState());
         String pending = pendingRelease(core, AndySUCompat.payloadVersion());
-        String problem = AndySUState.applyProblem(core != null, core != null && !core.isNull("trial"), pending, "");
+        // An open trial does not stop Restart now: it is the way out when the host will not
+        // confirm. The host promotes the pending release once the new start has confirmed.
+        String problem = AndySUState.applyProblem(core != null, false, pending, "");
         if (problem.isEmpty() && pending.isEmpty()) problem = "AndySU has no staged update to apply.";
         if (!problem.isEmpty()) {
             requestError = problem;
