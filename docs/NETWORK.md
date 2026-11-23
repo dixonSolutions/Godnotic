@@ -980,3 +980,15 @@ before the precache lists), so they are in the first fragment.
   Kept as `maps/<map>.png` for the next visit (`touch_joinshot_early 0` = off).
 - Connect topic: `dl_file`, `dl_files_done`, `dl_files_total`, `dl_all_bytes`, `dl_all_total`,
   `sig_bytes` (docs/FRONTEND_BRIDGE.md).
+
+### 1289 q1android: a resume against a server that ignores Range
+A server whose HTTP host ignores `Range` (Python's `http.server`, the Quake 1 server's pack host) answers a
+resumed request with `200` and the whole file. libcurl then fails the transfer with error 33
+(`CURLE_RANGE_ERROR`) before it writes a byte. A partial pack on disk (an app killed mid-download, a failed
+attempt, a download started by `touch_early_downloads`) was resumed from the same offset by every retry, so
+all six tries failed identically and the join went on without the pack: no HUD pictures, textures, models.
+`TouchCurl_Ended` now empties the file and drops its `.meta` on error 33, and the retry starts at byte 0.
+A fresh download from such a server was already safe: the parallel pieces need `206` from every extra
+connection (`TC_Write`, `TouchCurl_Frame`) and otherwise leave the stock transfer alone. Test:
+`scripts/test-curl-norange.sh <engine> <basedir>` (before: error 33 on every try, file stays at the partial;
+after: the whole file, identical to the source).
