@@ -75,8 +75,10 @@ class TableRows(ctx: Context) : LinearLayout(ctx) {
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val d = resources.displayMetrics.density
-        val rowPx = Math.round(CardTags.tableRowDp(MeasureSpec.getSize(wSpec) / d) * d)
-        val avail = if (MeasureSpec.getMode(hSpec) == MeasureSpec.UNSPECIFIED) rowPx * CardTags.UNBOUNDED_ROWS else MeasureSpec.getSize(hSpec)
+        val natural = Math.round(CardTags.tableRowDp(MeasureSpec.getSize(wSpec) / d) * d)
+        val unbounded = MeasureSpec.getMode(hSpec) == MeasureSpec.UNSPECIFIED
+        val avail = if (unbounded) natural * CardTags.UNBOUNDED_ROWS else MeasureSpec.getSize(hSpec)
+        val rowPx = if (unbounded) natural else CardTags.rowPxFor(avail, natural, d)
         shown = CardTags.fitRows(avail, rowPx, childCount)
         for (i in 0 until childCount) {
             val c = getChildAt(i)
@@ -104,7 +106,18 @@ object CardTags {
     }
 
     /** The height (dp) of one server line on a card [widthDp] wide. */
-    fun tableRowDp(widthDp: Float): Float = if (widthDp >= 440f) 52f else if (widthDp >= 320f) 46f else if (widthDp >= 220f) 40f else 34f
+    fun tableRowDp(widthDp: Float): Float = if (widthDp >= 440f) 52f else if (widthDp >= 320f) 44f else if (widthDp >= 220f) 36f else 32f
+
+    /** The shortest a server line gets (dp), when the card is too short for [WANTED_ROWS] at their usual height. */
+    const val MIN_ROW_DP = 30f
+    /** Lines the card tries to show before shrinking their height. */
+    const val WANTED_ROWS = 10
+
+    /** A line's height (px): [naturalPx], or less (down to [MIN_ROW_DP]) so that [WANTED_ROWS] lines fit [availPx]. */
+    fun rowPxFor(availPx: Int, naturalPx: Int, density: Float): Int {
+        if (availPx / WANTED_ROWS >= naturalPx) return naturalPx
+        return maxOf(Math.round(MIN_ROW_DP * density), availPx / WANTED_ROWS).coerceAtMost(naturalPx)
+    }
 
     /** How many whole lines of [rowPx] fit [availPx] (at most [have]; 0 when not even one fits). */
     fun fitRows(availPx: Int, rowPx: Int, have: Int): Int =

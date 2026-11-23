@@ -811,6 +811,7 @@ class ViewRenderer(
     private fun card(id: String, props: Map<String, Any?>, hero: Boolean): Entry {
         if (hero) return heroCard(id, props)
         val c = Kit.card(ctx, clickable = true, radiusDp = 16f)
+        if (id == "home/tiles/mp") c.tag = "mp-card" // FitBody gives it the taller allowance
         // photo cards: the picture on top; section cards: an icon slot beside the text
         val img = RoundImage(ctx, 0f)
         val bar = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -2187,6 +2188,10 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
     /** Home, fitted: the cells share the exact height given (see FitBody); [stack]: one column. */
     var fill = false
     var stack = false
+    /** Home, landscape: the child at [tallIndex] (among the visible ones) is [tallH] tall, the others [otherH], top-aligned. */
+    var tallIndex = -1
+    var tallH = 0
+    var otherH = 0
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val width = MeasureSpec.getSize(wSpec)
         if (wrap) {
@@ -2209,9 +2214,13 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
         if (exactH) {
             val rows = max(1, (visible + cols - 1) / cols)
             val ch = max(0, (MeasureSpec.getSize(hSpec) - gap * (rows - 1)) / rows)
+            var vi = 0
             for (i in 0 until childCount) {
                 val c = getChildAt(i)
-                if (c.visibility != GONE) c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
+                if (c.visibility == GONE) continue
+                val h = if (tallIndex >= 0 && !stack) (if (vi == tallIndex) tallH else otherH) else ch
+                c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+                vi++
             }
             setMeasuredDimension(width, MeasureSpec.getSize(hSpec))
             return
@@ -2254,7 +2263,7 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             for ((k, c) in row.withIndex()) {
                 val x = k * (cw + gap)
                 val left = if (rtl) width - x - cw else x
-                c.layout(left, y, left + cw, y + rowH)
+                c.layout(left, y, left + cw, y + (if (tallIndex >= 0 && fill && !stack) c.measuredHeight else rowH))
             }
             y += rowH + gap
             i += cols

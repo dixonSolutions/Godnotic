@@ -62,4 +62,36 @@ class HomeFitTest {
             assertTrue("$w x $h: lines never overflow", n * rowPx <= avail)
         }
     }
+
+    /** The lines the server-list card holds in a plan: its height less the overhead, at the row height it picks. */
+    private fun mpLines(p: HomeFit.Plan, w: Int, d: Float, gap: Int): Int {
+        val cardW = (w - 2 * gap) / 3
+        val natural = Math.round(CardTags.tableRowDp(cardW / d) * d)
+        val avail = p.mpH - (HomeFit.MP_OVERHEAD_DP * d).toInt()
+        return CardTags.fitRows(avail, CardTags.rowPxFor(avail, natural, d), CardTags.MAX_ROWS)
+    }
+
+    @Test fun theServerCardShowsTenLinesOnTheOwnersTablet() {
+        val d = 2f
+        val gap = (9 * d).toInt()
+        // the whole 1920x1200 screen, and the page's real box (less the bottom bar and padding)
+        for ((w, h) in listOf(1920 to 1200, 1872 to 960)) {
+            val p = HomeFit.plan(w, h, gap, 3, true, d)
+            assertTrue("$w x $h: ${mpLines(p, w, d, gap)} lines in $p", mpLines(p, w, d, gap) >= 10)
+            assertTrue("fits", p.top >= 0 && p.top + p.tilesTop + p.tilesH <= h)
+            assertTrue("banner stays", p.bannerH >= (h * HomeFit.MP_MIN_BANNER).toInt())
+            // the other cards keep their size (never above 1.25 of their width)
+            val plain = HomeFit.plan(w, h, gap, 3)
+            assertTrue("other cards: ${p.cardH} vs ${plain.tilesH}", p.cardH >= plain.tilesH && p.cardH <= ((w - 2 * gap) / 3 * 1.25f).toInt())
+        }
+        // without the server card (or upright) nothing changes
+        assertEquals(HomeFit.plan(1920, 1200, 18, 3).tilesH, HomeFit.plan(1920, 1200, 18, 3, false, d).tilesH)
+        assertEquals(HomeFit.plan(1200, 1920, 18, 3).tilesH, HomeFit.plan(1200, 1920, 18, 3, true, d).tilesH)
+    }
+
+    @Test fun aShortCardShrinksItsLinesRatherThanShowingFewer() {
+        assertEquals(88, CardTags.rowPxFor(2000, 88, 2f))
+        assertEquals(60, CardTags.rowPxFor(600, 88, 2f))
+        assertEquals(60, CardTags.rowPxFor(300, 88, 2f)) // never below the minimum
+    }
 }
