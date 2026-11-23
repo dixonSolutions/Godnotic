@@ -57,8 +57,14 @@ REAL public server (95.217.62.206:26000 afterslime, "[EU] futa.tips", stock map,
 Defects found on the emulator and fixed: the log's close X was under the HUD's info button (panel now starts below the HUD stats/top row, H*0.21); the panel was narrower than needed (the console-button avoidance also fired when the button was above the panel; now only on a real overlap).
 Cause of the owner's "icons do nothing": fingers were handled by the QuakeC layer from a rect it read back from the engine; now the engine takes a finger on the strip, the feed's names and the open log itself, in `TouchVote_Finger` before any CSQC (works for the stock CSQC too).
 
-## Stray icon strip (owner report on v1.2.323)
-Cause: origin/main (chatpolish, `TouchChatLog_IconsShown`) and this branch both drew the trash/copy/download/share strip whenever the log held ANY line, so after the feed's lines faded it floated alone over the game. Fixed here: the strip is drawn only with feed lines on show (or a toast it just raised) and goes with them; it also stops taking touches (claim cleared). The log stays reachable from the pause menu's "Chat log" button, a tap on a feed line, `touch_chatlog_open`. Desktop frame with an empty feed: build/chatev-shots/events-empty.png (no strip). Emulator frames for this case: see below if present, otherwise NOT yet run.
+## Stray icon strip (owner report on v1.2.323; dash found it in main: `TouchChatLog_IconsShown`, commits 20ca67d9, 25015175, 9ff1af6d, 4bfede6d)
+Main drew clear/copy/download/share whenever the log held ANY line (always, in a live match). Now there is NO icon strip over the game at all: the feed is lines only. The icons exist only in the open log's header (a "selected message" is the name/actions popup inside the log). The log opens from a tap on a feed line, the pause menu's "Chat log" button, or `touch_chatlog_open`; X, Back or a tap outside closes it.
+Emulator, REAL public server (atelier, "Player#5"), touch HUD, `adb shell input tap` (frames: build/chatev-shots/emu3/):
+1. match with chat/event lines and NO icons: s3.jpg (feed lines only), v1.jpg (same at 2400x1080, wm size/density 420).
+2. tap a feed line: the log opens, compact, below the HUD stats, nothing drawn over it: s4.jpg. PASS
+3. first-tap icons in the log header: copy u-copy.jpg (Android clipboard preview), download u-download.jpg (toast "Saved godnotic-chat-....txt to Downloads"), share u-share.jpg (share sheet; u-after-share.jpg after Back), clear u-clear.jpg ("No messages or events yet"). All PASS on the first tap.
+4. X: log closed, no icons left: u-closed.jpg. PASS
+Desktop 1920x1200 and 2400x1080 (build/chatev-shots/phone/): 31/31 checks at both; the empty-feed frame has no strip.
 
 ## Other fixes since the first emulator run
 - The log is drawn last (cl_screen.c `TouchChatLog_DrawOverlay`) so it is above TURN, DUCK, KEEP, the ammo, the weapon rail and every other touch control; it claims every finger while open.
@@ -68,5 +74,6 @@ Cause: origin/main (chatpolish, `TouchChatLog_IconsShown`) and this branch both 
 ## NOT verified
 - Moving/aiming with the other thumb while tapping (adb input is single touch), and that nothing underneath fires: the claimed finger never reaches the control table (by construction), not observed with two fingers.
 - Tablet hardware and portrait phone on a device; the emulator was 1920x1200 landscape only (desktop frames cover 720x1280 and 960x540).
-- The re-fix of the panel position (H*0.21, width) is checked on desktop only, not re-run on the emulator.
+- A phone-size OPEN-log frame on the emulator (the feed had faded before I could tap it): covered by the desktop 2400x1080 frame build/chatev-shots/phone/log-2400x1080.jpg and the closed phone frame emu3/v1.jpg.
+- A chat message arriving from another human and fading: the real server's own join/leave lines were used.
 - Pins: `components.json` was not updated (component-push.sh is the coordinator's); engine/ differs from the pins.
