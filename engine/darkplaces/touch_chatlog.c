@@ -902,6 +902,8 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	pyt = int_ + edge;
 	if (key_dest == key_message)
 		pyt = max(pyt, TouchUI_SheetHeaderHeight(H) + 4.0f * m->dp); /* the typing sheet's KEYBOARD tab sits in the top right */
+	if (vid_touchscreen.integer)
+		pyt = max(pyt, H * 0.165f); /* the touch HUD's top row (info, console, MENU, SCORE, CHAT) stays reachable: the panel starts below it */
 	pw = W - pxl - inr - edge;
 	ph = H - pyt - inb - edge;
 	if (TouchChatLog_PanelHasInput())
@@ -1041,14 +1043,18 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	textw = max(w - iconw - pad * 2, m->fs * 8);
 	/* the toolbar is a strip of its own: above the box, or when the box is at the top of the
 	 * screen a header row inside it (the lines then get what is left): never on a message */
-	if (cl_log.count > 0 && top < strip)
 	{
-		tby = top + isz * 0.12f;
-		areah = max(m->rowh, areah - strip);
-		top = bottom - areah;
+		tcl_strip_t st;
+		if (cl_log.count > 0)
+		{
+			TouchChatLog_Strip(bottom, areah, isz, m->fs, m->rowh, &st);
+			tby = st.tb_y + isz * 0.12f;
+			areah = st.lines_h;
+		}
+		else
+			tby = max(2.0f, top - strip);
 	}
-	else
-		tby = max(2.0f, top - strip + isz * 0.12f);
+	top = bottom - areah;
 	pitch = min(pitch, max(isz * 1.3f, (w - pad) / (float)TCL_ICONS)); /* never wider than the box */
 	tbx = x + pad;
 	for (j = 0; j < TCL_ICONS && cl_log.count > 0; j++) /* nothing to act on in an empty log */

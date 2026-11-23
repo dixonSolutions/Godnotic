@@ -803,4 +803,31 @@ static void TouchChatLog_IconPixels(int icon, int px, unsigned char *rgba)
 		}
 }
 
+
+// The toolbar strip of the chat feed. The box is [bottom - areah, bottom]; the strip goes
+// above it, or, when there is no room above (the box is at the top of the screen), is a header
+// row inside it and the lines get what is left. Out: the strip's top (tb_y) and height
+// (tb_h), and the box's lines area [lines_top, bottom]. The strip and the lines never overlap.
+typedef struct { float tb_y, tb_h, lines_top, lines_h; } tcl_strip_t;
+static inline void TouchChatLog_Strip(float bottom, float areah, float isz, float fs, float rowh, tcl_strip_t *o)
+{
+	float top = bottom - areah;
+	o->tb_h = isz * 1.24f;
+	if (top < o->tb_h + fs * 0.5f)
+	{
+		o->tb_y = top < 0 ? 0 : top;
+		o->lines_top = o->tb_y + o->tb_h + fs * 0.25f;
+		if (bottom - o->lines_top < rowh)
+			o->lines_top = bottom - rowh; /* tiny box: the lines win a row, the strip stays above them */
+		if (o->lines_top - o->tb_h < 0)
+			o->tb_y = 0;
+	}
+	else
+	{
+		o->tb_y = top - o->tb_h - fs * 0.25f;
+		o->lines_top = top;
+	}
+	o->lines_h = bottom - o->lines_top;
+}
+
 #endif
