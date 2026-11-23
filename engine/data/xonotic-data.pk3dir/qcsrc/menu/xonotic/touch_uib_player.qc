@@ -20,7 +20,7 @@
 // own delete button.
 
 const int UIB_PM_MAX = 96;
-string UIB_PMKeypad();   // below
+void UIB_PMKeypad();   // below
 
 const float UIB_PM_NAME_DELAY = 0.8;
 string uib_name_pending;
@@ -135,7 +135,7 @@ void UIB_PlayerPage()
 		uib_j("value", uib_qv(nm));   // verbatim: the field shows and edits the codes and glyphs themselves
 		uib_s("kind", "name");
 		uib_f("maxLength", UIB_PM_NAME_MAX);
-		uib_j("keypad", UIB_PMKeypad());
+		UIB_PMKeypad();   // pushes the key groups onto this field's `keypad`
 	UIB_Close();
 	UIB_Close();
 
@@ -316,13 +316,15 @@ string UIB_PMKeyJ(string text, string colour)
 	return strcat("{\"text\":", uib_qv(text), "}");
 }
 
-string UIB_PMKeypad()
+// A QuakeC temporary string holds 4095 bytes, which the whole keypad passes, so each group is its
+// own string and is pushed on its own (uib_push appends to the node's array prop).
+void UIB_PMKeypad()
 {
 	string cols = "";
 	for (int i = 0; i < 10; ++i)
 		cols = strcat(cols, (i ? "," : ""), UIB_PMKeyJ(strcat("^", ftos(i)), UIB_PMNameHex(i)));
-	cols = strcat(cols, ",", UIB_PMKeyJ("^xf80", "#ff8800"), ",", UIB_PMKeyJ("^x08f", "#0088ff"), ",", UIB_PMKeyJ("^x0f8", "#00ff88"),
-		",", UIB_PMKeyJ("^x80f", "#8800ff"), ",", UIB_PMKeyJ("^xf08", "#ff0088"), ",", UIB_PMKeyJ("^x8f0", "#88ff00"));
+	cols = strcat(cols, ",", UIB_PMKeyJ("^xf80", "#ff8800"), ",", UIB_PMKeyJ("^x08f", "#0088ff"), ",", UIB_PMKeyJ("^x0f8", "#00ff88"));
+	cols = strcat(cols, ",", UIB_PMKeyJ("^x80f", "#8800ff"), ",", UIB_PMKeyJ("^xf08", "#ff0088"), ",", UIB_PMKeyJ("^x8f0", "#88ff00"));
 	string faces = "", syms = "", font = "";
 	int n = strlen(CHARMAP);
 	for (int i = 0; i < n; ++i)
@@ -338,9 +340,8 @@ string UIB_PMKeypad()
 		else
 			syms = strcat(syms, (syms != "" ? "," : ""), key);
 	}
-	if (font != "")
-		syms = strcat(syms, ",", font);
-	return strcat("[{\"id\":\"colours\",\"label\":", uib_q(_("Colours")), ",\"kind\":\"colour\",\"keys\":[", cols, "]},",
-		"{\"id\":\"faces\",\"label\":", uib_q(_("Faces")), ",\"kind\":\"glyph\",\"keys\":[", faces, "]},",
-		"{\"id\":\"symbols\",\"label\":", uib_q(_("Symbols")), ",\"kind\":\"glyph\",\"keys\":[", syms, "]}]");
+	uib_push("keypad", strcat("{\"id\":\"colours\",\"label\":", uib_q(_("Colours")), ",\"kind\":\"colour\",\"keys\":[", cols, "]}"));
+	uib_push("keypad", strcat("{\"id\":\"faces\",\"label\":", uib_q(_("Faces")), ",\"kind\":\"glyph\",\"keys\":[", faces, "]}"));
+	// the symbols and then the game font's own glyphs: two pushes would make two groups, so the font keys are appended to the symbols
+	uib_push("keypad", strcat("{\"id\":\"symbols\",\"label\":", uib_q(_("Symbols")), ",\"kind\":\"glyph\",\"keys\":[", syms, (font != "" ? strcat(",", font) : ""), "]}"));
 }
