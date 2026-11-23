@@ -87,8 +87,18 @@ static void test_typing(void)
 	CHECK(!strcmp(o, "A, B and 3 others are typing\xE2\x80\xA6"), "five: %s", o);
 }
 
+static void test_chatname(void)
+{
+	char n[64];
+	CHECK(TouchMention_ChatName("^7\x01^xf80spec^7: hi good luck", n, sizeof(n)) && !strcmp(n, "spec"), "plain chat: '%s'", n);
+	CHECK(TouchMention_ChatName("^7^3(team) ^1Bonnie Boo^7: gg", n, sizeof(n)) && !strcmp(n, "Bonnie Boo"), "team chat with a space in the name: '%s'", n);
+	CHECK(!TouchMention_ChatName("^7Tester connected", n, sizeof(n)), "a join line has no speaker");
+	CHECK(!TouchMention_ChatName("^7: nobody", n, sizeof(n)), "empty name");
+}
+
 int main(void)
 {
+	test_chatname();
 	test_strip();
 	test_token();
 	test_filter();
