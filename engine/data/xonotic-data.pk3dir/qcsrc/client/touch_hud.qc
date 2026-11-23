@@ -337,8 +337,8 @@ const float TOUCH_WEPLIST_SCALE_MAX = 2.4;
 // Of the screen height: the most a strip may take, and the band it stays in,
 // from below the top row of pills (MENU, CHAT and the engine's vote chip at
 // the end of it) to near the bottom edge.
-const float TOUCH_WEPLIST_FIT       = 0.83;
-const float TOUCH_WEPLIST_MARGIN_TOP = 0.13;
+const float TOUCH_WEPLIST_FIT       = 0.77;
+const float TOUCH_WEPLIST_MARGIN_TOP = 0.19;
 const float TOUCH_WEPLIST_MARGIN    = 0.04;
 // The grip's touch area, as a share of the short axis: a 12-unit grip is a
 // sliver, so it reaches below the plate to a finger's width.
@@ -402,12 +402,12 @@ void Touch_Hud_DrawWeaponRow(vector center, vector half, float u, Weapon wep, bo
 	float alpha)
 {
 	float pad = TOUCH_HUD_WEP_PAD * u;
-	float num = TOUCH_FONT_READOUT_SM * 0.8 * u;
+	float num = TOUCH_FONT_READOUT_SM * 1.0 * u;
 	float num_slot = Touch_Shape_LabelWidth(num, "9");
 	float left = center.x - half.x + pad;
 
 	Touch_Shape_LabelAligned(eX * (left + num_slot) + eY * center.y, num,
-		ftos(wep.impulse), 1, TOUCH_C_INK, alpha * TOUCH_A_INK * 0.7);
+		ftos(wep.impulse), 1, TOUCH_C_INK, alpha * TOUCH_A_INK * 0.9);
 
 	float icon_left = left + num_slot + pad;
 	float icon_right = center.x + half.x - pad;
@@ -420,19 +420,17 @@ void Touch_Hud_DrawWeaponRow(vector center, vector half, float u, Weapon wep, bo
 // as part of the plate, there to say the strip can be pulled.
 void Touch_Hud_DrawWeaponGrip(vector center, float u, bool held, float alpha)
 {
-	vector half = eX * (TOUCH_HUD_WEP_W * 0.2 * u) + eY * max(0.6, 0.7 * u);
+	// One pill, the drag handle of a bottom sheet: wide enough to see and to catch a thumb.
+	vector half = eX * (TOUCH_HUD_WEP_W * 0.2 * u) + eY * max(1.2, 1.5 * u);
 	vector rgb = held ? TOUCH_C_ACCENT_LIGHT : TOUCH_C_INK;
-	float a = alpha * (held ? TOUCH_A_RIM_ACTIVE : TOUCH_A_INK * 0.35);
-	vector gap = eY * (2.2 * u);
+	float a = alpha * (held ? TOUCH_A_RIM_ACTIVE : TOUCH_A_INK * 0.55);
 	if (!Touch_Shape_Ready())
 	{
-		drawfill_builtin(center - gap - half, half * 2, rgb, a, DRAWFLAG_NORMAL);
-		drawfill_builtin(center + gap - half, half * 2, rgb, a, DRAWFLAG_NORMAL);
-		Touch_DebugAddFills(2);
+		drawfill_builtin(center - half, half * 2, rgb, a, DRAWFLAG_NORMAL);
+		Touch_DebugAddFills(1);
 		return;
 	}
-	Touch_Shape_Capsule(center - gap, half, rgb, a);
-	Touch_Shape_Capsule(center + gap, half, rgb, a);
+	Touch_Shape_Capsule(center, half, rgb, a);
 }
 
 // The grip is being dragged by a finger (Touch_Hud_GripBegin .. _GripEnd).
@@ -484,7 +482,7 @@ void Touch_Hud_GripEnd(void)
 void Touch_Hud_DrawNadeRow(vector at, vector row_half, float u, float r, int state, float alpha)
 {
 	float pad = TOUCH_HUD_WEP_PAD * u;
-	float num = TOUCH_FONT_READOUT_SM * 0.8 * u;
+	float num = TOUCH_FONT_READOUT_SM * 1.0 * u;
 	float num_slot = Touch_Shape_LabelWidth(num, "9");
 	float left = at.x - row_half.x + pad;
 	float ink = (state == 3) ? TOUCH_A_INK * 0.25 : TOUCH_A_INK;
@@ -515,7 +513,7 @@ void Touch_Hud_DrawNadeRow(vector at, vector row_half, float u, float r, int sta
 void Touch_Hud_DrawHookRow(vector at, vector row_half, float u, float r, int state, float alpha)
 {
 	float pad = TOUCH_HUD_WEP_PAD * u;
-	float num = TOUCH_FONT_READOUT_SM * 0.8 * u;
+	float num = TOUCH_FONT_READOUT_SM * 1.0 * u;
 	float num_slot = Touch_Shape_LabelWidth(num, "9");
 	float left = at.x - row_half.x + pad;
 	float ink = (state == 3) ? TOUCH_A_INK * 0.25 : ((state == 2) ? TOUCH_A_INK : TOUCH_A_INK * 0.55);
@@ -564,8 +562,12 @@ void Touch_Hud_DrawWeapons(float alpha)
 	// Common Region): this is a single inventory, not nine loose badges, and it is
 	// also the difference between two rounded rects and eleven. Each rounded rect
 	// is nine draws, so per-slot plates put the overlay at 175 draw calls.
+	// A container you can see: a darker plate with a thin rim (the glass plate alone was
+	// near invisible over a bright wall), the same on the engine HUD (touch_hud.c).
 	Touch_Shape_RRect(center, eX * (w * 0.5 + pad) + eY * (plate_h * 0.5), r + pad,
-		TOUCH_C_SURFACE, alpha * TOUCH_A_SURFACE * Touch_GlassBody(false));
+		TOUCH_C_SURFACE, alpha * 0.66);
+	Touch_Shape_RRectRing(center, eX * (w * 0.5 + pad) + eY * (plate_h * 0.5), r + pad, max(1, 1.1 * u),
+		TOUCH_C_INK, alpha * 0.22);
 
 	entity wepent = viewmodels[0];
 	WepSet owned = STAT(WEAPONS);

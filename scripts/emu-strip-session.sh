@@ -11,9 +11,9 @@ PKG=io.github.dixonsolutions.godnotic.mplist
 APK=$ROOT/android/app/build/outputs/apk/debug/app-debug.apk
 EXT=/sdcard/Android/data/$PKG/files
 DATA=$ROOT/.suite-base/data
-OUT=$ROOT/build; mkdir -p "$OUT"
+OUT=$ROOT/build/emu-$(date +%H%M); mkdir -p "$OUT"
 PHASES=${PHASE:-a,b,c}
-SERVER_STOCK=${SERVER_STOCK:-72.205.209.239:26000}; SERVER_HOOK=${SERVER_HOOK:-66.42.118.210:26000}
+SERVER_STOCK=${SERVER_STOCK:-147.135.209.141:26001}; SERVER_HOOK=${SERVER_HOOK:-159.195.48.75:26000}
 trap '"$G/emu-shot.sh" stop' EXIT
 log() { echo "[$(date +%T)] $*"; }
 shot() { # name
@@ -27,21 +27,25 @@ PY
 cmd() { # console line(s) to the running engine through the poll cfg (runs every 0.3 s until replaced)
   printf '%s\n' "$@" > "$OUT/.xtcmd.cfg"; $ADB push "$OUT/.xtcmd.cfg" $EXT/data/xtcmd.cfg > /dev/null
 }
-quiet_cfg() { printf '%s\n' 'set cl_touch_practice_pilot 0' 'set cl_touch_autoshoot 0' 'set cl_touch_aimassist 0' 'set cl_touch_ledgeguard 0' 'set cl_touch_autododge 0' 'set cl_welcome 0' 'set touch_always_autojoin 0' 'set cl_touch_hook_rescue 0' 'set cl_touch_nade_refire 25' 'set developer 0' 'alias xt_poll "exec xtcmd.cfg; defer 0.3 xt_poll"' 'xt_poll'; }
+quiet_cfg() { printf '%s\n' 'set cl_touch_practice_pilot 0' 'set cl_touch_autoshoot 0' 'set cl_touch_aimassist 0' 'set cl_touch_ledgeguard 0' 'set cl_touch_autododge 0' 'set cl_welcome 0' 'set cl_allow_uid2name 0' 'set touch_always_autojoin 0' 'set cl_touch_hook_rescue 0' 'set cl_touch_nade_refire 25' 'set developer 0' 'alias xt_poll "exec xtcmd.cfg; defer 0.3 xt_poll"' 'xt_poll'; }
 condump_get() { # file -> stdout
-  $ADB shell 'for d in '$EXT'/userdata/data '$EXT'/userdata/data/data; do [ -f $d/'$1' ] && cat $d/'$1'; done' | sed 's/\x1b\[[0-9;]*m//g'
+  $ADB shell "f=\$(find $EXT -name $1 2>/dev/null | head -1); [ -n \"\$f\" ] && cat \$f" | sed 's/\x1b\[[0-9;]*m//g'
 }
 launch() { # name "args"
-  $ADB shell am force-stop $PKG; sleep 2
+  $ADB shell am force-stop $PKG; $ADB shell input keyevent 3; sleep 2   # HOME: drop whatever settings screen is on top
+  $ADB shell settings put secure immersive_mode_confirmations confirmed
   quiet_cfg > "$OUT/.xtboot.cfg"; $ADB push "$OUT/.xtboot.cfg" $EXT/data/xtboot.cfg > /dev/null
   : > "$OUT/.xtcmd.cfg"; $ADB push "$OUT/.xtcmd.cfg" $EXT/data/xtcmd.cfg > /dev/null
   printf '%s\n' '+exec' 'xtboot.cfg' $2 > "$OUT/.xonotic.args"; $ADB push "$OUT/.xonotic.args" $EXT/xonotic.args > /dev/null
   $ADB shell am start -n $PKG/io.github.dixonsolutions.godnotic.GodnoticBootActivity > /dev/null
+  sleep 10; $ADB shell input tap 1321 285   # the system's "Viewing full screen" confirmation (first time only)
   log "launched $1"
 }
-join_play() { # waits, then joins the match
-  for t in 1 2 3 4 5 6; do cmd "touch_join spectate" "togglemenu 0"; sleep 4; done
-  cmd "touch_join auto"; sleep 8; cmd ""
+join_play() { # joins the match with real taps: JOIN on the spectator bar, then RESPAWN if dead
+  cmd "togglemenu 0"; sleep 2; cmd ""
+  for t in 1 2 3; do $ADB shell input tap 1798 1062; sleep 3; done   # JOIN
+  cmd "touch_join auto"; sleep 5; cmd ""
+  for t in 1 2 3; do $ADB shell input tap 1642 1061; sleep 2; done   # RESPAWN (when dead)
 }
 strip_info() { # -> sets X W0Y ROWH HOOKTOP HOOKBOT NADETOP NADEBOT N HOOK NADE
   rm -f "$OUT/.strip.txt"; $ADB shell 'rm -f '$EXT'/userdata/data/strip.txt '$EXT'/userdata/data/data/strip.txt' > /dev/null
@@ -54,11 +58,12 @@ SW=1920; SH=1200
 
 log "start emulator"; "$G/emu-shot.sh" start
 log "install"; timeout 120 $HOME/Android/Sdk/platform-tools/adb -s $ANDROID_SERIAL install -r "$APK" | tail -1
+"$G/emu-shot.sh" noupdate   # no self-update check (40 MB APK over the metered link, "Install unknown apps" loop)
 # the dirs must be the app's to write: let the app create files/ itself, then add ours inside (shell-made dirs gave EACCES)
 $ADB shell am start -n $PKG/io.github.dixonsolutions.godnotic.GodnoticBootActivity > /dev/null; sleep 8; $ADB shell am force-stop $PKG
 $ADB shell "ls -ld $EXT $EXT/data 2>&1; mkdir -p $EXT/data $EXT/userdata/data; chmod -R 777 $EXT 2>&1 | head -2; ls -ld $EXT/data"
 log "push data"
-for f in font-unifont-20261107.pk3 font-xolonium-20261107.pk3 xonotic-20261107-data.pk3 xonotic-20261107-maps.pk3 xonotic-20261107-xoncompat.pk3 xonotic-20261107-nexcompat.pk3; do
+for f in font-unifont-20261107.pk3 font-xolonium-20261107.pk3 xonotic-20261107-data.pk3 xonotic-20261107-maps.pk3 xonotic-20261107-music.pk3 xonotic-20261107-xoncompat.pk3 xonotic-20261107-nexcompat.pk3; do
   timeout 600 $HOME/Android/Sdk/platform-tools/adb -s $ANDROID_SERIAL push "$(readlink -f $DATA/$f)" $EXT/data/$f > /dev/null
 done
 for f in csprogs.dat menu.dat progs.dat; do timeout 120 $HOME/Android/Sdk/platform-tools/adb -s $ANDROID_SERIAL push "$ROOT/engine/data/xonotic-data.pk3dir/$f" $EXT/userdata/data/$f > /dev/null; done

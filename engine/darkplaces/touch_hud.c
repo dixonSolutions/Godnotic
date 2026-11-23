@@ -1301,8 +1301,8 @@ static float skin_pic_fit(cachepic_t *pic, float cx, float cy, float box_w, floa
 // Tallest the plate may be, and the band it stays inside, as parts of the
 // screen height: from below the top row of pills (MENU, CHAT and the vote
 // chip at the end of it, touch_vote.c) to near the bottom edge.
-#define WEP_FIT_H 0.83f
-#define WEP_MARGIN_TOP 0.13f
+#define WEP_FIT_H 0.77f
+#define WEP_MARGIN_TOP 0.19f
 #define WEP_MARGIN_Y 0.04f
 // The grip's touch area reaches at least this far down, as a part of the
 // screen's short side.
@@ -1502,9 +1502,12 @@ static void draw_weapon_strip(float a)
 	h = st.row_h;
 	w = st.row_w;
 	pad = st.pad;
-	num_fs = 12 * st.u * 0.8f;
+	num_fs = 12 * st.u;
 	num_slot = label_width(num_fs, "9");
-	draw_rrect(st.cx, st.cy, st.half_w, st.half_h, C_SURFACE, a * A_SURFACE * glass_body(false));
+	// A container you can see: a darker plate with a thin rim (the glass plate alone was
+	// near invisible over a bright wall), the same on the port's CSQC HUD (touch_hud.qc).
+	DrawQ_RoundedBox(st.cx, st.cy, st.half_w, st.half_h, TSTRIP_PAD * 2.5f * st.u, 0, C_SURFACE[0], C_SURFACE[1], C_SURFACE[2], a * 0.66f, 0);
+	DrawQ_RoundedBox(st.cx, st.cy, st.half_w, st.half_h, TSTRIP_PAD * 2.5f * st.u, max(1.0f, st.u * 1.1f), C_INK[0], C_INK[1], C_INK[2], a * 0.22f, 0);
 	for (i = 0; i < st.n; i++)
 	{
 		const wepdef_t *wd = &weapons[st.index[i]];
@@ -1516,9 +1519,9 @@ static void draw_weapon_strip(float a)
 		float icon_left, icon_right;
 		char num[8];
 		if (current)
-			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * 0.72f);
 		dpsnprintf(num, sizeof(num), "%d", wd->impulse);
-		shape_label_right(left + num_slot, y, num_fs, num, C_INK, a * A_INK * 0.7f);
+		shape_label_right(left + num_slot, y, num_fs, num, C_INK, a * A_INK * 0.9f);
 		icon_left = left + num_slot + pad;
 		icon_right = st.cx + w * 0.5f - pad;
 		if (!skin_pic_fit(skin_pic(wd->pic), (icon_left + icon_right) * 0.5f, y, icon_right - icon_left, h - pad * 2,
@@ -1535,7 +1538,7 @@ static void draw_weapon_strip(float a)
 		float icon_left = left + num_slot + pad, icon_right = st.cx + w * 0.5f - pad;
 		float ia = rs == TOUCH_HOOKROW_EMPTY ? A_INK * 0.25f : (rs == TOUCH_HOOKROW_HELD ? A_INK : A_INK * 0.55f);
 		if (rs == TOUCH_HOOKROW_HELD || role_owned(ROLE_HOOK))
-			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * 0.72f);
 		int wi;
 		const wepdef_t *hw = NULL;
 		for (wi = 0; wi < num_weapons; wi++)
@@ -1562,7 +1565,7 @@ static void draw_weapon_strip(float a)
 			DrawQ_Fill(st.cx - w * 0.5f, y - ah * 0.5f, w * t, ah, c[0], c[1], c[2], a * A_SURFACE_ACTIVE, 0);
 		}
 		else if (role_owned(ROLE_NADE))
-			draw_rrect(st.cx, y, w * 0.5f, ah * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+			draw_rrect(st.cx, y, w * 0.5f, ah * 0.5f, C_ACCENT, a * 0.72f);
 		if (bonus > 0)
 		{
 			char num[8];
@@ -1572,15 +1575,14 @@ static void draw_weapon_strip(float a)
 		if (!skin_pic_fit(skin_pic("nade_normal"), (icon_left + icon_right) * 0.5f, y, icon_right - icon_left, ah - pad * 2, a * ia))
 			shape_label((icon_left + icon_right) * 0.5f, y, num_fs, "NADE", C_INK, a * ia);
 	}
-	// The grip: two short lines across the middle of its band.
+	// The grip: one pill, the drag handle of a bottom sheet.
 	if (grip_shown())
 	{
 		float gy = st.grip_top + WEP_GRIP_H * st.u * 0.5f;
-		float lw = w * 0.36f, lh = max(1.0f, st.u * 1.2f), gap = st.u * 2.0f;
+		float lw = w * 0.4f, lh = max(2.0f, st.u * 3.0f);
 		qbool held_grip = role_owned(ROLE_WEPGRIP);
-		float ga = a * (held_grip ? A_INK : A_INK * 0.45f);
-		DrawQ_Fill(st.cx - lw * 0.5f, gy - gap - lh * 0.5f, lw, lh, C_INK[0], C_INK[1], C_INK[2], ga, 0);
-		DrawQ_Fill(st.cx - lw * 0.5f, gy + gap - lh * 0.5f, lw, lh, C_INK[0], C_INK[1], C_INK[2], ga, 0);
+		float ga = a * (held_grip ? A_INK : A_INK * 0.55f);
+		shape_capsule(st.cx, gy, lw * 0.5f, lh * 0.5f, held_grip ? C_ACCENT : C_INK, ga);
 	}
 }
 
