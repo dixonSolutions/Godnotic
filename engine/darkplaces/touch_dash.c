@@ -821,6 +821,10 @@ static void chip_set(touch_dash_chip_t *c, const char *label, float x_left, floa
 	c->hot = fabs(td.fx - c->x) <= c->hx && fabs(td.fy - c->y) <= c->hy;
 }
 
+#define DIR_ROW_Y 2.2f
+#define WEP_ROW_Y 4.2f
+#define ROW_LABEL_H 0.34f
+
 // Two rows above DASH: the direction, and the weapon. Their left edge stays right of the
 // chat log's icon row (the stock chat area docks four small icons at the screen's left), and
 // the rows are a full chip apart.
@@ -832,13 +836,13 @@ int TouchDash_Chips(touch_dash_chip_t *out, int max)
 		return 0;
 	left0 = max(td.bx - td.br, 0.14f * max(1.0f, vid_conwidth.value));
 	left = left0;
-	y = td.by - td.br * 2.1f;
+	y = td.by - td.br * DIR_ROW_Y;
 	for (i = 0; i < 3 && n < max; i++, n++)
 	{
 		chip_set(&out[n], dir_chips[i].label, left, y, hy, cl_touch_dash_dir.integer == dir_chips[i].dir);
 		left += 2 * out[n].hx + gap;
 	}
-	y = td.by - td.br * 3.4f;
+	y = td.by - td.br * WEP_ROW_Y;
 	left = left0;
 	for (i = 0; i < 5 && n < max; i++)
 	{
@@ -853,6 +857,22 @@ int TouchDash_Chips(touch_dash_chip_t *out, int max)
 		n++;
 	}
 	return n;
+}
+
+int TouchDash_RowLabels(touch_dash_rowlabel_t *out, int max)
+{
+	float left = max(td.bx - td.br, 0.14f * max(1.0f, vid_conwidth.value)), above = td.br * (0.5f + 0.3f);
+	if (!td.picker || max < 2)
+		return 0;
+	dp_strlcpy(out[0].text, "Direction", sizeof(out[0].text));
+	out[0].x = left;
+	out[0].y = td.by - td.br * DIR_ROW_Y - above;
+	out[0].size = td.br * ROW_LABEL_H;
+	dp_strlcpy(out[1].text, "Weapon", sizeof(out[1].text));
+	out[1].x = left;
+	out[1].y = td.by - td.br * WEP_ROW_Y - above;
+	out[1].size = td.br * ROW_LABEL_H;
+	return 2;
 }
 
 qbool TouchDash_PickerOpen(void)

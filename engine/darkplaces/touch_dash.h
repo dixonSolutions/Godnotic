@@ -38,6 +38,13 @@ typedef struct touch_dash_chip_s
 	qbool current;        // the choice in force
 	qbool hot;            // the finger is over it
 } touch_dash_chip_t;
+// A small caption above each picker row ("Direction", "Weapon"), left edge x, middle y, text height.
+typedef struct touch_dash_rowlabel_s
+{
+	char text[16];
+	float x, y, size;
+} touch_dash_rowlabel_t;
+int TouchDash_RowLabels(touch_dash_rowlabel_t *out, int max);
 qbool TouchDash_PickerOpen(void);
 int TouchDash_Chips(touch_dash_chip_t *out, int max);
 

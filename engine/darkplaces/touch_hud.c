@@ -232,15 +232,28 @@ static void shape_centered(cachepic_t *pic, float cx, float cy, float hx, float 
 		return;
 	if (Draw_IsPicLoaded(pic))
 		DrawQ_Pic(cx - hx, cy - hy, pic, hx * 2, hy * 2, rgb[0], rgb[1], rgb[2], alpha, 0);
-	else
-		DrawQ_Fill(cx - hx, cy - hy, hx * 2, hy * 2, rgb[0], rgb[1], rgb[2], alpha, 0);
+	else // Touch: no mask (headless, a basedir without gfx/touch): round, never a solid square behind a round button
+		DrawQ_RoundedBox(cx, cy, hx, hy, min(hx, hy), 0, rgb[0], rgb[1], rgb[2], alpha * 0.6f, 0);
 }
 // Discs, rings and capsules are geometry (DrawQ_RoundedBox): antialiased at any
 // size, and a border the same width all the way round. The masks are kept
 // for the soft shapes (glow, shadow).
 static void shape_disc(float cx, float cy, float r, const float *rgb, float a) { DrawQ_RoundedBox(cx, cy, r, r, r, 0, rgb[0], rgb[1], rgb[2], a, 0); }
-static void shape_glow(float cx, float cy, float r, const float *rgb, float a) { shape_centered(pic_disc_soft, cx, cy, r, r, rgb, a); }
-static void shape_shadow(float cx, float cy, float r, float a) { shape_centered(pic_shadow, cx, cy, r, r, C_SHADOW, a); }
+// Touch: the glow and the shade are stacked discs, not the soft masks: the masks drew as solid
+// squares behind every round button where their alpha is lost (Android, offscreen), and a
+// bright square behind a held DASH.
+static void shape_glow(float cx, float cy, float r, const float *rgb, float a)
+{
+	int i;
+	for (i = 0; i < 3; i++)
+		DrawQ_RoundedBox(cx, cy, r * (1.0f - 0.18f * i), r * (1.0f - 0.18f * i), r * (1.0f - 0.18f * i), 0, rgb[0], rgb[1], rgb[2], a * 0.4f, 0);
+}
+static void shape_shadow(float cx, float cy, float r, float a)
+{
+	int i;
+	for (i = 0; i < 3; i++)
+		DrawQ_RoundedBox(cx, cy, r * (1.0f - 0.08f * i), r * (1.0f - 0.08f * i), r * (1.0f - 0.08f * i), 0, C_SHADOW[0], C_SHADOW[1], C_SHADOW[2], a * 0.4f, 0);
+}
 static void shape_ring_stroke(float cx, float cy, float r, float stroke, const float *rgb, float a) { DrawQ_RoundedBox(cx, cy, r, r, r, stroke, rgb[0], rgb[1], rgb[2], a, 0); }
 static void shape_ring(float cx, float cy, float r, const float *rgb, float a) { shape_ring_stroke(cx, cy, r, r * W_RING_THIN, rgb, a); }
 
@@ -283,7 +296,12 @@ static void shape_capsule_from(cachepic_t *pic, float cx, float cy, float hx, fl
 static void shape_capsule(float cx, float cy, float hx, float hy, const float *rgb, float a) { DrawQ_RoundedBox(cx, cy, hx, hy, hy, 0, rgb[0], rgb[1], rgb[2], a, 0); }
 static void shape_capsule_ring_stroke(float cx, float cy, float hx, float hy, float stroke, const float *rgb, float a) { DrawQ_RoundedBox(cx, cy, hx, hy, hy, stroke, rgb[0], rgb[1], rgb[2], a, 0); }
 static void shape_capsule_ring(float cx, float cy, float hx, float hy, const float *rgb, float a) { shape_capsule_ring_stroke(cx, cy, hx, hy, hy * W_RING_THIN, rgb, a); }
-static void shape_capsule_shadow(float cx, float cy, float hx, float hy, float a) { shape_capsule_from(pic_shadow, cx, cy, hx, hy, C_SHADOW, a); }
+static void shape_capsule_shadow(float cx, float cy, float hx, float hy, float a)
+{
+	int i;
+	for (i = 0; i < 3; i++)
+		DrawQ_RoundedBox(cx, cy, hx * (1.0f - 0.03f * i), hy * (1.0f - 0.08f * i), hy * (1.0f - 0.08f * i), 0, C_SHADOW[0], C_SHADOW[1], C_SHADOW[2], a * 0.4f, 0);
+}
 
 static float label_width(float fs, const char *label)
 {
@@ -2838,6 +2856,12 @@ static void draw_dash_extras(float a)
 		widget_capsule(cx, cy - r * 1.45f, lhx, lhy, label, false, false, a * 0.85f, C_ACCENT);
 	}
 	n = TouchDash_Chips(chips, 10);
+	{
+		touch_dash_rowlabel_t rl[2];
+		int k, nl = TouchDash_RowLabels(rl, 2);
+		for (k = 0; k < nl; k++)
+			DrawQ_String(rl[k].x, rl[k].y - rl[k].size * 0.5f, rl[k].text, 0, rl[k].size, rl[k].size, C_INK[0], C_INK[1], C_INK[2], a * 0.8f, 0, NULL, false, FONT_CHAT);
+	}
 	for (i = 0; i < n; i++)
 	{
 		// the choice in force is a ring round the chip, never a mark over its text
