@@ -176,6 +176,8 @@ sleep 3
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" panel)" = 1 ]; then ok "tap: a tap on a feed line opens the log"; else bad "tap: the log did not open: $(state "$d/t")"; fi
 if grep -aq "^CHATLOG-TARGET close " "$d/t.ask" && grep -aq "^CHATLOG-TARGET chip 2 " "$d/t.ask"; then ok "tap: the log has close and filter targets"; else bad "tap: log header targets missing"; fi
+# The action targets end above the body, with an explicit gap at every size.
+if awk '$1 == "CHATLOG-TARGET" && ($2 == "clear" || $2 == "copy" || $2 == "download" || $2 == "share") { if ($5 + $7 / 2 > bottom) bottom = $5 + $7 / 2; actions++ } $1 == "CHATLOG-TARGET" && $2 == "body" { top = $5 - $7 / 2; body++ } END { exit !(actions == 4 && body && top > bottom + 0.001) }' "$d/t.ask"; then ok "layout: action row has a gap above the log body"; else bad "layout: action row overlaps or touches the log body"; fi
 small=$(grep -a "^CHATLOG-TARGET \(close\|clear\|copy\|download\|share\) " "$d/t.ask" | awk -v w="$w" -v h="$h" '{ if ($6 * w < 43.5 || $7 * h < 43.5) print $2 }' | tr '\n' ' ')
 if [ -z "$small" ] && grep -aq "^CHATLOG-TARGET share " "$d/t.ask"; then ok "tap: the log's icons (close, clear, copy, download, share) are targets of at least 44 px"; else bad "tap: log icon targets under 44 px or missing: $small"; fi
 # the engine-level finger path (what a finger does under ANY server's CSQC, stock included): a finger far from

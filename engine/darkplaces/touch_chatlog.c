@@ -1068,7 +1068,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	if (TouchChatLog_PanelHasInput())
 		footer = m->fs * 2.4f;
 	title_h = tcl_min_target;
-	hdr = wide ? title_h : title_h * 2.0f;
+	hdr = (wide ? title_h : title_h * 2.0f) + 8.0f * m->dp;
 	{
 		/* the console button (touch_shellbtn.c) sits in the top right corner over everything: keep the panel off it */
 		float rx, ry, rw, rh;

@@ -908,6 +908,8 @@ const vec4_t string_colors[] =
 
 #define STRING_COLORS_COUNT	(sizeof(string_colors) / sizeof(vec4_t))
 
+#include "touch_textcolor.h" // Touch: readable player colour codes
+
 static void DrawQ_GetTextColor(float color[4], int colorindex, float r, float g, float b, float a, qbool shadow)
 {
 	float C = r_textcontrast.value;
@@ -921,6 +923,7 @@ static void DrawQ_GetTextColor(float color[4], int colorindex, float r, float g,
 	}
 	else
 		Vector4Copy(string_colors[colorindex], color);
+	if (colorindex & 0x10000) Touch_TextColorLift(color); // Touch: keep dark RGB names readable
 	Vector4Set(color, color[0] * r * C + B, color[1] * g * C + B, color[2] * b * C + B, color[3] * a);
 	if (shadow)
 	{
