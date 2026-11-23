@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include "touch_zipshot.h"
+#include "touch_packname.h"
 static void u16(unsigned char *p, unsigned v) { p[0]=v; p[1]=v>>8; }
 static void u32(unsigned char *p, uint32_t v) { u16(p,v); u16(p+2,v>>16); }
 int main(void)
@@ -21,6 +22,19 @@ int main(void)
  { unsigned char q[90]={0}; u32(q,0x02014b50u); u16(q+10,8); u32(q+16,0x1234); u32(q+20,100); u32(q+24,300); u16(q+28,16); memcpy(q+46,"maps/example.bsp",16);
    assert(!tzs_find(q,62,"example",&z)); assert(tzs_find_bsp(q,62,"example",&z) && z.bsp && z.size==300 && z.compressed==100);
    u32(q+20,TZS_MAX_BSP_PACKED+1); assert(!tzs_find_bsp(q,62,"example",&z)); }
+ /* a revision of a map uses its first picture: maps/sinister_full.jpg for sinister_full_r1; not another map's */
+ { unsigned char q[90]={0}; u32(q,0x02014b50u); u16(q+10,8); u32(q+16,0x1234); u32(q+20,9); u32(q+24,9); u16(q+28,22); memcpy(q+46,"maps/sinister_full.jpg",22);
+   assert(tzs_find(q,46+22,"sinister_full_r1",&z) && z.namelen==22);
+   assert(tzs_find(q,46+22,"sinister_full_r12_b",&z));
+   assert(!tzs_find(q,46+22,"sinister_other",&z)); assert(!tzs_find(q,46+22,"sin_full_r1",&z));
+   assert(tzs_find(q,46+22,"sinister_full",&z)); }
+ /* the pack that carries the map is the one named for it, whether or not the server said "--for" */
+ assert(tpn_url_names_map("http://h/xo-maps/cts_mccormic-mark.pk3","mccormic-mark"));
+ assert(tpn_url_names_map("http://h/Sinister_Full_R1.pk3?x=1","sinister_full_r1"));
+ assert(tpn_url_names_map("http://h/sinister_full.pk3","sinister_full_r1"));
+ assert(!tpn_url_names_map("http://h/mapmedia.pk3","mccormic-mark"));
+ assert(!tpn_url_names_map("http://h/tp-egypt0tga.pk3","mccormic-mark"));
+ assert(!tpn_url_names_map("http://h/a.pk3","abc"));
  assert(tzs_crc((const unsigned char *)"123456789",9)==0xcbf43926);
  puts("ZIP levelshot bounds: PASS"); return 0;
 }

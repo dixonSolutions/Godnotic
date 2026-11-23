@@ -240,6 +240,8 @@ public final class XonoticActivity extends SDLActivity {
     protected void onResume() {
         super.onResume();
         inFront = true;
+        ProcessState.stage(this, "game"); // back in front: whatever screen passed by meanwhile
+
         if (frontend != null) {
             frontend.onResume();
         }
