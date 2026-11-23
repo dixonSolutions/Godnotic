@@ -488,6 +488,9 @@ class ViewRenderer(
             // taller than the room it has (the screen, less the keyboard), so the scroller leaves the row's
             // height free (otherwise the row, e.g. Unlock or Close, is pushed out of the card).
             sv.reservePx = if (modal && bottom.visibility == View.VISIBLE) dp(DialogChrome.ACTION_ROW_DP) else 0
+            // a scrolled dialog body fades out at its edges instead of cutting a button in half
+            sv.isVerticalFadingEdgeEnabled = modal
+            if (modal) sv.setFadingEdgeLength(dp(DialogChrome.FADE_DP))
             // a settings search result names its row: bring it under the pinned tabs and
             // mark it for a moment, so the player can walk there next time
             val reveal = p.str("reveal")

@@ -3,6 +3,7 @@ package io.github.dixonsolutions.godnotic;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -132,7 +133,10 @@ final class AppUpdater {
         // On a live build AndySU updates the app and replaces the host itself when one is needed; the
         // installed versionName is frozen, so this check would offer an install on every release.
         if (AndySUCompat.present()) return false;
-        return prefs(context).getBoolean(PREF_ENABLED, true);
+        SharedPreferences p = prefs(context);
+        if (p.contains(PREF_ENABLED)) return p.getBoolean(PREF_ENABLED, true); // an explicit choice wins
+        boolean debuggable = (context.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        return AppUpdateState.defaultCheckOnLaunch(debuggable);
     }
 
     static void setEnabled(Context context, boolean enabled) {

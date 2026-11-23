@@ -51,6 +51,15 @@ final class AppUpdateState {
         return "";
     }
 
+    /**
+     * Whether the app looks for a newer release at launch when the player never chose: yes on a release build,
+     * no on a debuggable one (a development or test install would download the ~40 MB release APK on every
+     * fresh device, then offer to replace the build under test). An explicit setting always wins.
+     */
+    static boolean defaultCheckOnLaunch(boolean debuggable) {
+        return !debuggable;
+    }
+
     /** How a check ended: it found a release, it found none, or it could not ask. */
     static String checkResult(boolean found, boolean failed) {
         if (failed) return RESULT_ERROR;

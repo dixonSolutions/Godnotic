@@ -960,6 +960,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             "denied" -> if (v.server.isNotEmpty()) rconVault.forget(v.server)
         }
         if (v.kind != "ok") renderer?.clearSecret("ctl/form/pw") // refused or unanswered: type it again
+        if (v.kind == "ok") { activity.currentFocus?.clearFocus(); hideKeyboard() } // unlocked: the controls need the room the keyboard took
         ctlPending = ""
     }
 

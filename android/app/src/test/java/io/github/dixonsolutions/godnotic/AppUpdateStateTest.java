@@ -13,6 +13,12 @@ public class AppUpdateStateTest {
     private static final String OFFLINE = AppUpdateState.NET_OFFLINE;
 
     @Test
+    public void aDebuggableBuildDoesNotCheckForUpdatesUnlessAsked() {
+        assertFalse("a debug or test install must not pull the release APK", AppUpdateState.defaultCheckOnLaunch(true));
+        assertTrue("a release build keeps the opt-out default", AppUpdateState.defaultCheckOnLaunch(false));
+    }
+
+    @Test
     public void backgroundDownloadsFollowWifiOnly() {
         assertTrue(AppUpdateState.mayDownloadUnasked(true, UNMETERED));
         assertFalse(AppUpdateState.mayDownloadUnasked(true, METERED));
