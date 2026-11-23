@@ -123,3 +123,13 @@ it fired on the first tap, no misfire, and landed on the platform 304 units high
 - Desktop re-run after the merge with origin/main: dash 50/50, boost 42, hook 88, dodge 43; live suite on/off/floor/ui/qc all passed (6 forced boosts each,
   one MISS in the "on" run: Blaster up, 257 units below the predicted level); srvinfo test passed; uibridge: engine_test, input_test, firstrun passed (settings fixture DRIFT is
   there before this work); cargo 23 + 13; `make sv-release` and `build-web.sh --engine-only` built; debug APK built.
+
+## Square backing removed and picker rows captioned (final polish)
+- The square behind DASH (solid blue while held, faint dark when idle) came from the soft shade/glow MASK pictures drawing as solid squares behind every round button
+  where their alpha is lost (Android, offscreen). `shape_shadow`, `shape_glow` and the capsule shade in `touch_hud.c` are now stacked discs (`DrawQ_RoundedBox`), no masks:
+  DASH, FIRE, ALT, TURN, DUCK and the chips are round with a round pressed fill.
+- The two picker rows are captioned "Weapon" and "Direction" (tiny text above each row, inside the left-edge gap) and spaced a chip apart.
+- Android recheck (emulator-5580 via emu-slot.sh, noupdate + netwait, real server 66.226.73.30:27301, real motionevents): ~/.cache/godnotic-work/dash-shots-android2/
+  1_capsule.jpg (idle: round DASH, "Dodge" capsule, no square), 3_picker.jpg (held, picker open, captions, round blue fill), 4_finger_on_up.jpg (finger on Up),
+  console: `picked Up (dir 1)`. The frames after the pick (4b onward) show the death screen: a real bot fragged the player in this live match before the boost tap, so
+  there is no new boost frame in this run; the boost on Android is the previous run's evidence (dash-shots-android/: it fired on the first tap and landed 304 units up).
