@@ -1088,7 +1088,7 @@ fn name_picker(n: &Node, id: &str, w: &std::rc::Weak<crate::app::Shared>, title:
         let Some(hex) = v.as_str().filter(|h| h.len() == 7 && h.starts_with('#')) else { continue };
         let hex = hex.to_lowercase();
         swatch_css(&hex);
-        let b = gtk::Button::builder().label(&i.to_string()).build();
+        let b = gtk::Button::builder().label(i.to_string()).build();
         b.add_css_class("gn-swatch");
         b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
         let (w2, id2) = (w.clone(), id.to_string());
