@@ -29,9 +29,13 @@ float TouchChatLog_NotifyFade(float stock);
 struct cvar_s;
 void TouchChatLog_NotifyBegin(struct cvar_s *notifytime);
 void TouchChatLog_NotifyEnd(struct cvar_s *notifytime);
-/* keys.c, Key_Event in the game: wheel and pointer over the log box. True when taken. */
+/* keys.c, Key_Message: wheel, page keys and a click on the log's icons while the chat input is open. True when taken. */
 qbool TouchChatLog_Key(int key, qbool down);
-/* Draws the scrolled-back view and the export icon; x, y, w, h is the chat area. */
+/* keys.c, Key_Event in the game: while the log is open, the wheel, page keys and Escape are its. True when taken. */
+qbool TouchChatLog_GameKey(int key, qbool down);
+/* console.c, Con_DrawNotify: the open log draws the chat input itself. */
+qbool TouchChatLog_PanelHasInput(void);
+/* Draws the chat feed (events with icons), its toolbar and, while open, the log; x, y, w, size, lines is the chat area. */
 void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines);
 void TouchChatLog_Init(void);
 
