@@ -77,6 +77,20 @@ float TouchChatLog_NotifyFade(float stock)
 	return TouchChatLog_FadeAfterClear(stock, cl.time, tcl_cleared_at);
 }
 
+/* console.c's notify draw: swap con_notifytime for the cleared-log fade around
+ * the one upstream call, then put it back (hooks on their own lines there). */
+static float tcl_saved_notifytime;
+void TouchChatLog_NotifyBegin(struct cvar_s *notifytime)
+{
+	tcl_saved_notifytime = notifytime->value;
+	notifytime->value = TouchChatLog_NotifyFade(tcl_saved_notifytime);
+}
+
+void TouchChatLog_NotifyEnd(struct cvar_s *notifytime)
+{
+	notifytime->value = tcl_saved_notifytime;
+}
+
 float TouchChatLog_Fade(float stock)
 {
 	stock = TouchChatLog_NotifyFade(stock);
