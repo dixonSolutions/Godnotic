@@ -87,6 +87,32 @@ static void test_typing(void)
 	CHECK(!strcmp(o, "A, B and 3 others are typing\xE2\x80\xA6"), "five: %s", o);
 }
 
+
+/* a remote player typing: the line about them never lands on my input */
+static void test_typing_placement(void)
+{
+	float size = 14, v, y;
+	/* input closed: the chat area */
+	CHECK(TouchMention_TypingY(100, size, 0, 28, 0) == 100, "no input open: at the chat area");
+	/* input open, empty field or full: above the input line, clear of its box [v, v + h] */
+	for (v = 0; v <= 200; v += 10)
+	{
+		y = TouchMention_TypingY(v, size, 1, 2 * size, 0);
+		CHECK(y >= 0, "drawn at v=%g", v);
+		CHECK(y + size <= v + 0.001f || y >= v + 2 * size, "typing line [%g, %g] stays off the input box [%g, %g]", y, y + size, v, v + 2 * size);
+	}
+	CHECK(TouchMention_TypingY(100, size, 1, 28, 0) < 100, "above the input when there is room");
+	CHECK(TouchMention_TypingY(5, size, 1, 28, 0) >= 5 + 28, "below the whole box when there is no room above");
+	CHECK(TouchMention_TypingY(100, size, 1, 28, 1) < 0 && TouchMention_TypingY(100, size, 0, 28, 1) < 0, "the QuakeC sheet draws its own: the engine draws none");
+	/* the text builder is given names only: it has no way to reach a chat buffer */
+	{
+		const char *n[] = { "Bob" };
+		char o[64];
+		TouchMention_TypingText(n, 1, o, sizeof(o));
+		CHECK(!strstr(o, "hello"), "just a name and a verb: %s", o);
+	}
+}
+
 static void test_chatname(void)
 {
 	char n[64];
@@ -154,6 +180,7 @@ int main(void)
 	test_place();
 	test_mentions();
 	test_typing();
+	test_typing_placement();
 	if (failures) { printf("%d failure(s)\n", failures); return 1; }
 	printf("mention: ok\n");
 	return 0;

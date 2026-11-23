@@ -1900,6 +1900,7 @@ static void SCR_DrawScreen (void)
 		SCR_DrawBrand();
 		SCR_DrawTouchscreenOverlay();
 		TouchShell_Draw(); // Touch: console button, over the console sheet
+		TouchChatLog_DrawOverlay(); // Touch: the open chat log, over every touch control
 	}
 	TouchHUD_DrawConsolePointer(); // Touch: mouse pointer over the console
 	if (r_timereport_active)

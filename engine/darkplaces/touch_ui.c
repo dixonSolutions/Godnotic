@@ -91,7 +91,7 @@ static double touchui_console_keys_time;
  * Linux launcher's measurement, or a phone-sized guess -- the same sources,
  * in the same order, as the menu's size (touch_menu_scale.qc).
  */
-static float TouchUI_ConPerDp(void)
+float TouchUI_ConPerDp(void)
 {
 	float density = 0, l, t, r, b;
 	cvar_t *v = Cvar_FindVar(&cvars_all, "_touch_safe_insets", ~0);

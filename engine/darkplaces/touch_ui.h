@@ -188,4 +188,7 @@ void TouchUI_ResetInputState(void);
 
 void TouchUI_DrawGlassItem(const touchui_item_t *it, float pressed, float opacity);
 
+/* Console units per dp: a 44 dp target is 44 * this wide. */
+float TouchUI_ConPerDp(void);
+
 #endif
