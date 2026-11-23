@@ -2120,6 +2120,7 @@ void UIB_Init()
 	registercvar("_uib_classic_up", "0", 0);   // tests: 1 while the stock menu draws a dialog
 	registercvar("_uib_region_h", "0", 0);   // the page region the layout got, renderer units
 	registercvar("_uib_screen_h", "0", 0);   // the screen height, same units
+	UIB_LocalInit();   // Settings > Player > Local
 	registercvar("_uib_return", "", 0);   // the stack leaving the match returns to
 	registercvar("_uib_join_cancel", "", 0);   // ... and a join that has not become play yet
 	UIB_RecentRows();
@@ -2151,6 +2152,7 @@ void UIB_Tick()
 		cvar_set("_uib_debug_toast", "");
 		uib_toast(dbg, "success", "check", 4);
 	}
+	UIB_LocalTick();
 	UIB_LanPopupTick();
 	UIB_CtlTick();
 	UIB_JoinFailTick();

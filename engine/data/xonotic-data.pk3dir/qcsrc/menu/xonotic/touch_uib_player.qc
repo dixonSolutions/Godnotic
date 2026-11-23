@@ -18,6 +18,7 @@
 // own delete button.
 
 const int UIB_PM_MAX = 96;
+bool UIB_LocalAction(string a);   // touch_uib_localplayer.qc
 
 string uib_pm_model[UIB_PM_MAX];
 string uib_pm_skin[UIB_PM_MAX];
@@ -221,6 +222,8 @@ string UIB_PMPayloadPath(string payload)
 
 bool UIB_PlayerAction(string a, string payload)
 {
+	if (substring(a, 0, 13) == "player.local.")
+		return UIB_LocalAction(a);
 	if (a == "player.model.prev" || a == "player.model.next")
 	{
 		UIB_PMLoad();

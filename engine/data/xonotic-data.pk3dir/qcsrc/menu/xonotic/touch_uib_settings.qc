@@ -86,6 +86,8 @@ void UIB_PlayerPage();   // touch_uib_player.qc
 bool UIB_PlayerAction(string a, string payload);
 const int UIB_PM_NAME_MAX = 64;   // Touch: a player name, colour codes included (the engine holds 127 bytes)
 bool UIB_PlayerNameColour(string hex);
+void UIB_LocalPage();   // touch_uib_localplayer.qc
+bool UIB_LocalValue(string bind, string value);
 void UIB_SearchResults(string q);
 void UIB_SearchIndex();
 bool uib_sr_built;
@@ -198,6 +200,7 @@ string UIB_SecTabs(string sec)
 		case "video": return "display effects view";
 		case "touch": return "feel hud aim auto";
 		case "mods": return "client server pages";
+		case "player": return "online local";
 	}
 	return "";
 }
@@ -215,6 +218,10 @@ string UIB_TabLabel(string sec, string tab)
 	if (sec == "mods")
 	{
 		switch (tab) { case "client": return _("Client mods"); case "server": return _("Server mods"); case "pages": return _("Pages from mods"); }
+	}
+	if (sec == "player")
+	{
+		switch (tab) { case "online": return _("Online"); case "local": return _("Local"); }
 	}
 	return "";
 }
@@ -514,7 +521,17 @@ string UIB_Palette()
 	return strcat(s, "]");
 }
 
-void UIB_SecPlayer() { UIB_PlayerPage(); }   // touch_uib_player.qc: one page, no tabs
+void UIB_SecPlayer()   // Online: touch_uib_player.qc, Local: touch_uib_localplayer.qc
+{
+	UIB_SubTabs("player");
+	if (UIB_SubTab("online", _("Online")))
+		UIB_PlayerPage();
+	UIB_Close();
+	if (UIB_SubTab("local", _("Local")))
+		UIB_LocalPage();
+	UIB_Close();
+	UIB_Close();
+}
 
 void UIB_SecPrivacy()
 {
@@ -1261,6 +1278,16 @@ bool UIB_SettingsValue(string node, string value)
 			localcmd("\nname \"$_cl_name\"\nsaveconfig\n");
 			return true;
 		case "vm:player.namecolour": return UIB_PlayerNameColour(value);
+		case "vm:local.you":
+		case "vm:local.youcol":
+		case "vm:local.bots":
+		case "vm:local.botcol":
+		case "vm:local.setin":
+		case "vm:local.you.shirt":
+		case "vm:local.you.pants":
+		case "vm:local.bot.shirt":
+		case "vm:local.bot.pants":
+			return UIB_LocalValue(bind, value);
 		case "vm:player.shirt":
 		case "vm:player.pants":
 		{

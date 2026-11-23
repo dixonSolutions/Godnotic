@@ -151,8 +151,8 @@ Tactics (caption "Tactics play for you in matches on this device only."):
 | ESP in local matches | `cl_touch_esp_enabled` (string: "local" / "off") | switch, writes "1" / "0" |
 | Outline enemies behind walls | `cl_touch_practice_seethrough` | switch |
 
-**Player** (Name, character, colours). One page, no sub-tabs
-(`qcsrc/menu/xonotic/touch_uib_player.qc`).
+**Player** (Name, character, colours). Two sub-tabs: **Online** (the page below,
+`qcsrc/menu/xonotic/touch_uib_player.qc`) and **Local** (the table after it).
 
 | Row | Cvar | Control |
 |---|---|---|
@@ -161,6 +161,23 @@ Tactics (caption "Tactics play for you in matches on this device only."):
 | Character | `_cl_playermodel` + `_cl_playerskin` | the model's preview picture, `<` and `>` to flip through stock and uploaded models in one cycle, its name and "n of N" under it; Delete only on an uploaded one |
 | Shirt / Pants | `_cl_color` via `vm:player.shirt`, `vm:player.pants` | `colour` pickers |
 | Your own model | `uib_pm_import`, `godnotic-playermodels.txt` | file picker; a model that passes the check becomes the character, one that does not says why |
+
+Player > **Local** (`touch_uib_localplayer.qc`, the choices in `touch_uib_localplayer_logic.qc`,
+tested by `scripts/test-localplayer.sh`): games on this device only (single player, bots, a LAN
+game this device hosts). The defaults are today's game; nothing here writes `_cl_playermodel`,
+`_cl_playerskin` or `_cl_color`, so online servers keep getting the Online character.
+
+| Row | Cvar (all archived) | Values |
+|---|---|---|
+| You: Model | `touch_local_you`, `touch_local_model` | `online` (default) / `model` (flip through the same list as Online, uploads included) / `random` (a new one each match). Applied as `cl_forcemyplayermodel` and `cl_forcemyplayerskin` while a local match runs (client side: LAN guests still see the online model) |
+| You: Colours | `touch_local_youcol`, `touch_local_color` | `online` (default) / `random` (each match) / `fixed` (shirt and pants pickers). Applied as `cl_forcemyplayercolors` |
+| Bots: Model | `touch_local_bots`, `touch_local_bot_model`, `touch_local_bot_set` | `random` (default: bots.txt as it is) / `one` / `set` (a chosen set, each bot draws from it) |
+| Bots: Colours | `touch_local_botcol`, `touch_local_botcolor` | `bot` (default: each bot its own) / `match` (one random scheme per match) / `fixed` |
+
+The bots' choices are written into `godnotic-bots-local.txt`, a copy of `bots.txt` named in
+`bot_config_file` (read only by a server on this device); a new one is rolled after every local
+match. With the defaults `bot_config_file` stays `bots.txt`. `touch_local_saved` remembers the
+player's own `cl_forcemy*` values during a match and puts them back afterwards (also after a crash).
 
 **Privacy** (Statistics and identity).
 

@@ -26,6 +26,8 @@ void UIB_Modal(string id);
 void UIB_Back();
 void UIB_RebuildAll();
 void UIB_Tick();
+void UIB_LocalInit();   // touch_uib_localplayer.qc
+void UIB_LocalTick();
 string UIB_TopScreen();
 // how the join screens name a server: "<name> (<address>)", else the address (touch_joinname.c)
 string UIB_ServerLabel(string addr);
