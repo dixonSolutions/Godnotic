@@ -241,6 +241,97 @@ impl Props for Map<String, Value> {
     }
 }
 
+/// A player name as Pango markup, in the colours its codes give (the GTK Name field's preview line;
+/// the same reading as NameColour.segments on Android). `^N` and `^xRGB` set the colour of what follows,
+/// `^^` is a caret, the game font's private glyphs (U+E0xx) are drawn as the Quake charset letter they
+/// map to (gold in the upper half), and a colour too dark for the window gets a light backing.
+pub fn name_markup(s: &str) -> String {
+    const PRESETS: [&str; 10] = ["#000000", "#ff0000", "#33ff00", "#ffff00", "#3366ff", "#33ffff", "#ff33ff", "#ffffff", "#999999", "#808080"];
+    fn esc(c: char) -> String {
+        match c {
+            '&' => "&amp;".into(),
+            '<' => "&lt;".into(),
+            '>' => "&gt;".into(),
+            c => c.to_string(),
+        }
+    }
+    fn dark(hex: &str) -> bool {
+        let v = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f64;
+        0.299 * v(1) + 0.587 * v(3) + 0.114 * v(5) < 70.0
+    }
+    let c: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut cur = "#ffffff".to_string();
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '^' && i + 1 < c.len() {
+            if c[i + 1].is_ascii_digit() {
+                cur = PRESETS[c[i + 1] as usize - '0' as usize].to_string();
+                i += 2;
+                continue;
+            }
+            if (c[i + 1] == 'x' || c[i + 1] == 'X') && i + 4 < c.len() + 0 && c[i + 2..i + 5].iter().all(|x| x.is_ascii_hexdigit()) {
+                let h: String = c[i + 2..i + 5].iter().flat_map(|d| [*d, *d]).collect();
+                cur = format!("#{}", h.to_ascii_lowercase());
+                i += 5;
+                continue;
+            }
+            if c[i + 1] == '^' {
+                out.push_str(&format!("<span foreground=\"{cur}\">^</span>"));
+                i += 2;
+                continue;
+            }
+        }
+        let ch = c[i];
+        i += 1;
+        if ('\u{E000}'..='\u{E0FF}').contains(&ch) {
+            let v = ch as u32 - 0xE000;
+            let low = v & 0x7f;
+            let g = match low {
+                0x20..=0x7e => (low as u8 as char).to_string(),
+                0x10 => "[".into(),
+                0x11 => "]".into(),
+                0x1d..=0x1f => "-".into(),
+                _ => continue,
+            };
+            let (col, w) = if v >= 0x80 { ("#ffb84a", " weight=\"bold\"") } else { (cur.as_str(), "") };
+            out.push_str(&format!("<span foreground=\"{col}\"{w}>{}</span>", esc(g.chars().next().unwrap_or(' '))));
+            continue;
+        }
+        let back = if dark(&cur) { " background=\"#8a97b3\"" } else { "" };
+        out.push_str(&format!("<span foreground=\"{cur}\"{back}>{}</span>", esc(ch)));
+    }
+    out
+}
+
+#[cfg(test)]
+mod name_markup_tests {
+    use super::name_markup;
+
+    #[test]
+    fn colours_follow_the_codes() {
+        assert_eq!(name_markup("^1a"), "<span foreground=\"#ff0000\">a</span>");
+        assert_eq!(name_markup("^xf80b"), "<span foreground=\"#ff8800\">b</span>");
+        assert_eq!(name_markup("x^2y"), "<span foreground=\"#ffffff\">x</span><span foreground=\"#33ff00\">y</span>");
+    }
+
+    #[test]
+    fn caret_markup_and_glyphs() {
+        assert_eq!(name_markup("a^^b"), "<span foreground=\"#ffffff\">a</span><span foreground=\"#ffffff\">^</span><span foreground=\"#ffffff\">b</span>");
+        assert_eq!(name_markup("<&>"), "<span foreground=\"#ffffff\">&lt;</span><span foreground=\"#ffffff\">&amp;</span><span foreground=\"#ffffff\">&gt;</span>");
+        assert!(name_markup("\u{E0E1}").contains("#ffb84a") && name_markup("\u{E0E1}").contains(">a<"));
+        assert_eq!(name_markup("\u{E001}"), "");
+        assert_eq!(name_markup("^x12"), name_markup("^x12"));
+        assert!(name_markup("^x12").contains("&") == false);
+    }
+
+    #[test]
+    fn dark_colours_get_a_backing() {
+        assert!(name_markup("^0k").contains("background=\"#8a97b3\""));
+        assert!(!name_markup("^7k").contains("background"));
+    }
+}
+
 /// Quake text: colour codes out (`^1`, `^xRGB`), the game font's private glyphs dropped.
 pub fn plain_text(s: &str) -> String {
     let c: Vec<char> = s.chars().collect();

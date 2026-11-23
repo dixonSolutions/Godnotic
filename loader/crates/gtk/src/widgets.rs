@@ -570,8 +570,9 @@ fn entry(app: &App, n: &Node) -> gtk::Widget {
             e.set_hexpand(true);
             line.append(&e);
             line.append(&toggle);
-            let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
             col.append(&line);
+            col.append(&name_preview(t));
             col.append(&rev);
             return col.upcast();
         }
@@ -806,12 +807,28 @@ fn field_row(app: &App, n: &Node) -> gtk::Widget {
     if n.str("kind").as_deref() == Some("name") && !private && !keys.is_empty() {
         let (toggle, rev) = keypad_parts(&r, keys);
         r.add_suffix(&toggle);
-        let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
         col.append(&r);
+        col.append(&name_preview(&r));
         col.append(&rev);
         return col.upcast();
     }
     r.upcast()
+}
+
+/// The name as the game shows it, in its colours, on a line under the (raw, editable) field.
+fn name_preview<E: IsA<gtk::Editable> + Clone + 'static>(e: &E) -> gtk::Label {
+    let l = gtk::Label::new(None);
+    l.set_halign(gtk::Align::Start);
+    l.set_margin_start(12);
+    l.set_xalign(0.0);
+    l.add_css_class("title-3");
+    l.set_accessible_role(gtk::AccessibleRole::Label);
+    let upd = |l: &gtk::Label, t: &str| l.set_markup(&godnotic_core::bridge::name_markup(t));
+    upd(&l, &e.text());
+    let l2 = l.clone();
+    e.connect_changed(move |e| upd(&l2, &e.text()));
+    l
 }
 
 /// Is the name keypad shown? Remembered for good, next to the Settings rail's state; open the first time.
@@ -880,7 +897,13 @@ fn keypad_parts<E: IsA<gtk::Editable> + Clone + 'static>(r: &E, groups: &[serde_
             });
             fb.append(&b);
         }
-        let sc = gtk::ScrolledWindow::builder().min_content_height(3 * 48).max_content_height(3 * 48).hscrollbar_policy(gtk::PolicyType::Never).child(&fb).build();
+        let total = g.get("keys").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+        // a short group (the colours) shows whole; a long one (the symbols) is three rows high and scrolls
+        let sc: gtk::Widget = if total > 24 {
+            gtk::ScrolledWindow::builder().min_content_height(3 * 48).max_content_height(3 * 48).hscrollbar_policy(gtk::PolicyType::Never).child(&fb).build().upcast()
+        } else {
+            fb.clone().upcast()
+        };
         stack.add_titled(&sc, Some(&id), &label);
     }
     let pad = gtk::Box::new(gtk::Orientation::Vertical, 8);

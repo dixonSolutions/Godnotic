@@ -343,123 +343,10 @@
      "subtitle": "Name and colours"
     },
     "children": [
-     "settings/split/player/tabs"
+     "settings/split/player/who",
+     "settings/split/player/character",
+     "settings/split/player/colours"
     ]
-   },
-   {
-    "id": "settings/split/player/tabs",
-    "type": "tabs",
-    "props": {
-     "style": "tabs",
-     "presentation": "horizontal",
-     "swipe": true,
-     "bind": "vm:settings.player.tab",
-     "value": "profile"
-    },
-    "children": [
-     "settings/split/player/tabs/profile",
-     "settings/split/player/tabs/colours"
-    ]
-   },
-   {
-    "id": "settings/split/player/tabs/profile",
-    "type": "pane",
-    "props": {
-     "key": "profile",
-     "label": "Profile"
-    },
-    "children": [
-     "settings/split/player/tabs/profile/name",
-     "settings/split/player/tabs/profile/model"
-    ]
-   },
-   {
-    "id": "settings/split/player/tabs/profile/name",
-    "type": "field",
-    "props": {
-     "label": "Name",
-     "bind": "vm:player.name",
-     "value": "^1Ra^xf80ven",
-     "kind": "name",
-     "maxLength": 64,
-     "keypad": [
-      {
-       "id": "colours",
-       "label": "Colours",
-       "kind": "colour",
-       "keys": [
-        {
-         "text": "^1",
-         "colour": "#ff0000"
-        },
-        {
-         "text": "^2",
-         "colour": "#33ff00"
-        },
-        {
-         "text": "^xf80",
-         "colour": "#ff8800"
-        }
-       ]
-      },
-      {
-       "id": "faces",
-       "label": "Faces",
-       "kind": "glyph",
-       "keys": [
-        {
-         "text": "😃"
-        },
-        {
-         "text": "😎"
-        },
-        {
-         "text": "❤"
-        }
-       ]
-      },
-      {
-       "id": "symbols",
-       "label": "Symbols",
-       "kind": "glyph",
-       "keys": [
-        {
-         "text": "★"
-        },
-        {
-         "text": "◆"
-        },
-        {
-         "text": ""
-        }
-       ]
-      }
-     ]
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/model",
-    "type": "button",
-    "props": {
-     "label": "Player model",
-     "action": {
-      "id": "settings.model",
-      "label": "Player model",
-      "icon": "player"
-     },
-     "style": "secondary"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/colours",
-    "type": "pane",
-    "props": {
-     "key": "colours",
-     "label": "Colours"
-    },
-    "children": []
    },
    {
     "id": "settings/split/privacy",
@@ -581,6 +468,688 @@
        "destructive": false
       }
      }
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/who",
+    "type": "section",
+    "props": {
+     "title": "Name",
+     "sticky": true
+    },
+    "children": [
+     "settings/split/player/who/name"
+    ]
+   },
+   {
+    "id": "settings/split/player/who/name",
+    "type": "field",
+    "props": {
+     "label": "Name",
+     "bind": "vm:player.name",
+     "value": "^1Ra^xf80ven^7 ^2Q",
+     "kind": "name",
+     "maxLength": 64,
+     "keypad": [
+      {
+       "id": "colours",
+       "label": "Colours",
+       "kind": "colour",
+       "keys": [
+        {
+         "text": "^0",
+         "colour": "#000000"
+        },
+        {
+         "text": "^1",
+         "colour": "#ff0000"
+        },
+        {
+         "text": "^2",
+         "colour": "#33ff00"
+        },
+        {
+         "text": "^3",
+         "colour": "#ffff00"
+        },
+        {
+         "text": "^4",
+         "colour": "#3366ff"
+        },
+        {
+         "text": "^5",
+         "colour": "#33ffff"
+        },
+        {
+         "text": "^6",
+         "colour": "#ff33ff"
+        },
+        {
+         "text": "^7",
+         "colour": "#ffffff"
+        },
+        {
+         "text": "^8",
+         "colour": "#999999"
+        },
+        {
+         "text": "^9",
+         "colour": "#808080"
+        },
+        {
+         "text": "^xf80",
+         "colour": "#ff8800"
+        },
+        {
+         "text": "^x08f",
+         "colour": "#0088ff"
+        },
+        {
+         "text": "^x0f8",
+         "colour": "#00ff88"
+        },
+        {
+         "text": "^x80f",
+         "colour": "#8800ff"
+        },
+        {
+         "text": "^xf08",
+         "colour": "#ff0088"
+        },
+        {
+         "text": "^x8f0",
+         "colour": "#88ff00"
+        }
+       ]
+      },
+      {
+       "id": "faces",
+       "label": "Faces",
+       "kind": "glyph",
+       "keys": [
+        {
+         "text": "😃"
+        },
+        {
+         "text": "😊"
+        },
+        {
+         "text": "😁"
+        },
+        {
+         "text": "😄"
+        },
+        {
+         "text": "😆"
+        },
+        {
+         "text": "😎"
+        },
+        {
+         "text": "😈"
+        },
+        {
+         "text": "😇"
+        },
+        {
+         "text": "😉"
+        },
+        {
+         "text": "😛"
+        },
+        {
+         "text": "😝"
+        },
+        {
+         "text": "😘"
+        },
+        {
+         "text": "❤"
+        },
+        {
+         "text": "😐"
+        },
+        {
+         "text": "😒"
+        },
+        {
+         "text": "😕"
+        },
+        {
+         "text": "😮"
+        },
+        {
+         "text": "😲"
+        },
+        {
+         "text": "😞"
+        },
+        {
+         "text": "😟"
+        },
+        {
+         "text": "😠"
+        },
+        {
+         "text": "😣"
+        },
+        {
+         "text": "😭"
+        },
+        {
+         "text": "😵"
+        },
+        {
+         "text": "😴"
+        }
+       ]
+      },
+      {
+       "id": "symbols",
+       "label": "Symbols",
+       "kind": "glyph",
+       "keys": [
+        {
+         "text": "★"
+        },
+        {
+         "text": "◆"
+        },
+        {
+         "text": "■"
+        },
+        {
+         "text": "▮"
+        },
+        {
+         "text": "▰"
+        },
+        {
+         "text": "▬"
+        },
+        {
+         "text": "◣"
+        },
+        {
+         "text": "◤"
+        },
+        {
+         "text": "◥"
+        },
+        {
+         "text": "◢"
+        },
+        {
+         "text": "◀"
+        },
+        {
+         "text": "▲"
+        },
+        {
+         "text": "▶"
+        },
+        {
+         "text": "▼"
+        },
+        {
+         "text": "🌍"
+        },
+        {
+         "text": "🌎"
+        },
+        {
+         "text": "🌏"
+        },
+        {
+         "text": "🚀"
+        },
+        {
+         "text": "🌌"
+        },
+        {
+         "text": "👽"
+        },
+        {
+         "text": "🔫"
+        },
+        {
+         "text": "⌖"
+        },
+        {
+         "text": "❇"
+        },
+        {
+         "text": "❈"
+        },
+        {
+         "text": "←"
+        },
+        {
+         "text": "↑"
+        },
+        {
+         "text": "→"
+        },
+        {
+         "text": "↓"
+        },
+        {
+         "text": "☠"
+        },
+        {
+         "text": "☣"
+        },
+        {
+         "text": "☢"
+        },
+        {
+         "text": "⚛"
+        },
+        {
+         "text": "⚡"
+        },
+        {
+         "text": "⚙"
+        },
+        {
+         "text": "🔥"
+        },
+        {
+         "text": "❌"
+        },
+        {
+         "text": "⚠"
+        },
+        {
+         "text": "⛔"
+        },
+        {
+         "text": "❰"
+        },
+        {
+         "text": "❱"
+        },
+        {
+         "text": "❲"
+        },
+        {
+         "text": "❳"
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        },
+        {
+         "text": ""
+        }
+       ]
+      }
+     ]
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character",
+    "type": "section",
+    "props": {
+     "title": "Character",
+     "sticky": true
+    },
+    "children": [
+     "settings/split/player/character/portrait",
+     "settings/split/player/character/flip",
+     "settings/split/player/character/kind",
+     "settings/split/player/character/live"
+    ]
+   },
+   {
+    "id": "settings/split/player/character/portrait",
+    "type": "image",
+    "props": {
+     "ref": "pk3:models/player/erebus.iqm_0",
+     "fit": "contain",
+     "aspect": "1:1",
+     "alt": "Erebus",
+     "viewer": "model",
+     "model": "models/player/erebus.iqm",
+     "skin": 0
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character/flip",
+    "type": "row",
+    "props": {
+     "align": "center"
+    },
+    "children": [
+     "settings/split/player/character/flip/prev",
+     "settings/split/player/character/flip/title",
+     "settings/split/player/character/flip/next"
+    ]
+   },
+   {
+    "id": "settings/split/player/character/flip/prev",
+    "type": "button",
+    "props": {
+     "label": "<",
+     "action": {
+      "id": "player.model.prev",
+      "label": "Previous model"
+     },
+     "style": "tonal",
+     "width": "xs"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character/flip/title",
+    "type": "text",
+    "props": {
+     "body": "Erebus",
+     "style": "title"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character/flip/next",
+    "type": "button",
+    "props": {
+     "label": ">",
+     "action": {
+      "id": "player.model.next",
+      "label": "Next model"
+     },
+     "style": "tonal",
+     "width": "xs"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character/kind",
+    "type": "text",
+    "props": {
+     "body": "Xonotic model, 1 of 12",
+     "style": "caption"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/character/live",
+    "type": "text",
+    "props": {
+     "body": "Name, colours and character change at once, in a match too. A server can keep its own character or limit renames.",
+     "style": "caption"
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/colours",
+    "type": "section",
+    "props": {
+     "title": "Colours",
+     "sticky": true
+    },
+    "children": [
+     "settings/split/player/colours/shirt",
+     "settings/split/player/colours/pants"
+    ]
+   },
+   {
+    "id": "settings/split/player/colours/shirt",
+    "type": "colour",
+    "props": {
+     "label": "Shirt",
+     "bind": "vm:player.shirt",
+     "value": "#ff0000",
+     "palette": [
+      "#ffffff",
+      "#ff0000",
+      "#33ff00",
+      "#ffff00",
+      "#3366ff",
+      "#00ffff",
+      "#ff3366",
+      "#ff6600",
+      "#9933ff",
+      "#ff00ff",
+      "#00ff99",
+      "#ccff00",
+      "#0099ff",
+      "#ffcc00",
+      "#666666"
+     ]
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/player/colours/pants",
+    "type": "colour",
+    "props": {
+     "label": "Pants",
+     "bind": "vm:player.pants",
+     "value": "#3366ff",
+     "palette": [
+      "#ffffff",
+      "#ff0000",
+      "#33ff00",
+      "#ffff00",
+      "#3366ff",
+      "#00ffff",
+      "#ff3366",
+      "#ff6600",
+      "#9933ff",
+      "#ff00ff",
+      "#00ff99",
+      "#ccff00",
+      "#0099ff",
+      "#ffcc00",
+      "#666666"
+     ]
     },
     "children": []
    }
