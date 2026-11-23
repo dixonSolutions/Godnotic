@@ -119,7 +119,7 @@ only the frame rate drops.
 | `host` | name, mode, map, bots, slots, port, assist, [password], [remember] | the Host screen's Start (dialog_touch_lan.qc), port check included (`host_failed` with `suggest`) |
 | `stophost`, `clear_host_password` | | |
 | `play` | mode, map, bots, [skill], [timelimit], [fraglimit], [g_mutator...] | a local bot match |
-| `menu` | `resume`, `leave`, `quit`, `console`, `open`, `qcmenu [dialog]`, `native` | pause menu actions; `qcmenu` hands the QuakeC menu back (optionally at a dialog), `native` takes it again |
+| `menu` | `resume`, `leave`, `chatlog`, `quit`, `console`, `open`, `qcmenu [dialog]`, `native` | pause menu actions; `qcmenu` hands the QuakeC menu back (optionally at a dialog), `native` takes it again |
 | `mod` | verb, realm (`mod`\|`plugin`), name, [arg] | `select`, `enable`, `disable`, `grant`/`revoke` permission, `uninstall [keepdata]`, `install <source>`, `confirm`, `cancel` (the `lua_*` commands the Mods dialog runs) |
 | `image` / `preview` | ref / map | picture out of the packs (topic `image`) |
 | `exec` | cfg | a Touch preset (`touch/...`, `touch/profiles/...`), never a path out |

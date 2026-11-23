@@ -1472,6 +1472,7 @@ class StopgapActions(private val activity: Activity, private val client: UibClie
             "quit" -> NativeBridge.enqueue(FeArgs.command("menu", "quit"))
             "resume" -> NativeBridge.enqueue(FeArgs.command("menu", "resume"))
             "disconnect" -> NativeBridge.enqueue(FeArgs.command("menu", "leave"))
+            "chatlog" -> NativeBridge.enqueue(FeArgs.command("menu", "chatlog"))
             // not native yet: the QuakeC screens, with a way back
             "sp" -> NativeBridge.enqueue(FeArgs.command("menu", "qcmenu"))
             "mp" -> NativeBridge.enqueue(FeArgs.command("menu", "qcmenu", "servers"))
