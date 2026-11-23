@@ -194,9 +194,59 @@ static unsigned hashref(const char *s)
 	return h;
 }
 
+// pk3raw:<path>, for the model viewer (docs/UI_BRIDGE.md, image `viewer: model`): a model file or its
+// skin text out of the game's filesystem, copied to uib-cache/ and answered with its path like an
+// image. Only models/ files of those kinds, at most 8 MiB: this is not a way to read the packs.
+static int rawallowed(const char *p)
+{
+	size_t l = strlen(p);
+	if (l < 12 || l > 200 || strncmp(p, "models/", 7) || strstr(p, "..") || strchr(p, '\\') || strchr(p, ':'))
+		return 0;
+	return !strcasecmp(p + l - 4, ".iqm") || (l > 5 && !strcasecmp(p + l - 5, ".skin")) || !strcasecmp(p + l - 4, ".txt");
+}
+
+static void process_raw(const imgreq_t *r)
+{
+	const char *path = r->ref + 7;
+	char rel[128];
+	fs_offset_t len = 0;
+	if (!rawallowed(path))
+	{
+		UIB_SendError(r->conn, r->re, "not_found", "not a model file");
+		return;
+	}
+	unsigned char *d = FS_LoadFile(path, tempmempool, true, &len);
+	if (!d || len > 8 * 1024 * 1024)
+	{
+		const char *why = d ? "model file too big" : "no such model file";
+		if (d)
+			Mem_Free(d);
+		UIB_SendError(r->conn, r->re, "not_found", why);
+		return;
+	}
+	dpsnprintf(rel, sizeof(rel), "uib-cache/raw_%08x%s", hashref(r->ref), strrchr(path, '.'));
+	FS_WriteFile(rel, d, len);
+	Mem_Free(d);
+	uibbuf_t b = {0};
+	char abs[MAX_OSPATH * 2];
+	dpsnprintf(abs, sizeof(abs), "%s%s", fs_gamedir, rel);
+	UIBB_Printf(&b, "{\"uib\":1,\"t\":\"image\",\"id\":%d,\"re\":%lld,\"ref\":", UIB_NextMsgId(r->conn), (long long)r->re);
+	UIBB_Str(&b, r->ref, strlen(r->ref), 250, 0);
+	UIBB_Printf(&b, ",\"mime\":\"application/octet-stream\",\"w\":0,\"h\":0,\"path\":");
+	UIBB_Str(&b, abs, strlen(abs), 0, 0);
+	UIBB_Putc(&b, '}');
+	UIB_SendTo(r->conn, b.p, b.n);
+	UIBB_Free(&b);
+}
+
 static void process(const imgreq_t *r)
 {
 	char path[256], rel[128];
+	if (!strncmp(r->ref, "pk3raw:", 7))
+	{
+		process_raw(r);
+		return;
+	}
 	if (!UIBImg_Resolve(r->ref, path, sizeof(path)))
 	{
 		UIB_SendError(r->conn, r->re, "not_found", "unknown image ref");

@@ -40,6 +40,7 @@ object Icons {
         "disconnect" to { p -> p.moveTo(10f, 5f); p.lineTo(5f, 5f); p.lineTo(5f, 19f); p.lineTo(10f, 19f); p.moveTo(9f, 12f); p.lineTo(20f, 12f); p.moveTo(16f, 8f); p.lineTo(20f, 12f); p.lineTo(16f, 16f) },
         "back" to { p -> p.moveTo(15f, 5f); p.lineTo(8f, 12f); p.lineTo(15f, 19f) },
         "chevron" to { p -> p.moveTo(9f, 5f); p.lineTo(16f, 12f); p.lineTo(9f, 19f) },
+        "fullscreen" to { p -> p.moveTo(4f, 9f); p.lineTo(4f, 4f); p.lineTo(9f, 4f); p.moveTo(15f, 4f); p.lineTo(20f, 4f); p.lineTo(20f, 9f); p.moveTo(20f, 15f); p.lineTo(20f, 20f); p.lineTo(15f, 20f); p.moveTo(9f, 20f); p.lineTo(4f, 20f); p.lineTo(4f, 15f) },
         "close" to { p -> p.moveTo(6f, 6f); p.lineTo(18f, 18f); p.moveTo(18f, 6f); p.lineTo(6f, 18f) },
         "add" to { p -> p.moveTo(12f, 5f); p.lineTo(12f, 19f); p.moveTo(5f, 12f); p.lineTo(19f, 12f) },
         "remove" to { p -> p.moveTo(5f, 12f); p.lineTo(19f, 12f) },

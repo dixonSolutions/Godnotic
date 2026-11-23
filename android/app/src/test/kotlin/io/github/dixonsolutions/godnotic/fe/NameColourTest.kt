@@ -1,67 +1,76 @@
 package io.github.dixonsolutions.godnotic.fe
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The name colour picker's maths (NameColour): HSV to ^xRGB, presets, palette indexes, name length. */
+/** The Name field's text (NameColour): colour codes, game-font glyphs, what a keypad key does at the caret. */
 class NameColourTest {
-    @Test fun hsvPrimaries() {
-        assertEquals("#ff0000", NameColour.hsvToHex(0.0, 1.0, 1.0))
-        assertEquals("#00ff00", NameColour.hsvToHex(120.0, 1.0, 1.0))
-        assertEquals("#0000ff", NameColour.hsvToHex(240.0, 1.0, 1.0))
-        assertEquals("#ffffff", NameColour.hsvToHex(77.0, 0.0, 1.0))
-        assertEquals("#000000", NameColour.hsvToHex(200.0, 1.0, 0.0))
-        assertEquals("#ff0000", NameColour.hsvToHex(360.0, 1.0, 1.0))
+    private fun kinds(name: String) = NameColour.segments(name).map { "${it.kind}:${name.substring(it.start, it.end)}:${it.hex}" }
+
+    @Test fun codesAndColours() {
+        assertEquals(listOf("TEXT:Anna:#ffffff"), kinds("Anna"))
+        assertEquals(listOf("CODE:^1:#ff0000", "TEXT:An:#ff0000", "CODE:^x0f0:#00ff00", "TEXT:na:#00ff00"), kinds("^1An^x0f0na"))
+        assertEquals(listOf("CODE:^xF80:#ff8800", "TEXT:x:#ff8800"), kinds("^xF80x"))
     }
 
-    @Test fun hsvToXonoticCode() {
-        assertEquals("^xf00", NameColour.xonCode(NameColour.hsvToHex(0.0, 1.0, 1.0)))
-        assertEquals("^x0f0", NameColour.xonCode(NameColour.hsvToHex(120.0, 1.0, 1.0)))
-        assertEquals("^xfff", NameColour.xonCode("#ffffff"))
-        assertEquals("^x000", NameColour.xonCode("#000000"))
-        assertEquals("^x888", NameColour.xonCode("#898989"))
-        assertEquals("^xf80", NameColour.xonCode("#ff8800"))
-        assertEquals("#ff8800", NameColour.xonHex("^xf80"))
+    @Test fun caretAndBrokenCodesAreText() {
+        assertEquals(listOf("TEXT:a^^b:#ffffff"), kinds("a^^b"))
+        assertEquals(listOf("TEXT:a^b:#ffffff"), kinds("a^b"))
+        assertEquals(listOf("TEXT:^x12:#ffffff"), kinds("^x12"))   // too short for ^xRGB
+        assertEquals(listOf("TEXT:end^:#ffffff"), kinds("end^"))
     }
 
-    @Test fun presetsAndShirtPalette() {
-        assertEquals("^0", NameColour.presetCode(0)); assertEquals("^9", NameColour.presetCode(9))
-        assertEquals("^9", NameColour.presetCode(40)); assertEquals(10, NameColour.PRESETS.size)
-        assertEquals(16, NameColour.SHIRT.size)
-        for (i in 0..15) if (i != 7) assertEquals(i, NameColour.shirtIndex(NameColour.SHIRT[i]))
-        assertEquals(0, NameColour.shirtIndex("#ffffff"))   // 7 repeats white; 0 wins
-        assertEquals(1, NameColour.shirtIndex("#FF0000"))
-    }
-
-    @Test fun parseAndSerialise() {
+    @Test fun plainNameDropsCodesAndGlyphs() {
         assertEquals("Anna", NameColour.plain("^1An^x0f0na"))
         assertEquals("a^b", NameColour.plain("a^^b"))
-        val chars = NameColour.parse("^1ab^x0f0c")
-        assertEquals(listOf("^1", "^1", "^x0f0"), chars.map { it.code })
-        assertEquals("^1ab^x0f0c", NameColour.serialise(chars))
+        assertEquals("ab", NameColour.plain("a\uE0E1b"))
+        assertEquals("", NameColour.plain("^1^2"))
     }
 
-    @Test fun paintWholeAndPart() {
-        assertEquals("^x0f0Anna", NameColour.paint("Anna", 0, 4, "^x0f0"))
-        assertEquals("An^1na", NameColour.paint("Anna", 2, 4, "^1"))
-        assertEquals("A^2nn^7a", NameColour.paint("Anna", 1, 3, "^2"))
-        // painting over an older colour replaces it
-        assertEquals("^2Anna", NameColour.paint("^1Anna", 0, 4, "^2"))
-        assertEquals("^1A^2nn^1a", NameColour.paint("^1Anna", 1, 3, "^2"))
-        assertEquals("Anna", NameColour.paint("Anna", 2, 2, "^1").let { NameColour.plain(it!!) })
+    @Test fun codeColours() {
+        assertEquals("#ff0000", NameColour.codeHex("^1")); assertEquals("#ff8800", NameColour.codeHex("^xf80"))
+        assertNull(NameColour.codeHex("^a")); assertNull(NameColour.codeHex("^x1")); assertEquals(10, NameColour.PRESETS.size)
+        assertEquals("^xf80", NameColour.xonCode("#ff8800")); assertEquals("^x888", NameColour.xonCode("#898989"))
     }
 
-    @Test fun caretsSurvive() {
-        assertEquals("^1a^^b", NameColour.paint("a^^b", 0, 3, "^1"))
+    @Test fun glyphsAreSegmentsWithTheColourInForce() {
+        assertEquals(listOf("CODE:^2:#33ff00", "GLYPH:\uE0E1:#33ff00", "TEXT:z:#33ff00"), kinds("^2\uE0E1z"))
     }
 
-    @Test fun lengthCountsCodes() {
-        val name = "x".repeat(NameColour.MAX_LEN - 5)
-        assertEquals("^xf00$name", NameColour.paint(name, 0, name.length, "^xf00"))     // exactly 64
-        assertNull(NameColour.paint(name + "y", 0, name.length + 1, "^xf00"))           // 65: refused
-        assertEquals(NameColour.MAX_LEN, NameColour.paint(name, 0, name.length, "^xf00")!!.length)
-        // a preset costs 2
-        assertNull(NameColour.paint("y".repeat(63), 0, 63, "^xf00", 64))
+    @Test fun keyInsertsAtTheCaret() {
+        assertEquals("Ra^1ven" to 5, NameColour.insert("Raven", 2, 2, "^1"))
+        assertEquals("^1" to 2, NameColour.insert("", 0, 0, "^1"))
+        assertEquals("R\u2605n" to 3, NameColour.insert("Raven", 1, 4, "\u2605"))   // replaces the selection
+        assertEquals("Raven^2" to 7, NameColour.insert("Raven", -1, -1, "^2"))      // no caret: at the end
+        assertEquals("\uD83D\uDE03Raven" to 2, NameColour.insert("Raven", 0, 0, "\uD83D\uDE03"))   // a face is two UTF-16 units
+    }
+
+    @Test fun keyRespectsTheLimit() {
+        val full = "x".repeat(NameColour.MAX_LEN)
+        assertNull(NameColour.insert(full, 3, 3, "^1"))
+        assertNotNull(NameColour.insert(full, 3, 5, "^1"))   // replacing two letters with two characters fits
+        assertEquals(NameColour.MAX_LEN, NameColour.insert(full, 3, 5, "^1")!!.first.length)
+    }
+
+    @Test fun gameFontGlyphsDrawLikeTheEngine() {
+        // U+E0E1 is the alternate set's 'a': a gold 'a', as the game draws it (touch_uib_json.c UIB_CleanText)
+        val a = NameColour.glyphLook('\uE0E1')!!
+        assertEquals("a", a.text); assertTrue(a.gold)
+        val d = NameColour.glyphLook('\uE0B5')!!
+        assertEquals("5", d.text); assertTrue(d.gold)
+        val low = NameColour.glyphLook('\uE041')!!
+        assertEquals("A", low.text); assertFalse(low.gold)
+        assertEquals("[", NameColour.glyphLook('\uE010')!!.text)
+        assertNull(NameColour.glyphLook('\uE001')); assertNull(NameColour.glyphLook('x'))
+        assertTrue(NameColour.isGlyph("\uE0E1")); assertFalse(NameColour.isGlyph("^1"))
+    }
+
+    @Test fun darkColoursGetABacking() {
+        assertTrue(NameColour.needsBacking("#000000")); assertTrue(NameColour.needsBacking("#0000ff"))
+        assertFalse(NameColour.needsBacking("#ffffff")); assertFalse(NameColour.needsBacking("#999999"))
     }
 }

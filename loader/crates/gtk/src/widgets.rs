@@ -786,7 +786,118 @@ fn field_row(app: &App, n: &Node) -> gtk::Widget {
         }));
     }
     register_activator(app, &n.id, &r);
+    // The player name: a keyboard button beside the field opens the character keypad (Colours, Faces,
+    // Symbols), which types into the same field as the system keyboard.
+    let keys = n.arr("keypad");
+    if n.str("kind").as_deref() == Some("name") && !private && !keys.is_empty() {
+        return name_field(&r, &keys);
+    }
     r.upcast()
+}
+
+/// Is the name keypad shown? Remembered for good, next to the Settings rail's state; open the first time.
+fn keypad_file() -> std::path::PathBuf {
+    glib::user_config_dir().join("godnotic").join("name-keypad")
+}
+
+fn keypad_open() -> bool {
+    std::fs::read_to_string(keypad_file()).map(|t| t.trim() != "hidden").unwrap_or(true)
+}
+
+fn keypad_remember(open: bool) {
+    let path = keypad_file();
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(path, if open { "shown\n" } else { "hidden\n" });
+}
+
+/// The Name field with its keypad under it. A key inserts its text at the caret; the entry's own
+/// `changed` sends the new name, as typing does. Game-font glyphs (U+E0xx) have no drawing in system
+/// fonts here, so those keys show the letter the game's charset maps them to (see the Kotlin NameField).
+fn name_field(r: &adw::EntryRow, groups: &[serde_json::Value]) -> gtk::Widget {
+    let toggle = gtk::ToggleButton::new();
+    toggle.set_icon_name("input-keyboard-symbolic");
+    toggle.set_valign(gtk::Align::Center);
+    toggle.add_css_class("flat");
+    toggle.set_tooltip_text(Some("Character keyboard"));
+    toggle.set_active(keypad_open());
+    r.add_suffix(&toggle);
+    let stack = gtk::Stack::new();
+    let switcher = gtk::StackSwitcher::new();
+    switcher.set_stack(Some(&stack));
+    switcher.set_halign(gtk::Align::Center);
+    for g in groups {
+        let Some(g) = g.as_object() else { continue };
+        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("keys").to_string();
+        let label = g.get("label").and_then(|v| v.as_str()).unwrap_or(&id).to_string();
+        let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(16).row_spacing(4).column_spacing(4).homogeneous(true).build();
+        for k in g.get("keys").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]) {
+            let Some(text) = k.get("text").and_then(|v| v.as_str()) else { continue };
+            let b = gtk::Button::new();
+            b.set_focus_on_click(false); // the entry keeps the caret and the system keyboard
+            b.set_size_request(44, 44);
+            if let Some(hex) = k.get("colour").and_then(|v| v.as_str()) {
+                swatch_css(hex);
+                b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
+                b.set_label(&(if text.starts_with("^x") { "x".to_string() } else { text.trim_start_matches('^').to_string() }));
+                b.set_tooltip_text(Some(text));
+            } else {
+                b.set_label(&glyph_label(text));
+            }
+            let e = r.clone();
+            let text = text.to_string();
+            b.connect_clicked(move |_| {
+                let mut pos = e.position();
+                // a selection is replaced, as typing does
+                if let Some((a, z)) = e.selection_bounds() {
+                    e.delete_text(a, z);
+                    pos = a;
+                }
+                e.insert_text(&text, &mut pos);
+                e.set_position(pos);
+            });
+            fb.append(&b);
+        }
+        let sc = gtk::ScrolledWindow::builder().min_content_height(3 * 48).max_content_height(3 * 48).hscrollbar_policy(gtk::PolicyType::Never).child(&fb).build();
+        stack.add_titled(&sc, Some(&id), &label);
+    }
+    let pad = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    pad.set_margin_top(6);
+    pad.set_margin_bottom(6);
+    pad.append(&switcher);
+    pad.append(&stack);
+    let rev = gtk::Revealer::new();
+    rev.set_child(Some(&pad));
+    rev.set_reveal_child(toggle.is_active());
+    let rv = rev.clone();
+    toggle.connect_toggled(move |t| {
+        rv.set_reveal_child(t.is_active());
+        keypad_remember(t.is_active());
+    });
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    col.append(r);
+    col.append(&rev);
+    col.upcast()
+}
+
+/// What a keypad key shows: a game-font glyph as the letter the charset maps it to, anything else as it is.
+fn glyph_label(text: &str) -> String {
+    let mut c = text.chars();
+    if let (Some(ch), None) = (c.next(), c.next()) {
+        let v = ch as u32;
+        if (0xE000..=0xE0FF).contains(&v) {
+            let low = v & 0x7f;
+            return match low {
+                0x20..=0x7e => (low as u8 as char).to_string(),
+                0x10 => "[".into(),
+                0x11 => "]".into(),
+                0x1d..=0x1f => "-".into(),
+                _ => String::new(),
+            };
+        }
+    }
+    text.to_string()
 }
 
 fn checkbox(app: &App, n: &Node) -> gtk::Widget {
@@ -980,7 +1091,6 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
                 r.upcast()
             }
         }
-        "colour" if n.str("picker").as_deref() == Some("name") => name_picker(n, &id, &w, &title, &sub),
         "colour" => {
             // a row of swatches, one per palette entry (`labels` writes a short text on each)
             let r = adw::ActionRow::builder().title(&title).subtitle(&sub).build();
@@ -1018,97 +1128,6 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
     };
     r.set_sensitive(n.enabled());
     r
-}
-
-/// h 0..360, s and v 0..1 to "#rrggbb".
-fn hsv_hex(h: f64, s: f64, v: f64) -> String {
-    let hh = h.rem_euclid(360.0) / 60.0;
-    let c = v * s;
-    let x = c * (1.0 - (hh % 2.0 - 1.0).abs());
-    let m = v - c;
-    let (r, g, b) = match hh.floor() as i32 { 0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x) };
-    let ch = |f: f64| ((f + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-    format!("#{:02x}{:02x}{:02x}", ch(r), ch(g), ch(b))
-}
-
-/// The player-name colour picker (`colour` with `picker: "name"`): sliders, the ^0 to ^9 chips,
-/// a live preview, and Whole name / Add at the end. Sends whole:#rrggbb, end:#rrggbb or chip:N.
-fn name_picker(n: &Node, id: &str, w: &std::rc::Weak<crate::app::Shared>, title: &str, sub: &str) -> gtk::Widget {
-    let r = adw::ActionRow::builder().title(title).subtitle(sub).build();
-    let col = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    col.set_margin_top(8);
-    col.set_margin_bottom(8);
-    let preview = gtk::Label::builder().xalign(0.0).build();
-    preview.add_css_class("title-3");
-    let text = n.str("text").unwrap_or_default().replace("^^", "^");
-    let plain = {
-        // strip ^N and ^xRGB for the preview line
-        let cs: Vec<char> = text.chars().collect();
-        let mut o = String::new();
-        let mut i = 0;
-        while i < cs.len() {
-            if cs[i] == '^' && i + 1 < cs.len() && cs[i + 1].is_ascii_digit() { i += 2; continue }
-            if cs[i] == '^' && i + 4 < cs.len() && cs[i + 1] == 'x' && cs[i + 2..i + 5].iter().all(|c| c.is_ascii_hexdigit()) { i += 5; continue }
-            o.push(cs[i]);
-            i += 1;
-        }
-        o
-    };
-    let state = Rc::new(std::cell::Cell::new((20.0f64, 1.0f64, 1.0f64)));
-    let show = {
-        let (preview, plain, state) = (preview.clone(), plain.clone(), state.clone());
-        Rc::new(move || {
-            let (h, s, v) = state.get();
-            let hex = hsv_hex(h, s, v);
-            preview.set_markup(&format!("<span foreground=\"{}\">{}</span>", hex, glib::markup_escape_text(&plain)));
-        })
-    };
-    show();
-    col.append(&preview);
-    for (label, max, start, which) in [("Hue", 359.0, 20.0, 0), ("Saturation", 1.0, 1.0, 1), ("Brightness", 1.0, 1.0, 2)] {
-        let b = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let l = gtk::Label::builder().label(label).width_chars(11).xalign(0.0).build();
-        let sc = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, max, if which == 0 { 1.0 } else { 0.01 });
-        sc.set_value(start);
-        sc.set_hexpand(true);
-        sc.set_draw_value(false);
-        let (state, show) = (state.clone(), show.clone());
-        sc.connect_value_changed(move |s| {
-            let mut t = state.get();
-            match which { 0 => t.0 = s.value(), 1 => t.1 = s.value(), _ => t.2 = s.value() }
-            state.set(t);
-            show();
-        });
-        b.append(&l);
-        b.append(&sc);
-        col.append(&b);
-    }
-    let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(10).row_spacing(6).column_spacing(6).build();
-    for (i, v) in n.arr("palette").iter().enumerate() {
-        let Some(hex) = v.as_str().filter(|h| h.len() == 7 && h.starts_with('#')) else { continue };
-        let hex = hex.to_lowercase();
-        swatch_css(&hex);
-        let b = gtk::Button::builder().label(i.to_string()).build();
-        b.add_css_class("gn-swatch");
-        b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
-        let (w2, id2) = (w.clone(), id.to_string());
-        b.connect_clicked(move |_| { if let Some(a) = w2.upgrade() { value(&a, &id2, json!(format!("chip:{}", i))); } });
-        fb.append(&b);
-    }
-    col.append(&fb);
-    let acts = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    for (label, op) in [("Whole name", "whole"), ("Add at the end", "end")] {
-        let b = gtk::Button::with_label(label);
-        let (w2, id2, state) = (w.clone(), id.to_string(), state.clone());
-        b.connect_clicked(move |_| {
-            let (h, s, v) = state.get();
-            if let Some(a) = w2.upgrade() { value(&a, &id2, json!(format!("{}:{}", op, hsv_hex(h, s, v)))); }
-        });
-        acts.append(&b);
-    }
-    col.append(&acts);
-    r.set_child(Some(&col));
-    r.upcast()
 }
 
 /// The CSS of one swatch colour, added to the display once per colour.

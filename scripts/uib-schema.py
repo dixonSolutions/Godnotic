@@ -66,6 +66,10 @@ DEFS["column"] = obj({
     "priority": {"type": "integer", "minimum": 1, "maximum": 3},
 }, ["key", "type"])
 DEFS["option"] = obj({"value": S, "label": S, "icon": ICON, "image": IMG, "help": S}, ["value", "label"])
+# the keypad of a name field: groups of keys; `text` is what a tap inserts at the caret
+DEFS["key"] = obj({"text": S, "colour": {"type": "string", "pattern": "^#[0-9a-f]{6}$"}}, ["text"])
+DEFS["keygroup"] = obj({"id": ID, "label": S, "kind": enum("colour", "glyph"),
+                        "keys": {"type": "array", "items": ref("key"), "maxItems": 256}}, ["id", "keys"])
 DEFS["attr"] = obj({"label": S, "value": S, "icon": ICON}, ["label", "value"])
 DEFS["mark"] = obj({"value": N, "label": S}, ["value"])
 DEFS["pageState"] = obj({"title": S, "text": S, "icon": ICON, "action": ref("action")})
@@ -136,7 +140,8 @@ TYPES = {
                 "badges": {"type": "array", "items": ref("badge"), "maxItems": 8}, "primary": ref("action")},
     "text": {"body": {"type": "string", "maxLength": 8192},
              "style": enum("body", "caption", "title", "mono", "note", "warning"), "selectable": B},
-    "image": {"ref": IMG, "fit": enum("cover", "contain"), "alt": S, "role": enum("picture", "banner")},
+    "image": {"ref": IMG, "fit": enum("cover", "contain"), "alt": S, "role": enum("picture", "banner"),
+              "viewer": enum("model"), "model": S, "skin": I},
     "divider": {},
     "status": {"body": S, "progress": FRAC, "indeterminate": B, "primary": ref("action")},
     "progress": {"value": FRAC, "indeterminate": B, "detail": S, "cancel": ref("action")},
@@ -148,7 +153,8 @@ TYPES = {
                "style": enum("auto", "segmented", "dropdown", "radio", "cards")},
     "field": {**CONTROL, "value": S,
               "kind": enum("text", "name", "number", "password", "url", "search", "address"),
-              "placeholder": S, "maxLength": I, "private": B, "hasValue": B, "submit": ref("action")},
+              "placeholder": S, "maxLength": I, "private": B, "hasValue": B, "submit": ref("action"),
+              "keypad": {"type": "array", "items": ref("keygroup"), "maxItems": 6}},
     "button": {"action": ref("action"), "style": STYLE, "width": enum("xs", "s", "m", "l", "fill")},
     "colour": {**CONTROL, "value": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},
                "palette": {"type": "array", "items": {"type": "string", "pattern": "^#[0-9a-f]{6}$"},

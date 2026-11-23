@@ -238,6 +238,55 @@
    ],
    "additionalProperties": false
   },
+  "key": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "maxLength": 4096
+    },
+    "colour": {
+     "type": "string",
+     "pattern": "^#[0-9a-f]{6}$"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "additionalProperties": false
+  },
+  "keygroup": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"
+    },
+    "label": {
+     "type": "string",
+     "maxLength": 4096
+    },
+    "kind": {
+     "type": "string",
+     "enum": [
+      "colour",
+      "glyph"
+     ]
+    },
+    "keys": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/key"
+     },
+     "maxItems": 256
+    }
+   },
+   "required": [
+    "id",
+    "keys"
+   ],
+   "additionalProperties": false
+  },
   "attr": {
    "type": "object",
    "properties": {
@@ -3183,6 +3232,21 @@
            "picture",
            "banner"
           ]
+         },
+         "viewer": {
+          "type": "string",
+          "enum": [
+           "model"
+          ]
+         },
+         "model": {
+          "type": "string",
+          "maxLength": 4096
+         },
+         "skin": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
          }
         },
         "additionalProperties": false
@@ -4379,6 +4443,13 @@
          },
          "submit": {
           "$ref": "#/$defs/action"
+         },
+         "keypad": {
+          "type": "array",
+          "items": {
+           "$ref": "#/$defs/keygroup"
+          },
+          "maxItems": 6
          }
         },
         "additionalProperties": false

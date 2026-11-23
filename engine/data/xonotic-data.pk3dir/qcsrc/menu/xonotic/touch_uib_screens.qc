@@ -2129,6 +2129,7 @@ void UIB_Init()
 	UIB_Context();
 }
 
+void UIB_PlayerTick();   // touch_uib_player.qc: sends a typed name once the typing pauses
 float uib_next_tick, uib_mp_next_refresh; // real time: the menu VM's `time` stands still while a native front end hides the menu
 void UIB_Tick()
 {
@@ -2156,6 +2157,7 @@ void UIB_Tick()
 	UIB_JoinFailTick();
 	UIB_JoinTick();
 	TouchData_UIBTick();
+	UIB_PlayerTick();
 	// time-varying screens
 	string top = UIB_TopScreen();
 	if (top == "sp")

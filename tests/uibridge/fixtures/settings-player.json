@@ -370,8 +370,6 @@
     },
     "children": [
      "settings/split/player/tabs/profile/name",
-     "settings/split/player/tabs/profile/colourcodes",
-     "settings/split/player/tabs/profile/colours",
      "settings/split/player/tabs/profile/model"
     ]
    },
@@ -381,168 +379,62 @@
     "props": {
      "label": "Name",
      "bind": "vm:player.name",
-     "value": "",
+     "value": "^1Ra^xf80ven",
      "kind": "name",
-     "maxLength": 32,
-     "apply": "reconnect"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colourcodes",
-    "type": "text",
-    "props": {
-     "body": "Name colour codes:  to , written into the name",
-     "style": "caption"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours",
-    "type": "row",
-    "props": {
-     "wrap": true
-    },
-    "children": [
-     "settings/split/player/tabs/profile/colours/c0",
-     "settings/split/player/tabs/profile/colours/c1",
-     "settings/split/player/tabs/profile/colours/c2",
-     "settings/split/player/tabs/profile/colours/c3",
-     "settings/split/player/tabs/profile/colours/c4",
-     "settings/split/player/tabs/profile/colours/c5",
-     "settings/split/player/tabs/profile/colours/c6",
-     "settings/split/player/tabs/profile/colours/c7",
-     "settings/split/player/tabs/profile/colours/c8",
-     "settings/split/player/tabs/profile/colours/c9"
-    ]
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c0",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.0",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c1",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.1",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c2",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.2",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c3",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.3",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c4",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.4",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c5",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.5",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c6",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.6",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c7",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.7",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c8",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.8",
-      "label": ""
-     },
-     "style": "tonal"
-    },
-    "children": []
-   },
-   {
-    "id": "settings/split/player/tabs/profile/colours/c9",
-    "type": "button",
-    "props": {
-     "label": "",
-     "action": {
-      "id": "player.colour.9",
-      "label": ""
-     },
-     "style": "tonal"
+     "maxLength": 64,
+     "keypad": [
+      {
+       "id": "colours",
+       "label": "Colours",
+       "kind": "colour",
+       "keys": [
+        {
+         "text": "^1",
+         "colour": "#ff0000"
+        },
+        {
+         "text": "^2",
+         "colour": "#33ff00"
+        },
+        {
+         "text": "^xf80",
+         "colour": "#ff8800"
+        }
+       ]
+      },
+      {
+       "id": "faces",
+       "label": "Faces",
+       "kind": "glyph",
+       "keys": [
+        {
+         "text": "😃"
+        },
+        {
+         "text": "😎"
+        },
+        {
+         "text": "❤"
+        }
+       ]
+      },
+      {
+       "id": "symbols",
+       "label": "Symbols",
+       "kind": "glyph",
+       "keys": [
+        {
+         "text": "★"
+        },
+        {
+         "text": "◆"
+        },
+        {
+         "text": ""
+        }
+       ]
+      }
+     ]
     },
     "children": []
    },

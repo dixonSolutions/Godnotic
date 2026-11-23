@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Godnotic UI bridge: Settings > Player on one page (docs/SETTINGS_MAP.md, "Player").
 //
-//   Name        the field, then the colour picker (hue/saturation/brightness, the ^0..^9
-//               presets, a letter range, a live preview; the native renderers draw it)
+//   Name        the field. It shows the name in its colours and carries `keypad`: the
+//               characters, colour codes and faces a native renderer offers in its own
+//               key panel (UIB_PMKeypad); the panel inserts at the caret like any typing.
+//               The name is sent to the server a moment after the last key, never mid-word
 //   Character   the model's picture with arrows to flip through every model: the game's
 //               stock ones and the player's own uploads, in one cycle; its name under it
 //   Colours     shirt and pants (_cl_color), the colours the character wears in a match
@@ -18,6 +20,11 @@
 // own delete button.
 
 const int UIB_PM_MAX = 96;
+
+const float UIB_PM_NAME_DELAY = 0.8;
+string uib_name_pending;
+float uib_name_due = 0;   // real time the pending name is sent; 0: nothing pending
+
 
 string uib_pm_model[UIB_PM_MAX];
 string uib_pm_skin[UIB_PM_MAX];
@@ -118,38 +125,17 @@ void UIB_PlayerPage()
 {
 	UIB_PMLoad();
 	int cur = UIB_PMCurrent();
-	string nm = cvar_string("_cl_name");
+	string nm = (uib_name_due > 0) ? uib_name_pending : cvar_string("_cl_name");   // what the player has typed, sent in a moment
 
 	UIB_Section("who", _("Name"), true);
 	UIB_Open("name", "field");
 		uib_s("label", _("Name"));
 		uib_s("bind", "vm:player.name");
-		uib_s("value", strreplace("^", "^^", nm));   // the field shows and edits the codes themselves
+		uib_j("value", uib_qv(nm));   // verbatim: the field shows and edits the codes and glyphs themselves
 		uib_s("kind", "name");
 		uib_f("maxLength", UIB_PM_NAME_MAX);
-		UIB_Apply("reconnect");
+		uib_j("keypad", UIB_PMKeypad());
 	UIB_Close();
-	UIB_Open("namecolours", "colour");
-		uib_s("label", _("Name colour"));
-		uib_s("help", _("Pick a colour and apply it to the whole name or to some of its letters"));
-		uib_s("bind", "vm:player.namecolour");
-		uib_s("picker", "name");
-		uib_s("text", strreplace("^", "^^", nm));
-		uib_f("maxLength", UIB_PM_NAME_MAX);
-		string pal = "[", labels = "[";
-		for (int i = 0; i < 10; ++i)
-		{
-			pal = strcat(pal, (i ? "," : ""), "\"", UIB_PMNameHex(i), "\"");
-			labels = strcat(labels, (i ? "," : ""), "\"", ftos(i), "\"");
-		}
-		uib_j("palette", strcat(pal, "]"));
-		uib_j("labels", strcat(labels, "]"));
-	UIB_Close();
-	string nmsg = UIB_VM("player.name.msg");
-	if (nmsg != "")
-		UIB_Text("namemsg", nmsg, "warning");
-	if (strstrofs(nm, "^", 0) >= 0)
-		UIB_PMButton("plain", _("Remove the colour codes"), UIB_A("player.name.plain", _("Remove the colour codes"), ""), "link", "s");
 	UIB_Close();
 
 	UIB_Section("character", _("Character"), true);
@@ -161,6 +147,11 @@ void UIB_PlayerPage()
 			uib_s("fit", "contain");
 			uib_f("aspect", 1);
 			uib_s("alt", uib_pm_title[shown]);
+			// a native renderer offers the picture fullscreen with the model itself to turn and zoom
+			// (ModelViewer.kt); `model` is the file in the game's filesystem, `skin` its skin number
+			uib_s("viewer", "model");
+			uib_s("model", uib_pm_model[shown]);
+			uib_f("skin", stof(uib_pm_skin[shown]));
 		UIB_Close();
 		UIB_Open("flip", "row");
 			uib_s("align", "center");
@@ -173,6 +164,8 @@ void UIB_PlayerPage()
 	}
 	else
 		UIB_Text("none", _("No player models found: the game data is not complete yet."), "caption");
+	// name, colours and character reach the server as they change (the engine sends them: cl_cmd.c, CL_SetInfo)
+	UIB_Text("live", _("Name, colours and character change at once, in a match too. A server can keep its own character or limit renames."), "caption");
 	// upload and delete sit right at the model
 	if (cvar_string("uib_pm") != "")
 	{
@@ -199,14 +192,12 @@ void UIB_PlayerPage()
 		uib_s("bind", "vm:player.shirt");
 		uib_s("value", UIB_ColourHex(floor(c / 16)));
 		uib_j("palette", UIB_Palette());
-		UIB_Apply("reconnect");
 	UIB_Close();
 	UIB_Open("pants", "colour");
 		uib_s("label", _("Pants"));
 		uib_s("bind", "vm:player.pants");
 		uib_s("value", UIB_ColourHex(c - 16 * floor(c / 16)));
 		uib_j("palette", UIB_Palette());
-		UIB_Apply("reconnect");
 	UIB_Close();
 	UIB_Close();
 }
@@ -270,81 +261,85 @@ bool UIB_PlayerAction(string a, string payload)
 		UIB_RebuildAll();
 		return true;
 	}
-	if (a == "player.name.plain")
-	{
-		string nm = strdecolorize(cvar_string("_cl_name"));
-		cvar_set("_cl_name", nm);
-		UIB_VMSet("player.name", nm);
-		localcmd("\nname \"$_cl_name\"\nsaveconfig\n");
-		UIB_RebuildAll();
-		return true;
-	}
 	return false;
 }
 
-int UIB_PMHexVal(string c)
-{
-	return strstrofs("0123456789abcdef", strtolower(c), 0);
-}
-
-// "#rrggbb" to Xonotic's "^xRGB" (4 bits a channel, the nearest of 16 levels), "" if malformed
-string UIB_PMXon(string hex)
-{
-	if (strlen(hex) != 7 || substring(hex, 0, 1) != "#") return "";
-	string r = "^x";
-	for (int i = 0; i < 3; ++i)
-	{
-		int hi = UIB_PMHexVal(substring(hex, 1 + 2 * i, 1)), lo = UIB_PMHexVal(substring(hex, 2 + 2 * i, 1));
-		if (hi < 0 || lo < 0) return "";
-		r = strcat(r, substring("0123456789abcdef", floor((hi * 16 + lo) / 17 + 0.5), 1));
-	}
-	return r;
-}
+// ---- the name: typed live, sent once the typing pauses -------------------------------------
+//
+// DarkPlaces sends `name` to the server the moment _cl_name changes (cvar.c, CL_SetInfo), so the
+// field's every key would be a rename that the server announces to the whole match. The field's
+// text is held here and becomes the player's name UIB_PM_NAME_DELAY seconds after the last key
+// (UIB_PlayerTick), so the new name is on the server within a second and a half-typed one is not.
 
 // the name as the player typed or picked it, checked and made the player's name
-bool UIB_PMSetName(string nm)
+void UIB_PMCommitName()
 {
-	if (strlen(nm) > UIB_PM_NAME_MAX)
-	{
-		UIB_VMSet("player.name.msg", sprintf(_("Not changed: the name with its colour codes may be %d characters at most."), UIB_PM_NAME_MAX));
-		UIB_RebuildAll();
-		return true;
-	}
+	string nm = uib_name_pending;
+	uib_name_due = 0;
+	if (nm == cvar_string("_cl_name"))
+		return;
 	if (strdecolorize(nm) == "")
-	{
-		UIB_VMSet("player.name.msg", _("Not changed: the name needs at least one letter."));
-		UIB_RebuildAll();
-		return true;
-	}
-	UIB_VMSet("player.name.msg", "");
-	cvar_set("_cl_name", nm);
-	UIB_VMSet("player.name", nm);
+		return;   // a name needs a letter: the old one stays (and the field shows it again on the next visit)
+	cvar_set("_cl_name", nm);   // connected: the engine sends it to the server now
 	localcmd("\nname \"$_cl_name\"\nsaveconfig\n");
-	UIB_RebuildAll();
-	return true;
 }
 
-// what the picker sent: name:<whole new name>, whole:#rrggbb, end:#rrggbb or chip:N
-bool UIB_PlayerNameColour(string v)
+// Settings > Player, the Name field: a key typed, a keypad key tapped or a suggestion taken
+void UIB_PlayerName(string value)
 {
-	int k = strstrofs(v, ":", 0);
-	if (k < 0) return false;
-	string op = substring(v, 0, k), arg = substring(v, k + 1, -1);
-	string cur = cvar_string("_cl_name");
-	if (op == "name")
-		return UIB_PMSetName(arg);
-	if (op == "chip")
+	if (strlen(value) > UIB_PM_NAME_MAX)
+		value = substring(value, 0, UIB_PM_NAME_MAX);   // the name stays within the limit
+	strcpy(uib_name_pending, value);
+	uib_name_due = uib_gettime(1) + UIB_PM_NAME_DELAY;
+	UIB_VMSet("player.name", value);
+}
+
+void UIB_PlayerTick()
+{
+	if (uib_name_due > 0 && uib_gettime(1) >= uib_name_due)
+		UIB_PMCommitName();
+}
+
+// ---- the keypad ------------------------------------------------------------------------------
+//
+// The same characters Xonotic's own character map offers (charmap.qc: CHARMAP), so what the keypad
+// types is what the game font draws; the colour keys are the ^0..^9 codes and six ^xRGB ones.
+// Faces are the emoticons (U+1F600..U+1F64F and the heart), the game font's own glyphs are
+// U+E000..U+E0FF (the Quake charset page; DarkPlaces draws them from its bitmap font) and every
+// other CHARMAP entry is a symbol. Keys are verbatim (uib_qv): `^` and the private glyphs must survive.
+
+string UIB_PMKeyJ(string text, string colour)
+{
+	if (colour != "")
+		return strcat("{\"text\":", uib_qv(text), ",\"colour\":\"", colour, "\"}");
+	return strcat("{\"text\":", uib_qv(text), "}");
+}
+
+string UIB_PMKeypad()
+{
+	string cols = "";
+	for (int i = 0; i < 10; ++i)
+		cols = strcat(cols, (i ? "," : ""), UIB_PMKeyJ(strcat("^", ftos(i)), UIB_PMNameHex(i)));
+	cols = strcat(cols, ",", UIB_PMKeyJ("^xf80", "#ff8800"), ",", UIB_PMKeyJ("^x08f", "#0088ff"), ",", UIB_PMKeyJ("^x0f8", "#00ff88"),
+		",", UIB_PMKeyJ("^x80f", "#8800ff"), ",", UIB_PMKeyJ("^xf08", "#ff0088"), ",", UIB_PMKeyJ("^x8f0", "#88ff00"));
+	string faces = "", syms = "", font = "";
+	int n = strlen(CHARMAP);
+	for (int i = 0; i < n; ++i)
 	{
-		int i = stof(arg);
-		if (i < 0 || i > 9 || ftos(i) != arg) return false;
-		return UIB_PMSetName(strcat(cur, "^", ftos(i)));
+		float cp = str2chr(CHARMAP, i);
+		if (cp <= 0x20)
+			continue;
+		string key = UIB_PMKeyJ(substring(CHARMAP, i, 1), "");
+		if ((cp >= 0x1F600 && cp <= 0x1F64F) || cp == 0x2764)
+			faces = strcat(faces, (faces != "" ? "," : ""), key);
+		else if (cp >= 0xE000 && cp <= 0xE0FF)
+			font = strcat(font, (font != "" ? "," : ""), key);
+		else
+			syms = strcat(syms, (syms != "" ? "," : ""), key);
 	}
-	if (op == "whole" || op == "end")
-	{
-		string code = UIB_PMXon(arg);
-		if (code == "") return false;
-		if (op == "end") return UIB_PMSetName(strcat(cur, code));
-		return UIB_PMSetName(strcat(code, strreplace("^", "^^", strdecolorize(cur))));
-	}
-	return false;
+	if (font != "")
+		syms = strcat(syms, ",", font);
+	return strcat("[{\"id\":\"colours\",\"label\":", uib_q(_("Colours")), ",\"kind\":\"colour\",\"keys\":[", cols, "]},",
+		"{\"id\":\"faces\",\"label\":", uib_q(_("Faces")), ",\"kind\":\"glyph\",\"keys\":[", faces, "]},",
+		"{\"id\":\"symbols\",\"label\":", uib_q(_("Symbols")), ",\"kind\":\"glyph\",\"keys\":[", syms, "]}]");
 }

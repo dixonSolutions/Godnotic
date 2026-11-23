@@ -1218,8 +1218,40 @@ class ViewRenderer(
             img.contentDescription = x.props.str("alt")
             val r = x.props.str("ref")
             if (r.isEmpty()) img.none() else picture(img, r)
+            // Touch: a picture of a 3D model (`viewer: model`) opens fullscreen on the model itself (ModelViewer.kt)
+            val model = if (x.props.str("viewer") == "model") x.props.str("model") else ""
+            if (model.isNotEmpty()) {
+                val open = { openModelViewer(x.props.str("alt").ifEmpty { "Model" }, model, x.props.int("skin")) }
+                img.setOnClickListener { open() }
+                if (img.findViewWithTag<View>("fullscreen") == null) {
+                    val fs = TextView(ctx).apply {
+                        gravity = Gravity.CENTER
+                        val pad = dp(10f)
+                        setPadding(pad, pad, pad, pad)
+                        Icons.drawable("fullscreen", dp(24f), Theme.TEXT)?.let { setCompoundDrawablesRelativeWithIntrinsicBounds(it, null, null, null) }
+                        background = Theme.rounded(0xAA050B18.toInt(), dp(24f).toFloat())
+                        contentDescription = "Fullscreen"
+                        tag = "fullscreen"
+                        setOnClickListener { open() }
+                    }
+                    img.addView(fs, FrameLayout.LayoutParams(dp(48f), dp(48f), Gravity.TOP or Gravity.END).apply { setMargins(dp(8f), dp(8f), dp(8f), dp(8f)) })
+                }
+            }
         }
         return e
+    }
+
+    /** The fullscreen model viewer over everything; Back, Escape and its X close it. The model's files come from the engine (`pk3raw:`). */
+    private fun openModelViewer(title: String, model: String, skin: Int) {
+        val v = ModelViewer(ctx, title, model, skin, { ref, done -> fetchFile(ref, done) }) { host.showDialog(null) }
+        host.showDialog(v)
+    }
+
+    /** A file out of the game's filesystem as the path of a copy ("" when the engine has none): the image channel, ref `pk3raw:`. */
+    private fun fetchFile(ref: String, done: (String) -> Unit) {
+        val waiting = imageWaiters.getOrPut(ref) { ArrayList() }
+        waiting.add(done)
+        if (waiting.size == 1) events.image(ref, 0, 0)
     }
 
     /** Home's bar (`tabbar`: Settings, Credits, Quit): one strip along the bottom, joined edge to edge. */
@@ -1426,13 +1458,9 @@ class ViewRenderer(
             val p = x.props
             val col = Kit.column(ctx, 4f)
             col.addView(Kit.formRow(ctx, title(p), help(p), null))
-            if (p.str("picker") == "name") { // Touch: the name colour picker (ColourPicker.kt)
-                col.addView(ColourPicker.view(ctx, p.str("text"), p.num("maxLength", 64.0).toInt()) { n -> events.value(id, "name:$n") }.apply { setPadding(dp(16f), 0, dp(16f), dp(8f)) })
-            } else {
-                val sw = ColourSwatches.view(ctx, p["palette"].list().map { it.toString() }, p["labels"].list().map { it.toString() }, p.str("value")) { hex -> events.value(id, hex) }
-                sw.setPadding(dp(16f), 0, dp(16f), dp(8f))
-                col.addView(sw)
-            }
+            val sw = ColourSwatches.view(ctx, p["palette"].list().map { it.toString() }, p["labels"].list().map { it.toString() }, p.str("value")) { hex -> events.value(id, hex) }
+            sw.setPadding(dp(16f), 0, dp(16f), dp(8f))
+            col.addView(sw)
             holder.addView(col)
         }
         return e
@@ -1658,6 +1686,28 @@ class ViewRenderer(
         val helpV = Kit.text(ctx, "", Theme.SP_CAPTION, Theme.TEXT_MUTED)
         col.addView(titleV); col.addView(line); col.addView(helpV)
         col.tag = input
+        // Touch: the player name shows its colours, and its keypad types into this same field (NameField.kt)
+        val isName = props.str("kind") == "name"
+        var keypadView: View? = null
+        if (isName) {
+            input.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) { if (s != null) NameField.style(s) }
+            })
+            input.text?.let { NameField.style(it) }
+        }
+        fun keyTapped(key: String) {
+            val max = e.props.int("maxLength").takeIf { it > 0 } ?: NameColour.MAX_LEN
+            val r = NameColour.insert(input.text.toString(), input.selectionStart, input.selectionEnd, key, max) ?: return
+            val a = input.selectionStart.let { if (it < 0) input.text.length else it }
+            val b = input.selectionEnd.let { if (it < 0) a else it }
+            input.text.replace(minOf(a, b), maxOf(a, b), key)
+            input.setSelection(r.second.coerceIn(0, input.text.length))
+            // typed into the field at once, as the system keyboard does: what the player sees is what the engine gets
+            val text = input.text.toString()
+            if (text != e.props.str("value")) { e.props = e.props + ("value" to text); events.value(id, text) }
+        }
         e.bind = { x ->
             val p = x.props
             val inBar = nodes[x.parent ?: ""]?.type in setOf("toolbar", "actionbar", "row") || (x.id == "search" && x.props.str("kind") == "search" && nodes[x.parent ?: ""]?.type == "screen")
@@ -1680,6 +1730,17 @@ class ViewRenderer(
             helpV.setTextColor(if (p.str("error").isNotEmpty()) Theme.BAD else Theme.TEXT_MUTED)
             helpV.visibility = if (h.isEmpty()) View.GONE else View.VISIBLE
             p.int("maxLength").takeIf { it > 0 }?.let { input.filters = arrayOf(android.text.InputFilter.LengthFilter(it)) }
+            val groups = if (isName) p["keypad"].list().map { it.obj() }.filter { it.isNotEmpty() } else emptyList()
+            if (groups.isNotEmpty() && keypadView == null) {
+                val kp = NameField.keypad(ctx, groups) { keyTapped(it) }
+                kp.visibility = if (NameField.keypadOpen(ctx)) View.VISIBLE else View.GONE
+                keypadView = kp
+                col.addView(kp, col.indexOfChild(helpV))
+                line.addView(NameField.toggle(ctx, kp.visibility == View.VISIBLE) { open ->
+                    kp.visibility = if (open) View.VISIBLE else View.GONE
+                    NameField.setKeypadOpen(ctx, open)
+                })
+            }
         }
         return e
     }

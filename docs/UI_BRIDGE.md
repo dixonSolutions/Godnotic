@@ -332,7 +332,12 @@ renderers ignore them unless they know them.
 
 **`text`** — `body`, `style` (`body`, `caption`, `title`, `mono`, `note`, `warning`),
 `selectable`.
-**`image`** — `ref`, `aspect`, `fit` (`cover`, `contain`), `alt`, `role` (`picture` default, `banner`).
+**`image`** — `ref`, `aspect`, `fit` (`cover`, `contain`), `alt`, `role` (`picture` default, `banner`),
+`viewer: "model"` with `model` (the model file in the game's filesystem, e.g. `models/player/erebus.iqm`)
+and `skin` (number): the picture is of a 3D model, and a renderer that can draws a fullscreen button on
+it that opens the model itself, to turn, zoom, play its animations and view freely (Android: `ModelViewer.kt`;
+others ignore the props). The file is fetched as an image ref `pk3raw:<path>` (`models/`, `.iqm`, `.skin`, up
+to 8 MiB), answered like an image with the file's path.
 `role: "banner"` with `emphasis: "high"` is the Home banner: at the top of the page, as wide
 as the content and scaled to the window (the height the row of cards leaves, never a thin
 strip), whole (`contain`), and a renderer may leave out the screen's title beside it.
@@ -350,7 +355,15 @@ Every control has `label`, optional `help`, `bind` (section 4.9), `value` (curre
 `apply`: `immediate` (default), `video` (applies after a renderer restart, which the
 engine does when the screen is left or on `apply` action), `sound` (sound restart),
 `reconnect` (applies to the next match), `restart` (needs a game restart). Renderers show a
-small note for anything but `immediate`.
+small note for anything but `immediate`. A value that reaches the server as it changes (the player's
+name, colours and character) has no `apply`: nothing to wait for.
+
+A `field` of `kind: name` may carry `keypad`: `[{id, label, kind: colour|glyph, keys: [{text, colour?}]}]`.
+A key's `text` is what a tap inserts at the caret of the field, as typing does (`^1`, `😃`, a game-font
+glyph U+E0xx); a `colour` key also has `colour`, the swatch. Key text is verbatim: colour codes and the
+private glyphs are not stripped. The renderer draws the panel, with a show/hide toggle it remembers, and
+shows the field's text in the colours its codes give. The system keyboard keeps working: both type into
+the same field.
 
 | Type | Value | Props |
 | --- | --- | --- |
@@ -358,9 +371,9 @@ small note for anything but `immediate`.
 | `slider` | number | `min`, `max`, `step`, `format` (`int`, `float1`, `float2`, `percent` (value 0..1 shown ×100), `ms`, `dp`, `db`, `x` (multiplier), `deg`), `unit` (text after the number), `marks` (`[{value, label}]`) |
 | `stepper` | number | `min`, `max`, `step`, `format` |
 | `choice` | string | `options` (`[{value, label, icon, image, help}]`), `style` (`auto`, `segmented`, `dropdown`, `radio`, `cards`) |
-| `field` | string | `kind` (`text`, `name`, `number`, `password`, `url`, `search`, `address`), `placeholder`, `maxLength`, `private`, `hasValue`, `submit` (action) |
+| `field` | string | `kind` (`text`, `name`, `number`, `password`, `url`, `search`, `address`), `placeholder`, `maxLength`, `private`, `hasValue`, `submit` (action), `keypad` (key groups, below) |
 | `button` | — | `action` (action), `style` (`primary`, `secondary`, `tonal`, `destructive`, `link`) |
-| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `labels` (short texts written on the swatches, parallel to `palette`), `preview` (image ref). Renderers draw one round swatch per palette entry, the current value ringed; a tap sends that entry. `picker: "name"` (with `text`, the name with its codes, and `maxLength`) is the player-name colour picker instead: hue/saturation/brightness sliders, the ^0 to ^9 presets, a from/to letter range and a live preview; Apply sends `name:<the whole new name>` (the GTK loader sends `whole:#rrggbb`, `end:#rrggbb` or `chip:N`) |
+| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `labels` (short texts written on the swatches, parallel to `palette`), `preview` (image ref). Renderers draw one round swatch per palette entry, the current value ringed; a tap sends that entry. `picker: "name"` is retired: the player name has no separate colour picker; its colours are keys of the Name field's `keypad` |
 | `keybind` | string[] (key names) | `command`, `max` (keys per command, default 2) |
 | `progress` | see 4.4 | |
 

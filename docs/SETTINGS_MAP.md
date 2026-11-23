@@ -156,10 +156,9 @@ Tactics (caption "Tactics play for you in matches on this device only."):
 
 | Row | Cvar | Control |
 |---|---|---|
-| Name | `_cl_name` | field, apply "reconnect"; shows the colour codes themselves (`^` is written `^^` for the bridge, which strips codes from display text) |
-| Name colours | appends `^0`..`^9` to `_cl_name` via `vm:player.namecolour` | `colour` with a 10-entry palette and `labels` "0".."9" |
-| Character | `_cl_playermodel` + `_cl_playerskin` | the model's preview picture, `<` and `>` to flip through stock and uploaded models in one cycle, its name and "n of N" under it; Delete only on an uploaded one |
-| Shirt / Pants | `_cl_color` via `vm:player.shirt`, `vm:player.pants` | `colour` pickers |
+| Name | `_cl_name` | `field` (`kind: name`) with a `keypad`: the field shows the name in its colours; the keypad (a keyboard icon beside the field, open or shut remembered by the renderer) has Colours (`^0`..`^9` and six `^xRGB`), Faces and Symbols (the stock character map, `charmap.qc`, including the game font's U+E0xx glyphs) and inserts at the caret. The value is verbatim (`uib_qv`), so codes and glyphs are the text itself. The name goes to the server 0.8 s after the last key (`UIB_PlayerTick`), because the engine sends `name` the moment `_cl_name` changes and a rename is announced to the match. No `apply` note: it is live. The old Name colour section (sliders, preview, letter range) is gone |
+| Character | `_cl_playermodel` + `_cl_playerskin` | the model's preview picture (an `image` with `viewer: model`, `model`, `skin`: renderers add a fullscreen button that opens the model viewer), `<` and `>` to flip through stock and uploaded models in one cycle, its name and "n of N" under it; Delete only on an uploaded one. Live: `playermodel`/`playerskin` go to the server at once (the server's `FixPlayermodel` runs every frame), unless the server forces a character (`sv_defaultcharacter`, team models) |
+| Shirt / Pants | `_cl_color` via `vm:player.shirt`, `vm:player.pants` | `colour` pickers, live (`color`); a team game sets the shirt itself |
 | Your own model | `uib_pm_import`, `godnotic-playermodels.txt` | file picker; a model that passes the check becomes the character, one that does not says why |
 
 **Privacy** (Statistics and identity).

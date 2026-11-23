@@ -85,7 +85,7 @@ void UIB_SecContent(string k);
 void UIB_PlayerPage();   // touch_uib_player.qc
 bool UIB_PlayerAction(string a, string payload);
 const int UIB_PM_NAME_MAX = 64;   // Touch: a player name, colour codes included (the engine holds 127 bytes)
-bool UIB_PlayerNameColour(string hex);
+void UIB_PlayerName(string value);
 void UIB_SearchResults(string q);
 void UIB_SearchIndex();
 bool uib_sr_built;
@@ -1257,10 +1257,8 @@ bool UIB_SettingsValue(string node, string value)
 	switch (bind)
 	{
 		case "vm:player.name":
-			cvar_set("_cl_name", substring(value, 0, UIB_PM_NAME_MAX));   // Touch: the name stays within the limit
-			localcmd("\nname \"$_cl_name\"\nsaveconfig\n");
+			UIB_PlayerName(value);   // Touch: held until the typing pauses, then sent live (touch_uib_player.qc)
 			return true;
-		case "vm:player.namecolour": return UIB_PlayerNameColour(value);
 		case "vm:player.shirt":
 		case "vm:player.pants":
 		{

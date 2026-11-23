@@ -1,15 +1,16 @@
 package io.github.dixonsolutions.godnotic.fe
 
-import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
- * The maths behind the player-name colour picker (ColourPicker): HSV to Xonotic's `^xRGB`
- * code, the `^0`..`^9` presets, and colouring part of a name. Plain Kotlin, no Android, so
- * the JVM tests cover it. The QC side (touch_uib_player.qc) re-checks every name it gets.
+ * The text of a player name as the Name field shows and edits it: Xonotic colour codes
+ * (`^0`..`^9`, `^xRGB`, `^^` for a caret) and the game font's private glyphs (U+E0xx, the Quake
+ * charset page DarkPlaces draws from its bitmap font). Plain Kotlin, no Android, so the JVM tests
+ * cover it; NameField.kt turns the result into spans. The QC side (touch_uib_player.qc) checks
+ * every name it receives.
  */
 object NameColour {
-    /** The engine takes names of up to 127 bytes; the picker keeps to 64, codes included. */
+    /** The engine takes names of up to 127 bytes; the field keeps to 64, codes included. */
     const val MAX_LEN = 64
 
     /** What ^0..^9 look like (the same table as UIB_PMNameHex in touch_uib_player.qc). */
@@ -18,18 +19,10 @@ object NameColour {
         "#33ffff", "#ff33ff", "#ffffff", "#999999", "#808080",
     )
 
-    /** h 0..360, s and v 0..1 to "#rrggbb". */
-    fun hsvToHex(h: Double, s: Double, v: Double): String {
-        val hh = ((h % 360.0) + 360.0) % 360.0 / 60.0
-        val c = v * s
-        val x = c * (1 - kotlin.math.abs(hh % 2 - 1))
-        val m = v - c
-        val (r, g, b) = when (floor(hh).toInt()) {
-            0 -> Triple(c, x, 0.0); 1 -> Triple(x, c, 0.0); 2 -> Triple(0.0, c, x)
-            3 -> Triple(0.0, x, c); 4 -> Triple(x, 0.0, c); else -> Triple(c, 0.0, x)
-        }
-        fun ch(f: Double) = ((f + m) * 255).roundToInt().coerceIn(0, 255)
-        return "#%02x%02x%02x".format(ch(r), ch(g), ch(b))
+    /** "^x" + 3 hex digits to "#rrggbb" (each digit d is d * 17). */
+    fun xonHex(code: String): String {
+        val d = code.removePrefix("^x")
+        return "#" + d.map { String.format("%02x", Character.digit(it, 16) * 17) }.joinToString("")
     }
 
     /** "#rrggbb" to Xonotic's "^xRGB" (4 bits a channel, the nearest of the 16 levels). */
@@ -41,72 +34,101 @@ object NameColour {
         return sb.toString()
     }
 
-    /** "^x" + 3 hex digits back to "#rrggbb" (each digit d is d * 17). */
-    fun xonHex(code: String): String {
-        val d = code.removePrefix("^x")
-        return "#" + d.map { String.format("%02x", Character.digit(it, 16) * 17) }.joinToString("")
+    /** The colour a code gives, "#rrggbb"; null for anything that is not ^N or ^xRGB. */
+    fun codeHex(code: String): String? = when {
+        code.length == 2 && code[0] == '^' && code[1] in '0'..'9' -> PRESETS[code[1] - '0']
+        code.length == 5 && code.startsWith("^x") && code.substring(2).all { Character.digit(it, 16) >= 0 } -> xonHex(code.lowercase())
+        else -> null
     }
 
-    fun presetCode(i: Int): String = "^" + i.coerceIn(0, 9)
+    /** One run of a name: a colour code (`kind` CODE, `hex` the colour it sets), letters (TEXT) or one game-font glyph (GLYPH). */
+    enum class Kind { CODE, TEXT, GLYPH }
+    class Seg(val start: Int, val end: Int, val kind: Kind, val hex: String)
 
-    /** The shirt/pants palette: index 0..15 (7 repeats white: left out), one hex each. */
-    val SHIRT = listOf(
-        "#ffffff", "#ff0000", "#33ff00", "#ffff00", "#3366ff", "#00ffff", "#ff3366", "#ffffff",
-        "#ff6600", "#9933ff", "#ff00ff", "#00ff99", "#ccff00", "#0099ff", "#ffcc00", "#666666",
-    )
-    fun shirtIndex(hex: String): Int = SHIRT.indices.firstOrNull { SHIRT[it] == hex.lowercase() && it != 7 } ?: 0
+    /** Colour of text before any code: the default text colour (^7). */
+    const val DEFAULT_HEX = "#ffffff"
 
-    /** One character of a name and the colour code in force on it (null: none yet). */
-    class Ch(val c: Char, val code: String?)
-
-    /** Splits a name with codes into characters and the code in force on each. */
-    fun parse(name: String): List<Ch> {
-        val out = ArrayList<Ch>()
-        var cur: String? = null
+    /** Splits a name as typed into runs, each with the colour in force. `^^` is text (a caret). */
+    fun segments(name: String): List<Seg> {
+        val out = ArrayList<Seg>()
+        var cur = DEFAULT_HEX
         var i = 0
+        var runStart = -1
+        fun flush(upTo: Int) { if (runStart >= 0 && upTo > runStart) out.add(Seg(runStart, upTo, Kind.TEXT, cur)); runStart = -1 }
         while (i < name.length) {
             val c = name[i]
             if (c == '^' && i + 1 < name.length) {
                 val n = name[i + 1]
-                if (n == '^') { out.add(Ch('^', cur)); i += 2; continue }
-                if (n in '0'..'9') { cur = "^$n"; i += 2; continue }
-                if ((n == 'x' || n == 'X') && i + 4 < name.length + 0 && name.substring(i + 2, minOf(name.length, i + 5)).let { it.length == 3 && it.all { ch -> Character.digit(ch, 16) >= 0 } }) {
-                    cur = "^x" + name.substring(i + 2, i + 5).lowercase(); i += 5; continue
+                if (n == '^') { if (runStart < 0) runStart = i; i += 2; continue }
+                val len = when {
+                    n in '0'..'9' -> 2
+                    (n == 'x' || n == 'X') && i + 4 < name.length + 0 && name.substring(i + 2, i + 5).all { Character.digit(it, 16) >= 0 } -> 5
+                    else -> 0
+                }
+                if (len > 0) {
+                    flush(i)
+                    val code = name.substring(i, i + len)
+                    cur = codeHex(code.take(2) + code.drop(2).lowercase()) ?: cur
+                    out.add(Seg(i, i + len, Kind.CODE, cur))
+                    i += len
+                    continue
                 }
             }
-            out.add(Ch(c, cur)); i++
+            if (c in ''..'') {
+                flush(i)
+                out.add(Seg(i, i + 1, Kind.GLYPH, cur))
+                i++
+                continue
+            }
+            if (runStart < 0) runStart = i
+            i++
         }
+        flush(name.length)
         return out
     }
 
-    fun plain(name: String): String = parse(name).joinToString("") { it.c.toString() }
-
-    /** The shortest name with codes that gives each character its colour. */
-    fun serialise(chars: List<Ch>): String {
-        val sb = StringBuilder()
-        var cur: String? = null
-        for (ch in chars) {
-            if (ch.code != cur) { sb.append(ch.code ?: "^7"); cur = ch.code }
-            if (ch.c == '^') sb.append("^^") else sb.append(ch.c)
-        }
-        return sb.toString()
-    }
-
-    /** Length of the name the engine will hold: codes and doubled carets count. */
-    fun length(name: String): Int = name.length
+    /** The name as the game would print it, codes and private glyphs removed (what other players' lists show). */
+    fun plain(name: String): String = segments(name).filter { it.kind == Kind.TEXT }.joinToString("") { name.substring(it.start, it.end).replace("^^", "^") }
 
     /**
-     * Gives characters [from, to) of the plain name the code; null when the result
-     * would pass [max]. An empty range or a code that is not ^N or ^xRGB changes nothing.
+     * What a key tap does to the field: [key] goes in place of the selection [selStart, selEnd) of
+     * [text]. Returns the new text and the caret after the key, or null when the result would pass
+     * [max] (the same limit the field's own filter keeps).
      */
-    fun paint(name: String, from: Int, to: Int, code: String, max: Int = MAX_LEN): String? {
-        val chars = parse(name)
-        val a = from.coerceIn(0, chars.size); val b = to.coerceIn(a, chars.size)
-        val next = chars.mapIndexed { i, ch -> if (i in a until b) Ch(ch.c, code) else ch }
-        val s = serialise(next)
-        return if (s.length > max) null else s
+    fun insert(text: String, selStart: Int, selEnd: Int, key: String, max: Int = MAX_LEN): Pair<String, Int>? {
+        val a = (if (selStart < 0) text.length else selStart).coerceIn(0, text.length)
+        val b = (if (selEnd < 0) a else selEnd).coerceIn(a, text.length)
+        val next = text.substring(0, a) + key + text.substring(b)
+        return if (next.length > max) null else next to a + key.length
     }
 
-    /** Keeps the name inside [max]: paints, then returns the result or the old name. */
-    fun withinLimit(name: String, max: Int = MAX_LEN): Boolean = name.length <= max
+    /** True when [key] is a character a plain-text field would eat (the colour codes need no special care: they are text). */
+    fun isGlyph(key: String): Boolean = key.length == 1 && key[0] in ''..''
+
+    /**
+     * How the game draws a private glyph U+E0xx: the engine maps it to the Quake charset (the same
+     * table as UIB_CleanText in touch_uib_json.c): the low seven bits are the letter, 0x80 and up are
+     * the "alternate" set, drawn in gold. null for the few control glyphs with no letter.
+     */
+    class GlyphLook(val text: String, val gold: Boolean)
+    fun glyphLook(c: Char): GlyphLook? {
+        val v = c.code - 0xE000
+        if (v < 0 || v > 0xFF) return null
+        val low = v and 0x7f
+        val gold = v >= 0x80
+        return when {
+            low in 0x20..0x7e -> GlyphLook(low.toChar().toString(), gold)
+            low == 0x10 -> GlyphLook("[", gold)
+            low == 0x11 -> GlyphLook("]", gold)
+            low == 0x1d || low == 0x1e || low == 0x1f -> GlyphLook("-", gold)
+            else -> null
+        }
+    }
+
+    /** Dark colours need a light backing, or ^0 black would vanish on the field. */
+    fun needsBacking(hex: String): Boolean {
+        val h = hex.removePrefix("#")
+        val r = h.substring(0, 2).toInt(16); val g = h.substring(2, 4).toInt(16); val b = h.substring(4, 6).toInt(16)
+        return (0.299 * r + 0.587 * g + 0.114 * b) < 70
+    }
 }
