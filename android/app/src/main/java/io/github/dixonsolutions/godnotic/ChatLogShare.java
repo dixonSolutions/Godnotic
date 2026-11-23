@@ -34,7 +34,12 @@ import java.util.Locale;
  * Start it once from the activity: ChatLogShare.start(this, GameData.userDir(base)).
  */
 final class ChatLogShare {
+    // touch_chatlog_export writes NAME (share and download); the separate share and
+    // download icons write one of the others (touch_chatlog_copy never writes a file:
+    // the engine puts the text on the clipboard itself).
     private static final String NAME = "touch_chatlog.txt";
+    private static final String NAME_SHARE = "touch_chatlog_share.txt";
+    private static final String NAME_DOWNLOAD = "touch_chatlog_download.txt";
     private static FileObserver observer; // held: a FileObserver stops when collected
 
     private ChatLogShare() {}
@@ -47,7 +52,11 @@ final class ChatLogShare {
             @Override
             public void onEvent(int event, String path) {
                 if (NAME.equals(path)) {
-                    main.post(() -> export(activity, file));
+                    main.post(() -> export(activity, file, true, true));
+                } else if (NAME_SHARE.equals(path)) {
+                    main.post(() -> export(activity, new File(dir, NAME_SHARE), false, true));
+                } else if (NAME_DOWNLOAD.equals(path)) {
+                    main.post(() -> export(activity, new File(dir, NAME_DOWNLOAD), true, false));
                 }
             }
         };
@@ -67,7 +76,7 @@ final class ChatLogShare {
         }
     }
 
-    private static void export(Activity activity, File file) {
+    static void export(Activity activity, File file, boolean download, boolean share) {
         final String text;
         try {
             text = readText(file);
@@ -78,7 +87,12 @@ final class ChatLogShare {
         if (text.isEmpty()) {
             return;
         }
-        saveToDownloads(activity, text);
+        if (download) {
+            saveToDownloads(activity, text);
+        }
+        if (!share) {
+            return;
+        }
         Intent send = new Intent(Intent.ACTION_SEND);
         send.setType("text/plain");
         send.putExtra(Intent.EXTRA_SUBJECT, "Godnotic chat log");
