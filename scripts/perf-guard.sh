@@ -20,6 +20,9 @@
 #   cold   menu -> first game frame of stormkeep with 4 bots, Play pressed
 #          one second after the menu shows (touch_warm has not started)
 #   warm   the same after six idle seconds on the menu (touch_warm done)
+#   match  the 4-bot stormkeep game played for 15 s (scripts/bench-frames.sh,
+#          a fresh userdir): the main thread's mean and p95 frame time and
+#          the process's peak resident memory (FRAMETIME / FRAMETIME_MEM)
 # Measured: menu_ready.proc, game_ready.load, and the worst frame of the
 # first five seconds of play (after_ready.worst_frame) - load-time wins must
 # not move cost into play. Exit status 1 when a median is over its limit.
@@ -42,7 +45,7 @@ while getopts "n:t:s:b:rp:h" opt; do
 		b) BASE=$OPTARG ;;
 		r) RECORD=1 ;;
 		p) PIN=$OPTARG ;;
-		*) sed -n '2,33p' "$0"; exit 2 ;;
+		*) sed -n '2,36p' "$0"; exit 2 ;;
 	esac
 done
 : "${BASEDIR:?set BASEDIR to a game data dir (holding data/)}"
@@ -83,11 +86,13 @@ one() { # scenario run
 		menu) bench "$d" 1 menu ""; cp "$d/menu-1.log" "$WORK/$1.$2.log" ;;
 		cold) bench "$d" 1 map:stormkeep ""; cp "$d/map-stormkeep-1.log" "$WORK/$1.$2.log" ;;
 		warm) bench "$d" 6 map:stormkeep "+set touch_warm 1"; cp "$d/map-stormkeep-1.log" "$WORK/$1.$2.log" ;;
+		match) BOTS=4 ENGINE="$RUN_ENGINE" "$ROOT/scripts/bench-frames.sh" -n 1 -s 15 -o "$d" -e "+set cl_welcome 0" stormkeep > /dev/null 2>&1 || true
+		       cp "$d/stormkeep-1.log" "$WORK/$1.$2.log" 2>/dev/null || true ;;
 	esac
 	rm -rf "$d"
 }
 for r in $(seq 1 "$RUNS"); do
-	for sc in menu cold warm; do
+	for sc in menu cold warm match; do
 		printf '\rperf-guard: run %d/%d %s ' "$r" "$RUNS" "$sc"
 		one "$sc" "$r"
 	done
@@ -101,8 +106,12 @@ pats = {
     "menu_ready.proc": r"LOADTIME menu_ready proc=([\d.]+)",
     "game_ready.load": r"LOADTIME game_ready load=([\d.]+)",
     "worst_frame": r"LOADTIME after_ready worst_frame=([\d.]+)",
+    "frame_mean": r"FRAMETIME map=\S+ .* mean=([\d.]+)",
+    "frame_p95": r"FRAMETIME map=\S+ .* p95=([\d.]+)",
+    "rss_peak": r"FRAMETIME_MEM rss=[\d.-]+ peak=([\d.]+)",
 }
-want = {"menu": ["menu_ready.proc"], "cold": ["game_ready.load", "worst_frame"], "warm": ["game_ready.load", "worst_frame"]}
+want = {"menu": ["menu_ready.proc"], "cold": ["game_ready.load", "worst_frame"], "warm": ["game_ready.load", "worst_frame"],
+        "match": ["frame_mean", "frame_p95", "rss_peak"]}
 now = {}
 for sc, keys in want.items():
     for k in keys:
@@ -120,7 +129,7 @@ if record:
         for k, (med, lo, hi, n) in sorted(now.items()):
             f.write(f"{k} {med:.1f} {lo:.1f} {hi:.1f} {n}\n")
     for k, (med, lo, hi, n) in sorted(now.items()):
-        print(f"  {k:<28} {med:8.1f} ms  ({lo:.1f} - {hi:.1f}, n={n})")
+        print(f"  {k:<28} {med:8.1f} {'MB' if k.endswith('rss_peak') else 'ms'}  ({lo:.1f} - {hi:.1f}, n={n})")
     print(f"perf-guard: baseline written to {base}")
     sys.exit(0)
 if not os.path.exists(base):
@@ -136,7 +145,8 @@ for k, (med, lo, hi, n) in sorted(now.items()):
     if k not in old:
         print(f"  {k:<28} {med:8.1f} ms  (no baseline)")
         continue
-    limit = old[k] * (1 + tol / 100.0) + slack
+    sl = {"frame_mean": 1.0, "frame_p95": 2.0, "rss_peak": 30.0}.get(k.split(".")[1], slack)  # ms; MB for rss
+    limit = old[k] * (1 + tol / 100.0) + sl
     flag = "OVER" if med > limit else "ok"
     bad += med > limit
     print(f"  {k:<28} {med:8.1f} ms  baseline {old[k]:8.1f}  limit {limit:8.1f}  {flag}  ({lo:.1f} - {hi:.1f}, n={n})")

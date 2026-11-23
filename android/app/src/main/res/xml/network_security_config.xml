@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Map servers serve their packs over plain http:// (Hightime, Feris2, most of the list). The engine reads them with libcurl;
+     the info popup reads the picture out of the server's own pack with Range requests from Kotlin (fe/ServerShots.kt),
+     which Android blocks for cleartext by default. Only that kind of read uses it: the app's own services are https. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

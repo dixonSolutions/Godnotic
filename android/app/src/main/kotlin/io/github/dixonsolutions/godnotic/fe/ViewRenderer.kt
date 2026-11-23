@@ -1,5 +1,7 @@
 package io.github.dixonsolutions.godnotic.fe
 
+import io.github.dixonsolutions.godnotic.Net
+
 import android.content.Context
 import android.graphics.Color
 import android.os.Parcelable
@@ -231,7 +233,12 @@ class ViewRenderer(
         val state = serverState(source)
         if (state.size > 0 && lists[source].orEmpty().isNotEmpty() && firstRowsLogged.add(source))
             Log.i("Godnotic", "Native UI: $source list holds ${state.size} rows (first rows handed to the list)")
-        for (map in PicturePolicy.warmMaps(state.firstMaps(WARM_ROWS), WARM_MAPS)) prefetch("pk3:maps/$map")
+        val metered = JoinFlow.metered(Net.kind(ctx))
+        for (map in PicturePolicy.warmMaps(state.firstMaps(WARM_ROWS), WARM_MAPS)) {
+            prefetch("pk3:maps/$map")
+            // a custom map's picture from the map-picture host, for the first rows only and never on a metered link
+            if (knownPath("pk3:maps/$map") == null && MapShots.prefetchAllowed(metered)) MapShots.fetchAsync(map)
+        }
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -1134,6 +1141,17 @@ class ViewRenderer(
         if (waiting.size == 1) events.image(ref, dp(480f), dp(270f))
     }
 
+    /**
+     * The picture file of an INSTALLED map when it is known already (the list's rows and cards have asked for it), else
+     * null and the engine is asked now: a join to a stock map shows the map's own picture from its first frame, not art.
+     */
+    fun mapPicture(map: String): String? {
+        val ref = "pk3:maps/" + map
+        knownPath(ref)?.let { return it }
+        prefetch(ref)
+        return null
+    }
+
     /** Fetches a picture ahead of its view (the card of a chosen server, Home's top map). */
     private fun prefetch(ref: String) {
         knownPath(ref)?.let { Images.load(it, CARD_PX) { }; return } // the file is known: only decode it ahead
@@ -1759,13 +1777,26 @@ class ViewRenderer(
         }
         if (map.isNotEmpty()) {
             content.addView(img, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            // a map that is not installed has no picture: the card closes up rather than keep a bare panel
-            img.onMissing = { img.visibility = View.GONE }
             val ref = "pk3:maps/$map"
             val t0 = android.os.SystemClock.uptimeMillis()
             Log.i("Godnotic", "Preview: dialog build map=$map pathKnown=${knownPath(ref) != null}")
             img.onShown = { Log.i("Godnotic", "Preview: picture set ${android.os.SystemClock.uptimeMillis() - t0} ms after build map=$map") }
             picture(img, ref, sync = true, blocking = false) // a picture that is not decoded yet never holds the dialog (or Join) back
+            if (knownPath(ref) == null) {
+                // not installed (a server's custom map): never a bare box. A file fetched before, else art from the
+                // map's name at once, and a small picture from the map-picture host fading in over it
+                val art = MapShots.fallback(map, cells.str("mode"))
+                img.onMissing = { img.set(art) }
+                val have = MapShots.cached(map)?.let { Images.now(it.path, CARD_PX) }
+                img.set(have ?: art)
+                if (have == null) {
+                    // the real picture, with no host of ours: the picture host, else the server's own map pack by Range requests
+                    val host = address.substringBeforeLast(':').trim('[', ']'); val port = address.substringAfterLast(':').toIntOrNull() ?: 26000
+                    MapShots.fetchAllAsync(map, host, port, JoinFlow.metered(Net.kind(ctx))) { f ->
+                        Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                    }
+                }
+            }
         }
         content.addView(Kit.text(ctx, cells.str("name").ifEmpty { address }, Theme.SP_TITLE, Theme.TEXT, bold = true))
         content.addView(Kit.text(ctx, ServerDetails.facts(cells), Theme.SP_BODY, Theme.TEXT_MUTED))
@@ -1778,7 +1809,8 @@ class ViewRenderer(
         // Join is what the dialog is for: first, twice as wide, taller, and the focused button (Enter / the d-pad's centre joins).
         val join = Kit.button(ctx, "Join", primary = true) {
             Log.i("Godnotic", "Preview: Join tapped $address")
-            joinHint = map to (if (map.isNotEmpty()) knownPath("pk3:maps/$map") else null) // the join card's picture until the engine names one
+            // the join card's picture until the engine names one: the same one the dialog showed (installed, fetched, or the art)
+            joinHint = map to (if (map.isNotEmpty()) (knownPath("pk3:maps/$map") ?: MapShots.cached(map)?.path ?: MapShots.fallbackPath(map, cells.str("mode"))) else null)
             closeDetails()
             events.row("mp/servers", address, "activate")
         }.apply {
