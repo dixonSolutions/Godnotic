@@ -165,6 +165,25 @@ static inline int TouchJoinFail_Classify(const char *status, int nchallenges, in
 	return TOUCHJOINFAIL_NONE; // "Disconnected": the player's cancel
 }
 
+// What a server's print means to Server control (docs/FRONTEND_BRIDGE.md, "Server control").
+// The menu proves a typed rcon password by sending `srcon echo godnotic-rcon-probe`: a server
+// that takes the password runs it and prints the word back, one that does not prints
+// "server denied rcon access" (a wrong password, or rcon is off there).
+#define TOUCHRCON_PROBE "godnotic-rcon-probe"
+#define TOUCHRCON_NONE 0
+#define TOUCHRCON_DENIED 1
+#define TOUCHRCON_ANSWER 2
+static inline int TouchRcon_Classify(const char *text)
+{
+	if (!text)
+		return TOUCHRCON_NONE;
+	if (strstr(text, "denied rcon access"))
+		return TOUCHRCON_DENIED;
+	if (strstr(text, TOUCHRCON_PROBE))
+		return TOUCHRCON_ANSWER;
+	return TOUCHRCON_NONE;
+}
+
 // The back-off: 1 when the client should now stay quiet for
 // TOUCHJOIN_BACKOFF_SECONDS (once per join).
 static inline int TouchJoin_ShouldBackOff(int nchallenges, int already)

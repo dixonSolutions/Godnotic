@@ -980,7 +980,7 @@ download, a password prompt), and on a desktop a window zoomed out of the Nexpos
 overview, is drawn and given input by the classic menu; when the classic root is back or
 the menu hides, the bridge renderer draws again. `uib_debug` (1 logs messages, 2 their text). `_uib_r_debug` (renderer
 state in `_uib_r_state`; 2 prints it twice a second; 3 every frame with its cost).
-Test hooks: `_uib_debug_open <screen>` opens a modal, `_uib_debug_toast <text>` shows a
+Test hooks: `_uib_debug_ctl wrong|timeout|checking` opens Server control in that state, `_uib_debug_open <screen>` opens a modal, `_uib_debug_toast <text>` shows a
 toast, `_uib_debug_servers` / `_uib_debug_maps` point the Servers list / map picker at
 a synthetic source made by `uib_testrows <source> <n> servers|maps`.
 

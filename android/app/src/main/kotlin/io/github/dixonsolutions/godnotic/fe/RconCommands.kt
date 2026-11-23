@@ -8,6 +8,16 @@ package io.github.dixonsolutions.godnotic.fe
 object RconCommands {
     private val unsafe = charArrayOf('"', '\\', ';', '\n', '\r', '$')
 
+    /** What the menu decided about a typed password (the engine's `ctl_result`): "ok:host:port", "denied:host:port" or "timeout:host:port". */
+    class Verdict(val kind: String, val server: String)
+
+    fun parseVerdict(raw: String): Verdict? {
+        val i = raw.indexOf(':')
+        if (i <= 0 || i == raw.length - 1) return null
+        val kind = raw.substring(0, i)
+        return if (kind == "ok" || kind == "denied" || kind == "timeout") Verdict(kind, raw.substring(i + 1)) else null
+    }
+
     fun rememberable(password: String) = password.isNotEmpty() && password.none { it in unsafe }
 
     fun setPassword(password: String): String {

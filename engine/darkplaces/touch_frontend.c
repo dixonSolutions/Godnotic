@@ -191,6 +191,7 @@ static void jb_key(jb_t *b, const char *key)
 	jb_raw(b, ":");
 }
 static void jb_kstr(jb_t *b, const char *key, const char *v) { jb_key(b, key); jb_str(b, v); }
+static const char *cvar_str(const char *name); // defined below
 static void jb_kint(jb_t *b, const char *key, int v) { jb_key(b, key); jb_printf(b, "%d", v); }
 static void jb_kbool(jb_t *b, const char *key, qbool v) { jb_key(b, key); jb_raw(b, v ? "true" : "false"); }
 static void jb_knum(jb_t *b, const char *key, double v) { jb_key(b, key); jb_printf(b, "%.3f", v); }
@@ -377,6 +378,7 @@ static void publish_app(void)
 	jb_kbool(&b, "menu", in_menu());
 	jb_kbool(&b, "console", (key_consoleactive & KEY_CONSOLEACTIVE_USER) != 0);
 	jb_kbool(&b, "local", sv.active);
+	jb_kstr(&b, "ctl_result", cvar_str("_touch_rcon_result")); // the menu's verdict on a Server control password (never the password)
 	jb_kbool(&b, "paused", cl.paused);
 	jb_kbool(&b, "menu_paused", TouchMode_MenuPaused(sv.active, host.paused, sv.paused));
 	jb_kbool(&b, "hosting", TouchLAN_HostingOnPurpose());

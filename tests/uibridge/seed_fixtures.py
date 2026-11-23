@@ -327,9 +327,13 @@ def password_dialog(server="Godnotic LAN 1"):
     ], title="Password", presentation="dialog", dismissable=True, primary=A("password.join", "Join", "play", style="primary"))
 
 
-def control_dialog(unlocked=True, local=True):
-    """Server control: the rcon password form on another's server until unlocked; the controls on one's own or after."""
+def control_dialog(unlocked=True, local=True, hint=None):
+    """Server control: the rcon password form on another's server until unlocked; the controls on one's own or after.
+    hint: None, "checking", "wrong" or "timeout": the line under the form while the password is proved or after it failed."""
     if not unlocked:
+        lines = {"checking": ("Checking the password...", "caption"), "wrong": ("Wrong password", "warning"),
+                 "timeout": ("Server did not answer", "warning")}
+        extra = [N("ctl/hint", "text", body=lines[hint][0], style=lines[hint][1])] if hint else []
         return N("ctl", "screen", [
             N("ctl/text", "text", body="Enter the server's rcon password."),
             N("ctl/form", "form", [
@@ -337,7 +341,7 @@ def control_dialog(unlocked=True, local=True):
                   private=True, hasValue=False, submit=A("ctl.auth", "Unlock")),
             ], submit=A("ctl.auth", "Unlock", "lock", style="primary")),
             N("ctl/remember", "switch", label="Remember for this server", bind="vm:ctl.remember", value=True),
-        ], title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
+        ] + extra, title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
     sec = lambda k, kids, t: N(f"ctl/{k}", "section", kids, title=t)
     return N("ctl", "screen", [
         sec("bots", [N("ctl/bots/n", "stepper", label="Bots", bind="vm:ctl.bots", value=3, min=0, max=32, step=1),
@@ -622,6 +626,11 @@ def main():
                                app([pause_screen(hosting=True)], modal=[lan_popup()], context="game")))
     write("control-locked", fixture("control-locked", "Server control on another's server before the rcon password: only the password form.",
                                     app([pause_screen()], modal=[control_dialog(unlocked=False)], context="game")))
+    for hint, what in (("wrong", "the server refused the password: Wrong password, the dialog stays open"),
+                       ("timeout", "the server did not answer the probe: Server did not answer, nothing unlocked"),
+                       ("checking", "the password is being proved against the server")):
+        write(f"control-{hint}", fixture(f"control-{hint}", f"Server control after Unlock: {what}.",
+                                         app([pause_screen()], modal=[control_dialog(unlocked=False, hint=hint)], context="game")))
     write("control", fixture("control", "Server control on this device's own game (no password): bots, kick, map and limits, cheats.",
                              app([pause_screen(hosting=True)], modal=[control_dialog()], context="game")))
     write("credits", fixture("credits", "Credits and licence.", app([h, credits_screen()])))

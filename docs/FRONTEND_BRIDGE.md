@@ -84,7 +84,7 @@ only the frame rate drops.
 
 | Topic | Sent | Content |
 |---|---|---|
-| `app` | on change, checked every frame (a few integers) | `proto`, `enabled`, `attached`, `owns_menu`, `advanced`, `state` (`menu`, `connecting`, `loading`, `ingame`, `paused`), `menu`, `console`, `local`, `paused`, `hosting`, `maxclients`, `map`, `server`, `demo`, `version`, `ui_bridge` (the engine describes screens through the UI bridge), `reconnect` (what the automatic reconnect of touch_net.c is doing, "Reconnecting to <name> (<address>) (attempt n of 5)"; empty when none runs), `reconnect_note` (why it gave up, `_net_reconnect_state`), `join_fail_serial`/`_kind`/`_text`/`_detail`/`_address` (the last failed join, touch_joinfail.c: the native UI shows its own Could not join dialog when the serial changes) |
+| `app` | on change, checked every frame (a few integers) | `proto`, `enabled`, `attached`, `owns_menu`, `advanced`, `state` (`menu`, `connecting`, `loading`, `ingame`, `paused`), `menu`, `console`, `local`, `paused`, `hosting`, `ctl_result` (the menu's verdict on a Server control password, `ok:<server>`, `denied:<server>` or `timeout:<server>`, empty before one is tried; never the password), `maxclients`, `map`, `server`, `demo`, `version`, `ui_bridge` (the engine describes screens through the UI bridge), `reconnect` (what the automatic reconnect of touch_net.c is doing, "Reconnecting to <name> (<address>) (attempt n of 5)"; empty when none runs), `reconnect_note` (why it gave up, `_net_reconnect_state`), `join_fail_serial`/`_kind`/`_text`/`_detail`/`_address` (the last failed join, touch_joinfail.c: the native UI shows its own Could not join dialog when the serial changes) |
 | `connect` | every frame of a join or a load (on change), once more when it ends | `stage` (`connecting`, `downloading`, `loading`, `preview`, `signon`, `idle`; `preview` once the join's world can be drawn — touch_joinpreview.c draws it and the loading page is a progress bar, so a native front end should step aside to a strip at the bottom), `status` (cl_connect_status), `address`, `name` (the server's name, colour codes out, at most 32 characters; empty until known, touch_joinname.c), `label` (how every join screen names it: `name (address)`, or the address alone), `signon`, `signons`, `downloads`, `file`, `download_progress`, `speed`, `load`, `load_progress` (the bar: the current step's start plus the share of it done, so it moves through the world model), `load_stage` (`models`, `world`, `worldsetup`, `sounds`, or empty), `load_n` / `load_m` (item n of m; in `world`, the texture or submodel being loaded; same numbers as the read-only cvars `_touch_precache_n` / `_touch_precache_m` and `_touch_precache_stage`, `_touch_precache_sub` 0..1), `local`, `wait_s` (whole seconds spent at signon 0 with nothing downloading, else -1), `sig_bytes` (bytes of the server's signon message that have arrived: the precache lists, which a stock server sends one round trip per fragment), `dl_bytes` / `dl_total` / `dl_running` / `dl_queued` (the running downloads together), `dl_file` (the running download the card names), `dl_files_done` / `dl_files_total` (files of this join: "file 2 of 5"; a file counts once seen, and is done when it leaves the list), `dl_all_bytes` / `dl_all_total` (every file of the join, finished ones included; a queued file whose size is not known yet counts as the average of the known ones, so it is an estimate until every file has started), `join_map`, `levelshot`, `levelshot_kind`, `world` |
 | `cvars` | 4 Hz while a native screen shows, on change | the watched cvars (`fe watch`), `null` for one outside the schema |
 | `servers` | 4 Hz while subscribed, on change | `refreshing`, `lan_only`, `favorites`, `rows` (`a` address, `n` name, `m` map, `g`, `mod`, `p` ping, `h` humans, `b` bots, `x` max, `pr`, `q` qcstatus, `player_status` raw getstatus player lines (empty when unavailable), `l` locked, `f` favourite, `lan`), `count` |
@@ -136,6 +136,18 @@ send `touch_warm_drop`. Behind an opaque native Home nothing is drawn but the
 warm-up still runs (the `CL_UpdateScreen` hook calls `TouchWarm_Frame` before it
 returns), and the engine still counts as visible and focused: the native screen
 changes neither `vid_hidden` nor `vid_activewindow`.
+
+## Server control: the password is proved first
+
+Server control (menu, in a game) needs no password in a game this engine hosts (`isserver()`: a local
+match, a LAN game): its commands go to the local console. On another's server the menu sends the typed
+password to `rcon_password` and then `srcon echo godnotic-rcon-probe`. The engine classifies the server's print
+(touch_joinfail_logic.h, `TouchRcon_Classify`): "denied rcon access" counts `_touch_rcon_denied`, the echoed
+probe counts `_touch_rcon_ok`. The dialog unlocks only on the probe's answer, says "Wrong password" on a
+refusal and "Server did not answer" after 4 s of silence; a rejected or silent password is cleared from
+`rcon_password`. The verdict is published as `app.ctl_result`: a front end that keeps passwords (Android's
+`RconVault`) saves the typed one only on `ok:` and forgets a stored one on `denied:`. Plain rcon and
+`rcon_secure` 0, 1 and 2 servers all work: the probe and every control command go out as `srcon` (challenge based), which a server accepts in every mode and which needs no synced clock, unlike the client's `rcon` at its default `rcon_secure 1`. Test: `scripts/test-server-control.sh`.
 
 ## For other engine modules
 

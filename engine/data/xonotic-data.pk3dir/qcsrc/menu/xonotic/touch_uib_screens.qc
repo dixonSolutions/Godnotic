@@ -1462,9 +1462,11 @@ string UIB_CtlClean(string t)
 	return substring(t, 0, 48);
 }
 
+// a game this engine hosts (a local match, a LAN game): its console is ours, so no
+// password is asked and no rcon is involved
 bool UIB_CtlLocal()
 {
-	return (gamestatus & GAME_ISSERVER) != 0;
+	return isserver() != 0;
 }
 
 // may this device control the server it is in? its own: yes; another's: after a password
@@ -1476,13 +1478,47 @@ bool UIB_CtlAllowed()
 	return (a != "") && (UIB_VM("ctl.auth") == a);
 }
 
+// Commands to another's server go out as srcon (challenge based, whatever the client's rcon_secure: 1 is
+// clock based, so a tablet whose clock is off is refused, and a server at 2 refuses it). A server drops
+// challenge requests that come closer than net_challengefloodblockingtimeout (0.5 s) and the engine does
+// not ask again, so remote commands leave through a queue, 0.7 s apart.
+float uib_ctl_deadline;  // real time the probe's answer is waited for until
+string uib_ctl_probing;  // the server the probe went to ("" when none is out)
+string uib_ctlq[8];
+int uib_ctlq_n;
+float uib_ctl_nextsend;
+string uib_ctl_probecmd;
+
+void UIB_CtlQueue(string c)
+{
+	if (uib_ctlq_n >= 8)
+		return;
+	uib_ctlq[uib_ctlq_n] = strzone(c);
+	++uib_ctlq_n;
+}
+
+void UIB_CtlPump()
+{
+	if (uib_ctlq_n <= 0 || uib_gettime(1) < uib_ctl_nextsend)
+		return;
+	string c = uib_ctlq[0];
+	localcmd(strcat("\nsrcon ", c, "\n"));
+	if (uib_ctl_probecmd != "" && c == uib_ctl_probecmd && uib_ctl_probing != "")
+		uib_ctl_deadline = uib_gettime(1) + 6; // the wait for the answer starts when the probe leaves
+	strunzone(c);
+	for (int i = 1; i < uib_ctlq_n; ++i)
+		uib_ctlq[i - 1] = uib_ctlq[i];
+	--uib_ctlq_n;
+	uib_ctl_nextsend = uib_gettime(1) + 0.7;
+}
+
 // the one place a control command leaves from
 void UIB_CtlCmd(string c)
 {
 	if (UIB_CtlLocal())
 		localcmd(strcat("\n", c, "\n"));
 	else
-		localcmd(strcat("\nrcon ", c, "\n"));
+		UIB_CtlQueue(c);
 }
 
 bool UIB_CtlCheats()
@@ -1493,6 +1529,23 @@ bool UIB_CtlCheats()
 }
 
 float uib_ctl_denied0;   // _touch_rcon_denied when the password was sent
+float uib_ctl_ok0;       // _touch_rcon_ok when the probe was sent
+
+// Prove the password before unlocking: send a harmless rcon command and wait for the
+// server's print. The engine counts a refusal (_touch_rcon_denied) and the probe's echo
+// (_touch_rcon_ok); UIB_CtlTick decides. Nothing is unlocked or remembered until then.
+void UIB_CtlProbe(string addr)
+{
+	uib_ctl_denied0 = cvar("_touch_rcon_denied");
+	uib_ctl_ok0 = cvar("_touch_rcon_ok");
+	uib_ctl_deadline = uib_gettime(1) + 600; // set again when the probe leaves the queue
+	strcpy(uib_ctl_probing, addr);
+	uib_ctl_probecmd = "echo godnotic-rcon-probe";
+	UIB_VMSet("ctl.denied", "");
+	UIB_VMSet("ctl.auth", "");
+	cvar_set("_touch_rcon_result", "");
+	UIB_CtlQueue(uib_ctl_probecmd);
+}
 
 void UIB_CtlOpen()
 {
@@ -1507,11 +1560,9 @@ void UIB_CtlOpen()
 	// address in ctl.saved before the open: unlocked at once
 	string saved = UIB_VM("ctl.saved");
 	UIB_VMSet("ctl.saved", "");
+	strcpy(uib_ctl_probing, "");
 	if (!UIB_CtlLocal() && saved != "" && saved == UIB_JoinAddress())
-	{
-		uib_ctl_denied0 = cvar("_touch_rcon_denied");
-		UIB_VMSet("ctl.auth", saved);
-	}
+		UIB_CtlProbe(saved); // a kept password is proved again: the server may have changed it
 	UIB_Modal("ctl");
 }
 
@@ -1538,8 +1589,12 @@ void UIB_BuildControl()
 			UIB_Close();
 		UIB_Close();
 		UIB_Switch("remember", _("Remember for this server"), "vm:ctl.remember", "");
-		if (UIB_VM("ctl.denied") == "1")
-			UIB_Text("hint", _("Wrong password, or rcon is off on this server."), "warning");
+		if (uib_ctl_probing != "")
+			UIB_Text("hint", _("Checking the password..."), "caption");
+		else if (UIB_VM("ctl.denied") == "1")
+			UIB_Text("hint", _("Wrong password"), "warning");
+		else if (UIB_VM("ctl.denied") == "timeout")
+			UIB_Text("hint", _("Server did not answer"), "warning");
 		UIB_Done();
 		return;
 	}
@@ -1692,12 +1747,49 @@ void UIB_LanPopupClose(bool resume)
 // saying so (the front end forgets the stored password on the same refusal)
 void UIB_CtlTick()
 {
+	UIB_CtlPump();
+	if (uib_ctl_probing != "")
+	{
+		// a password is being proved: the server's print decides, or the wait runs out
+		string addr = substring(uib_ctl_probing, 0, 200); // a copy: the strcpy below rewrites the original in place
+		string verdict = "";
+		if (UIB_JoinAddress() != addr)
+			verdict = "gone";
+		else if (cvar("_touch_rcon_denied") > uib_ctl_denied0)
+			verdict = "denied";
+		else if (cvar("_touch_rcon_ok") > uib_ctl_ok0)
+			verdict = "ok";
+		else if (uib_gettime(1) > uib_ctl_deadline)
+			verdict = "timeout";
+		if (verdict == "")
+			return;
+		strcpy(uib_ctl_probing, "");
+		uib_ctl_denied0 = cvar("_touch_rcon_denied");
+		if (verdict == "ok")
+		{
+			UIB_VMSet("ctl.auth", addr);
+			UIB_VMSet("ctl.denied", "");
+		}
+		else
+		{
+			cvar_set("rcon_password", "");
+			UIB_VMSet("ctl.auth", "");
+			UIB_VMSet("ctl.denied", verdict == "timeout" ? "timeout" : (verdict == "denied" ? "1" : ""));
+		}
+		cvar_set("_touch_rcon_result", verdict == "gone" ? "" : strcat(verdict, ":", addr));
+		print(sprintf("Server control: password %s (%s)\n", verdict, addr)); // the verdict only, never the password
+		UIB_RebuildAll();
+		return;
+	}
+	// unlocked, then refused (the server changed its password): back to the form
 	if (UIB_VM("ctl.auth") == "" || cvar("_touch_rcon_denied") <= uib_ctl_denied0)
 		return;
 	uib_ctl_denied0 = cvar("_touch_rcon_denied");
 	cvar_set("rcon_password", "");
 	UIB_VMSet("ctl.auth", "");
 	UIB_VMSet("ctl.denied", "1");
+	cvar_set("_touch_rcon_result", strcat("denied:", UIB_JoinAddress()));
+	print(sprintf("Server control: password denied later (%s)\n", UIB_JoinAddress()));
 	UIB_RebuildAll();
 }
 
@@ -2114,6 +2206,7 @@ void UIB_Init()
 	registercvar("_uib_server_net", "", 0);
 	registercvar("touch_lan_bots_duel", "1", 1);   // Duel's own Bots (0 or 1); touch_lan_bots stays every other mode's
 	registercvar("_uib_debug_open", "", 0);
+	registercvar("_uib_debug_ctl", "", 0);
 	registercvar("_uib_debug_toast", "", 0);
 	registercvar("_uib_debug_servers", "", 0);
 	registercvar("_uib_debug_maps", "", 0);
@@ -2144,6 +2237,21 @@ void UIB_Tick()
 	{
 		cvar_set("_uib_debug_open", "");
 		UIB_Modal(dbg);
+	}
+	// Server control in one of its states: wrong | timeout | checking (screenshots)
+	dbg = cvar_string("_uib_debug_ctl");
+	if (dbg != "")
+	{
+		cvar_set("_uib_debug_ctl", "");
+		UIB_CtlOpen();
+		if (dbg == "checking")
+		{
+			strcpy(uib_ctl_probing, UIB_JoinAddress());
+			uib_ctl_deadline = uib_gettime(1) + 3600;
+		}
+		else
+			UIB_VMSet("ctl.denied", dbg == "wrong" ? "1" : dbg);
+		UIB_RebuildAll();
 	}
 	dbg = cvar_string("_uib_debug_toast");
 	if (dbg != "")
@@ -2274,18 +2382,17 @@ void UIB_Action(string node, string a, string payload)
 		{
 			string pw = UIB_VM("ctl.password");
 			string addr = UIB_JoinAddress();
-			if (pw == "" || addr == "")
+			if (pw == "" || addr == "" || uib_ctl_probing != "")
 				return;
 			cvar_set("rcon_password", pw);
-			uib_ctl_denied0 = cvar("_touch_rcon_denied");
-			UIB_VMSet("ctl.denied", "");
 			UIB_VMSet("ctl.password", "");
-			UIB_VMSet("ctl.auth", addr);
+			UIB_CtlProbe(addr); // unlocked only when the server answers it
 			UIB_RebuildAll();
 			return;
 		}
 		case "ctl.forget":
 			cvar_set("rcon_password", "");
+			cvar_set("_touch_rcon_result", "");
 			UIB_VMSet("ctl.auth", "");
 			UIB_VMSet("ctl.cheats", "");
 			UIB_RebuildAll();

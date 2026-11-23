@@ -426,7 +426,7 @@ class ViewRenderer(
         val bottom = Kit.row(ctx, 12f)
         bottom.gravity = Gravity.END or Gravity.CENTER_VERTICAL
         bottom.setPadding(pad, dp(10f), pad, dp(12f))
-        bottom.setBackgroundColor(0xF2050B18.toInt())
+        bottom.setBackgroundColor(DialogChrome.PAGE_ACTION_BAR)
         bottom.visibility = View.GONE
         root.addView(bottom)
         val e = Entry(id, "screen", root, body, props)
@@ -448,7 +448,9 @@ class ViewRenderer(
             sub.visibility = if (sub.text.isEmpty()) View.GONE else View.VISIBLE
             val kindHome = p.str("kind") == "home"
             // a dialog or sheet screen sizes to its content inside the dialog box
-            val modal = p.str("presentation") in setOf("dialog", "sheet")
+            val modal = DialogChrome.isModal(p.str("presentation"))
+            // a dialog's action row is part of the dialog (no darker band inside the card)
+            bottom.setBackgroundColor(DialogChrome.actionBarFill(p.str("presentation")))
             (stickyHost.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
                 lp.height = if (modal) ViewGroup.LayoutParams.WRAP_CONTENT else 0; lp.weight = if (modal) 0f else 1f; stickyHost.layoutParams = lp
             }

@@ -249,6 +249,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // itself, and a card torn down by this guess was rebuilt by the next
         // stage 300 ms later, logo and all (the flashing screens during a join).
         onJoinFail(a)
+        onCtlVerdict(a.str("ctl_result"))
         val note = a.str("reconnect_note")
         if (note != lastReconnectNote) { lastReconnectNote = note; if (note.isNotEmpty() && note.startsWith("Disconnected")) toast(note, "warning") }
     }
@@ -935,14 +936,35 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
 
     private fun ctlServer() = app.str("server")
 
+    // The typed password waits here for the menu's verdict: it is proved against the server first (a
+    // probe over rcon) and kept only when the server accepted it.
+    private var ctlPending = ""
+    private var ctlPendingServer = ""
+    private var ctlVerdictSeen = ""
+
     private fun ctlRememberTyped() {
         val server = ctlServer()
-        if (ctlRemember && server.isNotEmpty() && RconCommands.rememberable(ctlPassword)) rconVault.save(server, ctlPassword)
+        if (ctlPassword.isEmpty()) return // the action and the submit both land here: the first one took it
+        ctlPending = if (server.isNotEmpty() && RconCommands.rememberable(ctlPassword)) ctlPassword else ""
+        ctlPendingServer = server
         ctlPassword = ""
+    }
+
+    /** The engine's verdict on the password (app.ctl_result): keep it when right, forget a stored one when refused. */
+    private fun onCtlVerdict(raw: String) {
+        if (raw == ctlVerdictSeen) return
+        ctlVerdictSeen = raw
+        val v = RconCommands.parseVerdict(raw) ?: return
+        when (v.kind) {
+            "ok" -> if (ctlRemember && ctlPending.isNotEmpty() && ctlPendingServer == v.server) rconVault.save(v.server, ctlPending)
+            "denied" -> if (v.server.isNotEmpty()) rconVault.forget(v.server)
+        }
+        ctlPending = ""
     }
 
     /** Opening Server control on a server whose password is kept: hand it to the engine first, so the popup opens unlocked. */
     private fun ctlUnlockFromVault() {
+        if (app.bool("local")) return // a game this device hosts needs no password
         val server = ctlServer()
         val pw = if (!RconCommands.rememberable(server)) null else rconVault.load(server)
         if (pw == null || !RconCommands.rememberable(pw)) return
@@ -955,7 +977,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         when (action.str("id")) {
             "ctl.open" -> ctlUnlockFromVault()
             "ctl.auth" -> ctlRememberTyped()
-            "ctl.forget" -> { ctlServer().takeIf { it.isNotEmpty() }?.let { rconVault.forget(it) }; ctlPassword = "" }
+            "ctl.forget" -> { ctlServer().takeIf { it.isNotEmpty() }?.let { rconVault.forget(it) }; ctlPassword = ""; ctlPending = "" }
         }
         if (stopgap?.action(node, action) == true) return
         client?.event("action", mapOf("node" to node, "action" to action.str("id")))

@@ -49,6 +49,14 @@ int main(void)
 	CHECK(!TouchJoin_ShouldBackOff(9, 1), "only once per join");
 	CHECK(TOUCHJOIN_BACKOFF_SECONDS > 5.0, "the pause outlasts net_connectfloodblockingtimeout");
 
+	// Server control's password check (TouchRcon_Classify): a server's print is a verdict
+	CHECK(TouchRcon_Classify("server denied rcon access to 127.0.0.1:41000\n") == TOUCHRCON_DENIED, "a refusal is denied");
+	CHECK(TouchRcon_Classify("godnotic-rcon-probe\n") == TOUCHRCON_ANSWER, "the echoed probe is an answer");
+	CHECK(TouchRcon_Classify("Bad rcon_password") == TOUCHRCON_NONE, "an unrelated print is nothing");
+	CHECK(TouchRcon_Classify("hostname x\nplayers 3") == TOUCHRCON_NONE, "status output is nothing");
+	CHECK(TouchRcon_Classify(NULL) == TOUCHRCON_NONE && TouchRcon_Classify("") == TOUCHRCON_NONE, "no text is nothing");
+	CHECK(TouchRcon_Classify("server denied rcon access\ngodnotic-rcon-probe") == TOUCHRCON_DENIED, "a refusal wins over an echo");
+
 	if (fails)
 		return 1;
 	printf("ok   joinfail logic\n");

@@ -1,0 +1,247 @@
+{
+ "name": "control-checking",
+ "description": "Server control after Unlock: the password is being proved against the server.",
+ "generated": "seed",
+ "snapshot": {
+  "uib": 1,
+  "t": "snapshot",
+  "id": 2,
+  "rev": 1,
+  "root": "app",
+  "nodes": [
+   {
+    "id": "app",
+    "type": "app",
+    "props": {
+     "title": "Godnotic",
+     "stack": [
+      "pause"
+     ],
+     "modal": [
+      "ctl"
+     ],
+     "canBack": true,
+     "context": "game"
+    },
+    "children": [
+     "pause",
+     "ctl"
+    ]
+   },
+   {
+    "id": "pause",
+    "type": "screen",
+    "props": {
+     "title": "Paused",
+     "kind": "game",
+     "presentation": "fullscreen"
+    },
+    "children": [
+     "pause/match",
+     "pause/actions"
+    ]
+   },
+   {
+    "id": "pause/match",
+    "type": "card",
+    "props": {
+     "title": "Stormkeep",
+     "subtitle": "Deathmatch · 7:42 left · 3rd of 5",
+     "meta": [
+      {
+       "icon": "trophy",
+       "text": "12 frags"
+      },
+      {
+       "icon": "players",
+       "text": "5 players"
+      }
+     ]
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions",
+    "type": "grid",
+    "props": {
+     "minItem": 160
+    },
+    "children": [
+     "pause/actions/resume",
+     "pause/actions/settings",
+     "pause/actions/control",
+     "pause/actions/team",
+     "pause/actions/spectate",
+     "pause/actions/disconnect"
+    ]
+   },
+   {
+    "id": "pause/actions/resume",
+    "type": "button",
+    "props": {
+     "label": "Resume",
+     "action": {
+      "id": "resume",
+      "label": "Resume",
+      "icon": "resume",
+      "style": "primary"
+     },
+     "style": "primary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/settings",
+    "type": "button",
+    "props": {
+     "label": "Settings",
+     "action": {
+      "id": "settings",
+      "label": "Settings",
+      "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/control",
+    "type": "button",
+    "props": {
+     "label": "Server control",
+     "action": {
+      "id": "ctl.open",
+      "label": "Server control",
+      "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/team",
+    "type": "button",
+    "props": {
+     "label": "Change team",
+     "action": {
+      "id": "team",
+      "label": "Change team",
+      "icon": "players"
+     },
+     "style": "secondary",
+     "hidden": true
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/spectate",
+    "type": "button",
+    "props": {
+     "label": "Spectate",
+     "action": {
+      "id": "spectate",
+      "label": "Spectate",
+      "icon": "esp"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/disconnect",
+    "type": "button",
+    "props": {
+     "label": "Leave match",
+     "action": {
+      "id": "disconnect",
+      "label": "Leave match",
+      "icon": "disconnect",
+      "style": "destructive"
+     },
+     "style": "destructive"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl",
+    "type": "screen",
+    "props": {
+     "title": "Server control",
+     "presentation": "dialog",
+     "dismissable": true,
+     "primary": {
+      "id": "ctl.auth",
+      "label": "Unlock",
+      "icon": "lock",
+      "style": "primary"
+     }
+    },
+    "children": [
+     "ctl/text",
+     "ctl/form",
+     "ctl/remember",
+     "ctl/hint"
+    ]
+   },
+   {
+    "id": "ctl/text",
+    "type": "text",
+    "props": {
+     "body": "Enter the server's rcon password."
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/form",
+    "type": "form",
+    "props": {
+     "submit": {
+      "id": "ctl.auth",
+      "label": "Unlock",
+      "icon": "lock",
+      "style": "primary"
+     }
+    },
+    "children": [
+     "ctl/form/pw"
+    ]
+   },
+   {
+    "id": "ctl/form/pw",
+    "type": "field",
+    "props": {
+     "label": "Rcon password",
+     "bind": "vm:ctl.password",
+     "value": "",
+     "kind": "password",
+     "private": true,
+     "hasValue": false,
+     "submit": {
+      "id": "ctl.auth",
+      "label": "Unlock"
+     }
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/remember",
+    "type": "switch",
+    "props": {
+     "label": "Remember for this server",
+     "bind": "vm:ctl.remember",
+     "value": true
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/hint",
+    "type": "text",
+    "props": {
+     "body": "Checking the password...",
+     "style": "caption"
+    },
+    "children": []
+   }
+  ]
+ }
+}
