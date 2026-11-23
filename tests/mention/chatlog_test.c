@@ -119,13 +119,13 @@ static void test_clear(void)
 		for (k = 0; k < TCL_ICONS; k++)
 		{
 			float ix = TouchChatLog_IconX(10, 300, 20, k);
-			CHECK(ix + 20 <= 310.001f, "icon %d inside the box's right end: %g", k, ix);
+			CHECK(ix >= 9.999f, "icon %d starts at the box's left edge or right of it: %g", k, ix);
 			if (k)
 				CHECK(prev - (ix + 20) >= 20 * 0.39f && prev - (ix + 20) <= 20 * 0.41f, "even gap before icon %d: %g", k, prev - (ix + 20));
 			CHECK(TouchChatLog_InIcon(ix + 1, 5, ix, 0, 20), "hit test icon %d", k);
 			prev = ix;
 		}
-		CHECK(TouchChatLog_IconX(10, 300, 20, 0) == 290, "share icon at the box's right edge");
+		CHECK(TouchChatLog_IconX(10, 300, 20, 3) == 10, "clear icon at the box's left edge (the chat text's x)");
 		CHECK(!TouchChatLog_InIcon(TouchChatLog_IconX(10, 300, 20, 0) - 3, 5, TouchChatLog_IconX(10, 300, 20, 0), 0, 20), "the gap hits no icon");
 	}
 }
