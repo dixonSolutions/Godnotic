@@ -58,7 +58,31 @@ static int tcl_filter;           /* 0 all, 1 chat, 2 events */
 static tcl_scroller_t tcl_sc;    /* the panel's scroll, in console units from the newest end */
 static double tcl_last_frame;
 static double tcl_scroll_at = -100;
-static unsigned tcl_serial, tcl_slot_serial[TCL_CAP];
+static unsigned tcl_serial, tcl_slot_serial[TCL_CAP], tcl_selected[TCL_CAP];
+
+static unsigned TCL_Slot(unsigned idx)
+{
+	return (cl_log.head + TCL_CAP - cl_log.count + idx) % TCL_CAP;
+}
+
+static int TCL_Selected(unsigned idx)
+{
+	unsigned slot = TCL_Slot(idx);
+	return tcl_slot_serial[slot] && tcl_selected[slot] == tcl_slot_serial[slot];
+}
+
+static unsigned TCL_SelectedCount(void)
+{
+	unsigned i, n = 0;
+	for (i = 0; i < cl_log.count; i++)
+		n += TCL_Selected(i);
+	return n;
+}
+
+static void TCL_ClearSelection(void)
+{
+	memset(tcl_selected, 0, sizeof(tcl_selected));
+}
 static unsigned tcl_anchor_slot, tcl_anchor_serial;
 static float tcl_anchor_acc;
 static int tcl_anchor_valid, tcl_anchor_filter;
@@ -92,6 +116,7 @@ static float tcl_panel_size, tcl_panel_dt;            /* the open log's panel: a
 /* the pointer */
 static int tcl_ptr_down;
 static int tcl_ptr_id, tcl_ptr_arg;
+static double tcl_ptr_at;
 
 /* names on the scoreboard, to notice a rename */
 static char tcl_seen[MAX_SCOREBOARD][MAX_SCOREBOARDNAME];
@@ -427,6 +452,8 @@ static void TCL_Open(int open)
 	if (open == tcl_panel)
 		return;
 	tcl_panel = open;
+	if (!open)
+		TCL_ClearSelection();
 	tcl_anchor_valid = 0;
 	if (open)
 		tcl_filter = 0;
@@ -515,6 +542,7 @@ static void TCL_Clear_f(cmd_state_t *cmd)
 {
 	(void)cmd;
 	TouchChatLog_Clear(&cl_log);
+	TCL_ClearSelection();
 	tcl_anchor_valid = 0;
 	memset(&tcl_sc, 0, sizeof(tcl_sc));
 	tcl_cleared_at = cl.time;
@@ -526,10 +554,36 @@ static void TCL_Clear_f(cmd_state_t *cmd)
 /* mode bits: 1 share sheet (Android), 2 download. The Android app tells them
  * apart by the file name: touch_chatlog_share.txt, touch_chatlog_download.txt,
  * or touch_chatlog.txt for both (touch_chatlog_export). */
+static size_t TCL_Export(char *out, size_t size)
+{
+	unsigned i, selected = TCL_SelectedCount();
+	unsigned mask = tcl_filter == 1 ? TCL_BIT(TCL_CHAT) : tcl_filter == 2 ? (TCL_EVENTS | TCL_BIT(TCL_NOTE)) : TCL_ALL;
+	size_t used = 0;
+	if (!size)
+		return 0;
+	out[0] = 0;
+	for (i = 0; i < cl_log.count; i++)
+	{
+		const tcl_entry_t *e = TouchChatLog_Get(&cl_log, i);
+		char plain[TCL_LEN], stamp[16], line[TCL_LEN + 16];
+		int n;
+		if (selected ? !TCL_Selected(i) : !(mask & TCL_BIT(e->kind)))
+			continue;
+		TouchMention_StripColors(e->text, plain, sizeof(plain));
+		TouchChatLog_Stamp(e->wall, stamp, sizeof(stamp));
+		n = dpsnprintf(line, sizeof(line), "[%s] %s\n", stamp, plain);
+		if (n < 0 || (size_t)n >= sizeof(line) || used + (size_t)n + 1 > size)
+			break;
+		memcpy(out + used, line, (size_t)n + 1);
+		used += (size_t)n;
+	}
+	return used;
+}
+
 static void TCL_Write(int mode)
 {
 	static char text[TCL_CAP * (TCL_LEN + 16)];
-	size_t n = TouchChatLog_Export(&cl_log, text, sizeof(text));
+	size_t n = TCL_Export(text, sizeof(text));
 	if (!n)
 	{
 		TCL_Toast("Nothing to save");
@@ -595,7 +649,7 @@ static void TCL_Download_f(cmd_state_t *cmd) { (void)cmd; TCL_Write(2); }
 static void TCL_Copy_f(cmd_state_t *cmd)
 {
 	static char text[TCL_CAP * (TCL_LEN + 16)];
-	size_t n = TouchChatLog_Export(&cl_log, text, sizeof(text));
+	size_t n = TCL_Export(text, sizeof(text));
 	(void)cmd;
 	if (!n)
 	{
@@ -618,6 +672,25 @@ static void TCL_Copy_f(cmd_state_t *cmd)
 /* ------------------------------------------------------------------ */
 static int TCL_HitAt(float x, float y)
 {
+	int i, row = -1, name = -1;
+	if (tcl_panel && !tcl_popup)
+	{
+		for (i = 0; i < tcl_ntg; i++)
+			if ((tcl_tg[i].id == TG_ROW || tcl_tg[i].id == TG_NAME) &&
+			    x >= tcl_tg[i].x && x <= tcl_tg[i].x + tcl_tg[i].w &&
+			    y >= tcl_tg[i].y && y <= tcl_tg[i].y + tcl_tg[i].h)
+			{
+				if (tcl_tg[i].id == TG_ROW) row = i;
+				else name = i;
+			}
+		if (row >= 0)
+		{
+			for (i = 0; i < tcl_ntg; i++)
+				if (tcl_tg[i].id == TG_LATEST && x >= tcl_tg[i].x && x <= tcl_tg[i].x + tcl_tg[i].w && y >= tcl_tg[i].y && y <= tcl_tg[i].y + tcl_tg[i].h)
+					return i;
+			return !TCL_SelectedCount() && name >= 0 && tcl_tg[name].arg == tcl_tg[row].arg ? name : row;
+		}
+	}
 	return TouchChatLog_HitTarget(tcl_tg, tcl_ntg, x, y, tcl_min_target, tcl_min_target);
 }
 
@@ -634,6 +707,7 @@ static void TCL_Pointer(int phase, float x, float y)
 	if (phase == 0)
 	{
 		tcl_ptr_down = 1;
+		tcl_ptr_at = now;
 		tcl_pointer_x = x;
 		tcl_pointer_y = y;
 		k = TCL_HitAt(x, y);
@@ -654,6 +728,7 @@ static void TCL_Pointer(int phase, float x, float y)
 		}
 		if (k < 0)
 		{
+			if (tcl_panel) TCL_ClearSelection();
 			/* a press outside the panel closes it; inside it, on nothing, does nothing */
 			if (tcl_panel && !(x >= tcl_panel_rect[0] && x <= tcl_panel_rect[0] + tcl_panel_rect[2] && y >= tcl_panel_rect[1] && y <= tcl_panel_rect[1] + tcl_panel_rect[3]))
 				TCL_Open(0);
@@ -684,9 +759,23 @@ static void TCL_Pointer(int phase, float x, float y)
 	{
 		if (!TouchChatLog_ScrollUp(&tcl_sc, now))
 			return; /* a drag: it coasts */
-		if (tcl_ptr_id != TG_NAME)
+		if (tcl_panel && (tcl_ptr_id == TG_NAME || tcl_ptr_id == TG_ROW) &&
+		    k >= 0 && (tcl_tg[k].id == TG_NAME || tcl_tg[k].id == TG_ROW) && tcl_tg[k].arg == tcl_ptr_arg &&
+		    (now - tcl_ptr_at >= 0.5 || TCL_SelectedCount()))
+		{
+			unsigned slot = TCL_Slot((unsigned)tcl_ptr_arg);
+			tcl_selected[slot] = TCL_Selected((unsigned)tcl_ptr_arg) ? 0 : tcl_slot_serial[slot];
 			return;
+		}
+		if (tcl_ptr_id == TG_BODY || tcl_ptr_id == TG_ROW)
+		{
+			if (tcl_panel && tcl_ptr_id == TG_BODY)
+				TCL_ClearSelection();
+			return;
+		}
 	}
+	if (tcl_panel && (tcl_ptr_id == TG_PANEL || tcl_ptr_id == TG_NONE))
+		TCL_ClearSelection();
 	if (k >= 0 && tcl_tg[k].id == tcl_ptr_id && tcl_tg[k].arg == tcl_ptr_arg)
 		TCL_Activate(tcl_ptr_id, tcl_ptr_arg);
 }
@@ -758,7 +847,10 @@ qbool TouchChatLog_Key(int key, qbool down)
 		float my = in_windowmouse_y * vid_conheight.value / vid.mode.height;
 		int k = TCL_HitAt(mx, my);
 		if (k < 0 || tcl_tg[k].id == TG_BODY)
+		{
+			if (tcl_panel) TCL_ClearSelection();
 			return false;
+		}
 		/* a click is a press and a release in one place */
 		TCL_Pointer(0, mx, my);
 		TCL_Pointer(2, mx, my);
@@ -900,6 +992,9 @@ static void TCL_DrawLogRow(const tcl_metrics_t *m, unsigned idx, float x, float 
 	if (!e)
 		return;
 	TCL_KindRGB(e->kind, &r, &g, &b);
+	if (TCL_Selected(idx))
+		DrawQ_Fill(bodyx, y, bodyw, h, 0.2f, 0.55f, 1.0f, 0.38f, 0);
+	TCL_AddTarget(bodyx, y, bodyw, h, TG_ROW, (int)idx);
 	TouchChatLog_Stamp(e->wall, stamp, sizeof(stamp));
 	if (e->kind != TCL_CHAT)
 		DrawQ_Fill(bodyx, y, bodyw, h, r * 0.2f, g * 0.2f, b * 0.2f, 0.28f, 0);
@@ -995,7 +1090,10 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		for (k = 0; k < cl_log.count; k++)
 			if (mask & TCL_BIT(TouchChatLog_Get(&cl_log, k)->kind))
 				total++;
-		dpsnprintf(s, sizeof(s), "%u line%s", total, total == 1 ? "" : "s");
+		if (TCL_SelectedCount())
+			dpsnprintf(s, sizeof(s), "%u selected", TCL_SelectedCount());
+		else
+			dpsnprintf(s, sizeof(s), "%u line%s", total, total == 1 ? "" : "s");
 		if (!wide)
 			DrawQ_String(pxl + pw - m->fs - TCL_TextW(s, m->fs * 0.9f), chipy + (chiph - m->fs * 0.9f) * 0.5f, s, 0, m->fs * 0.9f, m->fs * 0.9f, 0.6f, 0.65f, 0.72f, 1, 0, NULL, true, FONT_CHAT);
 	}
@@ -1063,8 +1161,23 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	if (win.n == 0)
 		DrawQ_String(pxl + pw * 0.5f - TCL_TextW("No messages or events yet", m->fs) * 0.5f, rowtop + bodyh * 0.4f, "No messages or events yet", 0, m->fs, m->fs, 0.6f, 0.65f, 0.72f, 1, 0, NULL, true, FONT_CHAT);
 	for (i = 0; i < win.n; i++)
+	{
+		int first = tcl_ntg, j;
 		TCL_DrawLogRow(m, win.idx[i], x, rowtop + win.top[i], win.h[i], tw, iconw, textx, textw, pxl, pw);
+		for (j = first; j < tcl_ntg; j++)
+		{
+			float bottom = min(tcl_tg[j].y + tcl_tg[j].h, rowtop + bodyh);
+			tcl_tg[j].y = max(tcl_tg[j].y, rowtop);
+			tcl_tg[j].h = max(0.0f, bottom - tcl_tg[j].y);
+		}
+	}
 	DrawQ_ResetClipArea();
+	if (wide && TCL_SelectedCount())
+	{
+		dpsnprintf(s, sizeof(s), "%u selected", TCL_SelectedCount());
+		DrawQ_Fill(pxl + pw - TCL_TextW(s, m->fs * 0.8f) - m->fs * 1.5f, rowtop, TCL_TextW(s, m->fs * 0.8f) + m->fs, m->fs * 1.2f, 0, 0, 0, 0.7f, 0);
+		DrawQ_String(pxl + pw - TCL_TextW(s, m->fs * 0.8f) - m->fs, rowtop, s, 0, m->fs * 0.8f, m->fs * 0.8f, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
+	}
 
 	/* the scroll bar, and the way back to the newest line */
 	if (tcl_content_h > bodyh + 1 && host.realtime - tcl_scroll_at < 1.5)
@@ -1281,8 +1394,8 @@ static void TCL_State_f(cmd_state_t *cmd)
 		Con_Printf("CHATLOG-TARGET %s %d %.4f %.4f %.4f %.4f\n", tn[tcl_tg[i].id], tcl_tg[i].arg,
 			(tcl_tg[i].x + tcl_tg[i].w * 0.5f) / vid_conwidth.value, (tcl_tg[i].y + tcl_tg[i].h * 0.5f) / vid_conheight.value,
 			tcl_tg[i].w / vid_conwidth.value, tcl_tg[i].h / vid_conheight.value);
-	Con_Printf("CHATLOG-STATE conh=%.0f panel=%d filter=%d pos=%.1f vel=%.1f content=%.1f body=%.1f popup=%d popup_name=%s lines=%u dest=%d\n",
-		vid_conheight.value, tcl_panel, tcl_filter, tcl_sc.pos, tcl_sc.vel, tcl_content_h, tcl_body_h, tcl_popup, tcl_popup ? tcl_popup_name : "-", cl_log.count, (int)key_dest);
+	Con_Printf("CHATLOG-STATE conh=%.0f panel=%d filter=%d pos=%.1f vel=%.1f content=%.1f body=%.1f popup=%d popup_name=%s lines=%u dest=%d selected=%u\n",
+		vid_conheight.value, tcl_panel, tcl_filter, tcl_sc.pos, tcl_sc.vel, tcl_content_h, tcl_body_h, tcl_popup, tcl_popup ? tcl_popup_name : "-", cl_log.count, (int)key_dest, TCL_SelectedCount());
 }
 
 void TouchChatLog_Init(void)
