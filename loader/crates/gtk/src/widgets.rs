@@ -1164,15 +1164,29 @@ fn card_tags(n: &Node) -> Vec<String> {
     Vec::new()
 }
 
+/// The most server lines a table card keeps; it shows as many as its height holds.
+const CARD_MAX_ROWS: usize = 12;
+/// A server line's height in px, and the gap between lines.
+const CARD_ROW_H: i32 = 34;
+const CARD_ROW_GAP: i32 = 2;
+
+/// How many whole lines of `row_h` (with `gap` between them) fit `avail` px: never a clipped half line.
+fn rows_that_fit(avail: i32, row_h: i32, gap: i32, have: usize) -> usize {
+    if row_h <= 0 || avail < row_h {
+        return 0;
+    }
+    (((avail + gap) / (row_h + gap)) as usize).min(have).min(CARD_MAX_ROWS)
+}
+
 /// A card's lines of cells: a `display: table` card's `rows`; for an older payload of a featured
 /// card with no picture and no `tags` (Home's Multiplayer card, its servers the lines of its
 /// `subtitle`), each line split at " · " into name, map, players (a name may hold " · " itself).
 fn card_lines(n: &Node) -> Vec<Vec<String>> {
     if n.str("display").as_deref() == Some("table") {
-        return n.arr("rows").iter().filter_map(Value::as_array).take(6).map(|r| r.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()).collect();
+        return n.arr("rows").iter().filter_map(Value::as_array).take(CARD_MAX_ROWS).map(|r| r.iter().take(4).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()).collect();
     }
     if n.bool("featured").unwrap_or(false) && (n.str("image").is_none() || n.bool("live").unwrap_or(false)) && n.arr("tags").is_empty() {
-        return n.str("subtitle").unwrap_or_default().lines().filter(|l| l.contains(" · ")).take(6).map(|l| {
+        return n.str("subtitle").unwrap_or_default().lines().filter(|l| l.contains(" · ")).take(CARD_MAX_ROWS).map(|l| {
             let p: Vec<&str> = l.split(" · ").collect();
             if p.len() <= 3 { p.iter().map(|s| s.to_string()).collect() } else { vec![p[..p.len() - 2].join(" · "), p[p.len() - 2].to_string(), p[p.len() - 1].to_string()] }
         }).collect();
@@ -1202,6 +1216,36 @@ fn tag_row(cells: &[String]) -> gtk::Box {
         l.set_tooltip_text(Some(text));
         cell.append(&l);
         row.append(&cell);
+    }
+    row
+}
+
+/// A server line of a table card: the name takes the width, the map a share, and the players
+/// (the last cell) only what they need, flush right.
+fn table_row(cells: &[String]) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.add_css_class("gn-tags");
+    row.add_css_class("gn-table-row");
+    row.set_size_request(-1, CARD_ROW_H);
+    let last_i = cells.len().saturating_sub(1);
+    for (i, text) in cells.iter().enumerate() {
+        let l = gtk::Label::new(Some(text));
+        l.add_css_class("gn-tag");
+        l.set_single_line_mode(true);
+        l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        l.set_tooltip_text(Some(text));
+        if i == last_i && cells.len() > 1 {
+            l.set_xalign(1.0);
+            l.add_css_class("gn-tag-end");
+        } else {
+            l.set_xalign(0.0);
+            l.set_wrap(false);
+            l.set_max_width_chars(1);
+            l.set_hexpand(true);
+            // the name gets about five parts to the map's three
+            l.set_width_chars(if i == 0 { 5 } else { 3 });
+        }
+        row.append(&l);
     }
     row
 }
@@ -1237,14 +1281,37 @@ fn tagged_card(app: &App, n: &Node, b: gtk::Button, featured: bool) -> gtk::Butt
         sum.set_xalign(0.0);
         sum.set_ellipsize(gtk::pango::EllipsizeMode::End);
         head.append(&sum);
-        let rows = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let rows = gtk::Box::new(gtk::Orientation::Vertical, CARD_ROW_GAP);
         rows.add_css_class("gn-card-rows");
-        head.append(&rows);
+        // the lines sit in a scroller that takes the card's spare height without asking for any,
+        // and only as many show as fit it whole
+        let area = gtk::ScrolledWindow::new();
+        area.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Never);
+        area.set_propagate_natural_height(false);
+        area.set_min_content_height(CARD_ROW_H);
+        area.set_vexpand(true);
+        area.set_child(Some(&rows));
+        let fit = rows.downgrade();
+        area.add_tick_callback(move |a, _| {
+            if let Some(rows) = fit.upgrade() {
+                let n = rows_that_fit(a.height(), CARD_ROW_H, CARD_ROW_GAP, usize::MAX);
+                let mut i = 0;
+                let mut c = rows.first_child();
+                while let Some(w) = c {
+                    let show = i < n;
+                    if w.is_visible() != show {
+                        w.set_visible(show);
+                    }
+                    i += 1;
+                    c = w.next_sibling();
+                }
+            }
+            glib::ControlFlow::Continue
+        });
         card_rows(app, n, &rows, &sum);
+        head.set_vexpand(true);
+        head.append(&area);
         v.append(&head);
-        let fill = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        fill.set_vexpand(featured && !app.narrow.get());
-        v.append(&fill);
     } else {
         head.append(&tag_row(&card_tags(n)));
         v.append(&head);
@@ -1284,7 +1351,7 @@ fn tagged_card(app: &App, n: &Node, b: gtk::Button, featured: bool) -> gtk::Butt
 }
 
 /// A `display: table` card's lines (Home's Multiplayer card): each `row` (arrays of cells) one
-/// line of equal cells, at most six. New rows refill them in place, so the live list does not
+/// server line, as many as the card's height holds (up to twelve). New rows refill them in place, so the live list does not
 /// rebuild Home every refresh; any other change rebuilds the screen as before.
 fn card_rows(app: &App, n: &Node, rows: &gtk::Box, summary: &gtk::Label) {
     let fill = |rows: &gtk::Box, n: &Node| {
@@ -1293,9 +1360,7 @@ fn card_rows(app: &App, n: &Node, rows: &gtk::Box, summary: &gtk::Label) {
         }
         for cells in card_lines(n) {
             if !cells.is_empty() {
-                let r = tag_row(&cells);
-                r.set_size_request(-1, 30);
-                rows.append(&r);
+                rows.append(&table_row(&cells));
             }
         }
     };
@@ -2454,5 +2519,21 @@ mod tests {
         assert_eq!(map_state(Some(&cells(json!({"state": "missing", "progress": -1})))), (Some("Not downloaded".into()), None));
         // a campaign level's state is not a download state
         assert_eq!(map_state(Some(&cells(json!({"state": "locked"})))), (None, None));
+    }
+}
+
+#[cfg(test)]
+mod card_rows_tests {
+    use super::*;
+
+    #[test]
+    fn only_whole_lines_show() {
+        assert_eq!(rows_that_fit(0, 34, 2, 12), 0);
+        assert_eq!(rows_that_fit(33, 34, 2, 12), 0);
+        assert_eq!(rows_that_fit(34, 34, 2, 12), 1);
+        assert_eq!(rows_that_fit(70, 34, 2, 12), 2);
+        assert_eq!(rows_that_fit(69, 34, 2, 12), 1);
+        assert_eq!(rows_that_fit(2000, 34, 2, 12), 12, "never more than twelve");
+        assert_eq!(rows_that_fit(2000, 34, 2, 5), 5, "never more than there are");
     }
 }

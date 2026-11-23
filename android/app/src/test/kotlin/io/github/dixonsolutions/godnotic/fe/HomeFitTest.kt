@@ -47,4 +47,19 @@ class HomeFitTest {
         assertEquals(false, HomeFit.sideBySide(1104, 720, 500, 20)) // tablet portrait: field on top, chips under it
         assertEquals(true, HomeFit.sideBySide(1824, 720, 500, 20)) // tablet landscape: beside
     }
+
+    @Test fun theServerCardHoldsWholeLinesInEveryShape() {
+        // the card's lines get its height less the title, summary and padding (about 120 dp): a tablet's
+        // landscape and portrait cards show several whole lines, and a phone's at least one
+        for ((w, h, d) in listOf(Triple(1920, 1200, 2f), Triple(1200, 1920, 2f), Triple(2400, 1080, 2.75f), Triple(1080, 2400, 2.75f))) {
+            val p = HomeFit.plan(w, h, (16 * d).toInt(), 3)
+            val cardW = if (p.stack) w else (w - 2 * (16 * d).toInt()) / 3
+            val rowPx = Math.round(CardTags.tableRowDp(cardW / d) * d)
+            val cardH = if (p.stack) (p.tilesH - 2 * (16 * d).toInt()) / 3 else p.tilesH
+            val avail = cardH - (120 * d).toInt()
+            val n = CardTags.fitRows(avail, rowPx, CardTags.MAX_ROWS)
+            assertTrue("$w x $h: $n lines in $avail px", n >= 1)
+            assertTrue("$w x $h: lines never overflow", n * rowPx <= avail)
+        }
+    }
 }

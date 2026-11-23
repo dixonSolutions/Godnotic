@@ -829,7 +829,7 @@ class ViewRenderer(
         titleV.maxLines = 2
         titleV.ellipsize = null
         Kit.fitWords(titleV, Theme.SP_TITLE - 1f, 13f) // "Team Deathmatch" on a narrow card: smaller, never "Dea|thmatch"
-        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") 6 else 2) // Home's Multiplayer card: the live server list
+        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") CardTags.MAX_ROWS else 2) // Home's Multiplayer card: the live server list
         val badges = FlowGrid(ctx, 0, dp(6f), wrap = true)
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)
@@ -863,8 +863,11 @@ class ViewRenderer(
             val lines = CardTags.rows(p)
             if (p.str("display") == "table" || lines.isNotEmpty()) {
                 summaryV.text = p.str("summary")
-                // no picture to fill the card: the lines take the room, each a little taller
-                for (r in lines) tagsBox.addView(TagRow(ctx, r, Theme.TEXT_MUTED).also { it.minimumHeight = dp(34f) })
+                // no picture to fill the card: the lines take the room, as many as its height holds,
+                // across its full inner width (a TableRows measures and hides what does not fit)
+                val tbl = TableRows(ctx)
+                for (r in lines) tbl.addView(TagRow(ctx, r, Theme.TEXT, table = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(CardTags.tableRowDp(0f))))
+                tagsBox.addView(tbl, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             } else {
                 summaryV.text = ""
                 CardTags.of(p).takeIf { it.isNotEmpty() }?.let { tagsBox.addView(TagRow(ctx, it, Theme.TEXT_MUTED)) }
@@ -888,7 +891,7 @@ class ViewRenderer(
             // a chevron promises somewhere to go: only on a card that has a primary action
             // (the pause page's card for someone else's server has none, and did nothing when tapped)
             val tappable = p["primary"] is Map<*, *>
-            chevron.visibility = if (!tappable || photo || actions.childCount > 0 || nodes[x.parent ?: ""]?.type == "grid") View.GONE else View.VISIBLE
+            chevron.visibility = if (!tappable || photo || p.str("display") == "table" || actions.childCount > 0 || nodes[x.parent ?: ""]?.type == "grid") View.GONE else View.VISIBLE
             c.isClickable = tappable
             img.aspect = aspect(p, 16f / 9f)
             img.maxHeight = (ctx.resources.displayMetrics.heightPixels * 0.22f).toInt()
