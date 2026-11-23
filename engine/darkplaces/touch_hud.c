@@ -384,7 +384,7 @@ void TouchHUD_GlassControl(float cx, float cy, float hx, float hy, qbool pressed
 {
 	qbool active = pressed || selected;
 	const float *color = active ? C_ACCENT : C_SURFACE;
-	shape_capsule_shadow(cx, cy + elevation(hy), hx, hy, alpha * A_SHADOW * glass_body(false));
+	shape_capsule_shadow(cx, cy + elevation(min(hx, hy)), hx, hy, alpha * A_SHADOW * glass_body(false));
 	shape_capsule(cx, cy, hx, hy, color, alpha * (pressed ? A_SURFACE_ACTIVE : selected ? A_SURFACE_LATCH : A_SURFACE) * glass_body(active));
 	widget_capsule_rim(cx, cy, hx, hy, active ? C_ACCENT_LIGHT : C_RIM, alpha * (active ? A_RIM_ACTIVE : A_RIM));
 }
@@ -435,27 +435,6 @@ static void widget_capsule(float cx, float cy, float hx, float hy, const char *l
 		shape_disc(pip_x, cy, pip_r, C_INK, alpha * A_INK);
 		shape_ring(pip_x, cy, pip_r * 1.5f, C_INK, alpha * A_RIM);
 	}
-}
-
-// As Touch_Widget_Check: a checkbox, hollow while off and filled with the
-// accent while on. Square corners: the engine has no rounded-rect ring.
-static void box_stroke(float cx, float cy, float hx, float hy, float w, const float *rgb, float a)
-{
-	DrawQ_Fill(cx - hx, cy - hy, hx * 2, w, rgb[0], rgb[1], rgb[2], a, 0);
-	DrawQ_Fill(cx - hx, cy + hy - w, hx * 2, w, rgb[0], rgb[1], rgb[2], a, 0);
-	DrawQ_Fill(cx - hx, cy - hy + w, w, hy * 2 - w * 2, rgb[0], rgb[1], rgb[2], a, 0);
-	DrawQ_Fill(cx + hx - w, cy - hy + w, w, hy * 2 - w * 2, rgb[0], rgb[1], rgb[2], a, 0);
-}
-static void widget_check(float cx, float cy, float hx, float hy, const char *label, qbool on, qbool pressed, float alpha, const float *accent)
-{
-	float b = widget_border();
-	if (hx < 2 || hy < 2 || alpha <= 0)
-		return;
-	if (on || pressed)
-		DrawQ_Fill(cx - hx, cy - hy, hx * 2, hy * 2, accent[0], accent[1], accent[2], alpha * A_SURFACE_ACTIVE, 0);
-	box_stroke(cx, cy, hx + b * 0.5f, hy + b * 0.5f, b * 2, C_SHADOW, alpha * A_CONTOUR);
-	box_stroke(cx, cy, hx, hy, b, on ? accent : C_RIM, alpha * (on ? A_RIM_ACTIVE : A_RIM));
-	shape_label(cx, cy, label_size(hx, hy, label), label, C_INK, alpha * A_INK);
 }
 
 static void widget_chrome_pill(float cx, float cy, float hx, float hy, const char *label, qbool pressed, float alpha, const float *accent)
@@ -932,7 +911,7 @@ static void topbar_sync(void)
 	panel_place("timer", 0.440f, 0.004f, 0.120f, 0.052f);
 	panel_place("modicons", 0.430f, 0.060f, 0.140f, 0.060f);
 	panel_place("vote", 0.400f, 0.125f, 0.200f, 0.085f);
-	panel_place("radar", 0.280f, 0.004f, 0.140f, 0.200f);
+	panel_place("radar", 0.280f, 0.015f, 0.140f, 0.200f);
 	panel_place("chat", 0.020f, 0.230f, 0.290f, 0.190f);
 	// item timers (spectators by default): off the chat feed, on the right
 	// edge under the scores, where a spectator has no weapon strip
@@ -1543,10 +1522,8 @@ static void draw_weapon_strip(float a)
 	pad = st.pad;
 	num_fs = 12 * st.u;
 	num_slot = label_width(num_fs, "9");
-	// A container you can see: a darker plate with a thin rim (the glass plate alone was
-	// near invisible over a bright wall), the same on the port's CSQC HUD (touch_hud.qc).
-	DrawQ_RoundedBox(st.cx, st.cy, st.half_w, st.half_h, TSTRIP_PAD * 2.5f * st.u, 0, C_SURFACE[0], C_SURFACE[1], C_SURFACE[2], a * 0.66f, 0);
-	DrawQ_RoundedBox(st.cx, st.cy, st.half_w, st.half_h, TSTRIP_PAD * 2.5f * st.u, max(1.0f, st.u * 1.1f), C_INK[0], C_INK[1], C_INK[2], a * 0.22f, 0);
+	// Use the same glass body and rim as the other controls.
+	TouchHUD_GlassControl(st.cx, st.cy, st.half_w, st.half_h, false, false, a);
 	for (i = 0; i < st.n; i++)
 	{
 		const wepdef_t *wd = &weapons[st.index[i]];
@@ -3686,7 +3663,7 @@ void TouchHUD_Draw(void)
 	{
 		widget_center(cv("touch_hoplock_x", 0.675f), cv("touch_hoplock_y", 0.760f), &cx, &cy);
 		widget_half(cv("touch_hoplock_size", 0.052f), 1, &hx, &hy);
-		widget_check(cx, cy, hx, hy, "KEEP", hop_latched, role_owned(ROLE_HOPLOCK), a, C_ACCENT);
+		widget_capsule(cx, cy, hx, hy, "KEEP", role_owned(ROLE_HOPLOCK), hop_latched, a, C_ACCENT);
 	}
 	if (cv("touch_crouch_visible", 1))
 		draw_circle_widget("touch_crouch_x", 0.700f, "touch_crouch_y", 0.885f, "touch_crouch_size", 0.080f, "DUCK", key_crouch, a, C_ACCENT);

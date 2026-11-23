@@ -1076,10 +1076,10 @@ float DrawQ_TextWidth_UntilWidth_TrackColors_Scale(const char *text, size_t *max
 
 		if (!fontmap || (ch <= 0xFF && fontmap->glyphs[ch].image) || (ch >= 0xE000 && ch <= 0xE0FF))
 		{
-			if (ch > 0xE000)
+			if (ch >= 0xE000 && ch <= 0xE0FF)
 				ch -= 0xE000;
 			if (ch > 0xFF)
-				continue;
+				ch = '?'; // Touch: bitmap fonts have no Unicode glyph
 			if (fontmap)
 				map = ft2_oldstyle_map;
 			prevch = 0;
@@ -1262,10 +1262,10 @@ float DrawQ_String_Scale(float startx, float starty, const char *text, size_t ma
 			}
 			if (!fontmap || (ch <= 0xFF && fontmap->glyphs[ch].image) || (ch >= 0xE000 && ch <= 0xE0FF))
 			{
-				if (ch >= 0xE000)
+				if (ch >= 0xE000 && ch <= 0xE0FF)
 					ch -= 0xE000;
 				if (ch > 0xFF)
-					goto out;
+					ch = '?'; // Touch: match bitmap-font width and drawing
 				if (fontmap)
 					map = ft2_oldstyle_map;
 				prevch = 0;
