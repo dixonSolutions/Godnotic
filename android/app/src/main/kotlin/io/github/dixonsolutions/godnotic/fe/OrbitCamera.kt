@@ -40,7 +40,7 @@ class OrbitCamera {
     fun wheel(steps: Float) { zoom = (zoom * WHEEL_STEP.pow(steps)).coerceIn(MIN_ZOOM, MAX_ZOOM) }
 
     /** Turning (and tilting) off the free view puts the tilt back and the view back in the middle. */
-    fun setFree(on: Boolean) {
+    fun enableFree(on: Boolean) {
         free = on
         if (!on) { pitch = START_PITCH; panX = 0f; panY = 0f }
     }

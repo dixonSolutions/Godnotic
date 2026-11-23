@@ -20,6 +20,7 @@
 // own delete button.
 
 const int UIB_PM_MAX = 96;
+string UIB_PMKeypad();   // below
 
 const float UIB_PM_NAME_DELAY = 0.8;
 string uib_name_pending;

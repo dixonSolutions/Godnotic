@@ -92,12 +92,12 @@ class ModelViewer(
         nextBtn.text = "Next move " + (anim?.title() ?: "")
     }
 
-    private fun toggleFree() { cam.setFree(!cam.free); updateButtons(); gl.requestRender() }
+    private fun toggleFree() { cam.enableFree(!cam.free); updateButtons(); gl.requestRender() }
 
     private fun togglePlay() {
         playing = !playing
         anim?.playing = playing
-        gl.renderMode = if (playing) GLSurfaceView.RENDERMODE_CONTINUOUS else GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        gl.setPlaying(playing)
         updateButtons()
         gl.requestRender()
     }
@@ -178,6 +178,8 @@ class ModelViewer(
 
         fun setModel(m: Iqm) { queueEvent { r.setModel(m) }; requestRender() }
         fun setAnim(a: ModelAnim?) { r.anim = a }
+        /** Playing draws every frame; otherwise only when something changed. */
+        fun setPlaying(on: Boolean) { renderMode = if (on) RENDERMODE_CONTINUOUSLY else RENDERMODE_WHEN_DIRTY }
         fun setTexture(mesh: Int, b: Bitmap) { queueEvent { r.setTexture(mesh, b) }; requestRender() }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {

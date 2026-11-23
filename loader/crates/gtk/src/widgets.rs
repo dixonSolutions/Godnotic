@@ -562,6 +562,20 @@ fn entry(app: &App, n: &Node) -> gtk::Widget {
             });
         }
     }
+    // The player name: its keypad under the entry (keypad_parts)
+    if n.str("kind").as_deref() == Some("name") && !n.arr("keypad").is_empty() {
+        if let Some(t) = e.downcast_ref::<gtk::Entry>() {
+            let (toggle, rev) = keypad_parts(t, n.arr("keypad"));
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            e.set_hexpand(true);
+            line.append(&e);
+            line.append(&toggle);
+            let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            col.append(&line);
+            col.append(&rev);
+            return col.upcast();
+        }
+    }
     e
 }
 
@@ -790,7 +804,12 @@ fn field_row(app: &App, n: &Node) -> gtk::Widget {
     // Symbols), which types into the same field as the system keyboard.
     let keys = n.arr("keypad");
     if n.str("kind").as_deref() == Some("name") && !private && !keys.is_empty() {
-        return name_field(&r, &keys);
+        let (toggle, rev) = keypad_parts(&r, keys);
+        r.add_suffix(&toggle);
+        let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        col.append(&r);
+        col.append(&rev);
+        return col.upcast();
     }
     r.upcast()
 }
@@ -812,17 +831,17 @@ fn keypad_remember(open: bool) {
     let _ = std::fs::write(path, if open { "shown\n" } else { "hidden\n" });
 }
 
-/// The Name field with its keypad under it. A key inserts its text at the caret; the entry's own
-/// `changed` sends the new name, as typing does. Game-font glyphs (U+E0xx) have no drawing in system
-/// fonts here, so those keys show the letter the game's charset maps them to (see the Kotlin NameField).
-fn name_field(r: &adw::EntryRow, groups: &[serde_json::Value]) -> gtk::Widget {
+/// The Name field's keypad: the keyboard toggle (put it beside the field) and the panel to put under
+/// it. A key inserts its text at the caret; the entry's own `changed` sends the new name, as typing
+/// does. Game-font glyphs (U+E0xx) have no drawing in system fonts here, so those keys show the letter
+/// the game's charset maps them to (see the Kotlin NameField).
+fn keypad_parts<E: IsA<gtk::Editable> + Clone + 'static>(r: &E, groups: &[serde_json::Value]) -> (gtk::ToggleButton, gtk::Revealer) {
     let toggle = gtk::ToggleButton::new();
     toggle.set_icon_name("input-keyboard-symbolic");
     toggle.set_valign(gtk::Align::Center);
     toggle.add_css_class("flat");
     toggle.set_tooltip_text(Some("Character keyboard"));
     toggle.set_active(keypad_open());
-    r.add_suffix(&toggle);
     let stack = gtk::Stack::new();
     let switcher = gtk::StackSwitcher::new();
     switcher.set_stack(Some(&stack));
@@ -831,12 +850,14 @@ fn name_field(r: &adw::EntryRow, groups: &[serde_json::Value]) -> gtk::Widget {
         let Some(g) = g.as_object() else { continue };
         let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("keys").to_string();
         let label = g.get("label").and_then(|v| v.as_str()).unwrap_or(&id).to_string();
-        let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(16).row_spacing(4).column_spacing(4).homogeneous(true).build();
+        let fb = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).min_children_per_line(5).max_children_per_line(16).row_spacing(4).column_spacing(4).valign(gtk::Align::Start).build();
         for k in g.get("keys").and_then(|v| v.as_array()).map(|a| a.as_slice()).unwrap_or(&[]) {
             let Some(text) = k.get("text").and_then(|v| v.as_str()) else { continue };
             let b = gtk::Button::new();
             b.set_focus_on_click(false); // the entry keeps the caret and the system keyboard
             b.set_size_request(44, 44);
+            b.set_valign(gtk::Align::Center);
+            b.set_halign(gtk::Align::Center);
             if let Some(hex) = k.get("colour").and_then(|v| v.as_str()) {
                 swatch_css(hex);
                 b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
@@ -875,10 +896,7 @@ fn name_field(r: &adw::EntryRow, groups: &[serde_json::Value]) -> gtk::Widget {
         rv.set_reveal_child(t.is_active());
         keypad_remember(t.is_active());
     });
-    let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    col.append(r);
-    col.append(&rev);
-    col.upcast()
+    (toggle, rev)
 }
 
 /// What a keypad key shows: a game-font glyph as the letter the charset maps it to, anything else as it is.

@@ -137,11 +137,11 @@ class ModelViewerTest {
         val y0 = c.yaw; val p0 = c.pitch
         c.drag(100f, 100f)
         assertTrue(c.yaw < y0); assertEquals(p0, c.pitch, 0f)
-        c.setFree(true)
+        c.enableFree(true)
         c.drag(0f, 100f)
         assertTrue(c.pitch > p0)
         c.drag(0f, 100000f); assertEquals(OrbitCamera.MAX_PITCH, c.pitch, 0f)
-        c.setFree(false)
+        c.enableFree(false)
         assertEquals(OrbitCamera.START_PITCH, c.pitch, 0f)
     }
 
@@ -157,7 +157,7 @@ class ModelViewerTest {
     @Test fun panOnlyInFreeViewAndTheEyeStaysOnItsSphere() {
         val c = OrbitCamera()
         c.pan(50f, 50f, 800f); assertEquals(0f, c.panX, 0f)
-        c.setFree(true); c.pan(80f, 0f, 800f); assertTrue(c.panX < 0f)
+        c.enableFree(true); c.pan(80f, 0f, 800f); assertTrue(c.panX < 0f)
         val c2 = OrbitCamera()
         val l = c2.lookAt(0f, 0f, 20f, 10f)
         val d = Math.sqrt(((l[0] - l[3]) * (l[0] - l[3]) + (l[1] - l[4]) * (l[1] - l[4]) + (l[2] - l[5]) * (l[2] - l[5])).toDouble())

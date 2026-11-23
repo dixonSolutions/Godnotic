@@ -202,7 +202,7 @@ static int rawallowed(const char *p)
 	size_t l = strlen(p);
 	if (l < 12 || l > 200 || strncmp(p, "models/", 7) || strstr(p, "..") || strchr(p, '\\') || strchr(p, ':'))
 		return 0;
-	return !strcasecmp(p + l - 4, ".iqm") || (l > 5 && !strcasecmp(p + l - 5, ".skin")) || !strcasecmp(p + l - 4, ".txt");
+	return !strcasecmp(p + l - 4, ".iqm") || (l > 5 && !strcasecmp(p + l - 5, ".skin")) || !strcasecmp(p + l - 4, ".txt") || (l > 13 && !strcasecmp(p + l - 12, ".framegroups"));
 }
 
 static void process_raw(const imgreq_t *r)

@@ -42,9 +42,9 @@ class NameColourTest {
     }
 
     @Test fun keyInsertsAtTheCaret() {
-        assertEquals("Ra^1ven" to 5, NameColour.insert("Raven", 2, 2, "^1"))
+        assertEquals("Ra^1ven" to 4, NameColour.insert("Raven", 2, 2, "^1"))
         assertEquals("^1" to 2, NameColour.insert("", 0, 0, "^1"))
-        assertEquals("R\u2605n" to 3, NameColour.insert("Raven", 1, 4, "\u2605"))   // replaces the selection
+        assertEquals("R\u2605n" to 2, NameColour.insert("Raven", 1, 4, "\u2605"))   // replaces the selection
         assertEquals("Raven^2" to 7, NameColour.insert("Raven", -1, -1, "^2"))      // no caret: at the end
         assertEquals("\uD83D\uDE03Raven" to 2, NameColour.insert("Raven", 0, 0, "\uD83D\uDE03"))   // a face is two UTF-16 units
     }
