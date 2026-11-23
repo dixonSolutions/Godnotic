@@ -57,6 +57,14 @@ REAL public server (95.217.62.206:26000 afterslime, "[EU] futa.tips", stock map,
 Defects found on the emulator and fixed: the log's close X was under the HUD's info button (panel now starts below the HUD stats/top row, H*0.21); the panel was narrower than needed (the console-button avoidance also fired when the button was above the panel; now only on a real overlap).
 Cause of the owner's "icons do nothing": fingers were handled by the QuakeC layer from a rect it read back from the engine; now the engine takes a finger on the strip, the feed's names and the open log itself, in `TouchVote_Finger` before any CSQC (works for the stock CSQC too).
 
+## Stray icon strip (owner report on v1.2.323)
+Cause: origin/main (chatpolish, `TouchChatLog_IconsShown`) and this branch both drew the trash/copy/download/share strip whenever the log held ANY line, so after the feed's lines faded it floated alone over the game. Fixed here: the strip is drawn only with feed lines on show (or a toast it just raised) and goes with them; it also stops taking touches (claim cleared). The log stays reachable from the pause menu's "Chat log" button, a tap on a feed line, `touch_chatlog_open`. Desktop frame with an empty feed: build/chatev-shots/events-empty.png (no strip). Emulator frames for this case: see below if present, otherwise NOT yet run.
+
+## Other fixes since the first emulator run
+- The log is drawn last (cl_screen.c `TouchChatLog_DrawOverlay`) so it is above TURN, DUCK, KEEP, the ammo, the weapon rail and every other touch control; it claims every finger while open.
+- The panel starts below the HUD stats (H*0.21), is only as tall as its lines need (min 5 rows), hangs from the top.
+- "Not now" on the music prompt is remembered (BootActivity `music_declined`); Download was never tapped.
+
 ## NOT verified
 - Moving/aiming with the other thumb while tapping (adb input is single touch), and that nothing underneath fires: the claimed finger never reaches the control table (by construction), not observed with two fingers.
 - Tablet hardware and portrait phone on a device; the emulator was 1920x1200 landscape only (desktop frames cover 720x1280 and 960x540).
