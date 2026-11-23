@@ -1587,6 +1587,9 @@ class ViewRenderer(
         updateInfoButton()
     }
 
+    /** The map the last Join tap named and the picture the dialog had for it (a file), for the card's first frame. */
+    @Volatile var joinHint: Pair<String, String?>? = null
+
     /** The native server info dialog (opened by choosing a server, or the bottom bar's "i"): picture, title, facts, players, Join, Close. */
     private fun showServerDetails(row: Map<String, Any?>) {
         val cells = row["cells"].obj()
@@ -1621,6 +1624,7 @@ class ViewRenderer(
         // Join is what the dialog is for: first, twice as wide, taller, and the focused button (Enter / the d-pad's centre joins).
         val join = Kit.button(ctx, "Join", primary = true) {
             Log.i("Godnotic", "Preview: Join tapped $address")
+            joinHint = map to (if (map.isNotEmpty()) knownPath("pk3:maps/$map") else null) // the join card's picture until the engine names one
             closeDetails()
             events.row("mp/servers", address, "activate")
         }.apply {

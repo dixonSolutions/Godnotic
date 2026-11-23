@@ -134,6 +134,10 @@ internal object JoinFlow {
         }
     }
 
+    /** The server's own signon data (serverinfo, precache lists) is arriving: nothing loads or downloads yet. */
+    fun waiting(seconds: Int): String =
+        "Receiving game data from the server" + if (seconds >= 2) "  ·  $seconds s" else ""
+
     /** "12.3/40.0 MB" (one unit, the total's), "512/900 KB". */
     fun sizes(bytes: Double, total: Double): String =
         if (total >= 1048576.0) String.format(java.util.Locale.US, "%.1f/%.1f MB", bytes / 1048576.0, total / 1048576.0)
