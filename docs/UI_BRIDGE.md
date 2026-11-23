@@ -360,7 +360,7 @@ small note for anything but `immediate`.
 | `choice` | string | `options` (`[{value, label, icon, image, help}]`), `style` (`auto`, `segmented`, `dropdown`, `radio`, `cards`) |
 | `field` | string | `kind` (`text`, `name`, `number`, `password`, `url`, `search`, `address`), `placeholder`, `maxLength`, `private`, `hasValue`, `submit` (action) |
 | `button` | — | `action` (action), `style` (`primary`, `secondary`, `tonal`, `destructive`, `link`) |
-| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `labels` (short texts written on the swatches, parallel to `palette`), `preview` (image ref). Renderers draw one round swatch per palette entry, the current value ringed; a tap sends that entry |
+| `colour` | string `#rrggbb` | `palette` (`["#rrggbb", ...]`; when present only these may be picked), `labels` (short texts written on the swatches, parallel to `palette`), `preview` (image ref). Renderers draw one round swatch per palette entry, the current value ringed; a tap sends that entry. `picker: "name"` (with `text`, the name with its codes, and `maxLength`) is the player-name colour picker instead: hue/saturation/brightness sliders, the ^0 to ^9 presets, a from/to letter range and a live preview; Apply sends `name:<the whole new name>` (the GTK loader sends `whole:#rrggbb`, `end:#rrggbb` or `chip:N`) |
 | `keybind` | string[] (key names) | `command`, `max` (keys per command, default 2) |
 | `progress` | see 4.4 | |
 

@@ -1418,9 +1418,13 @@ class ViewRenderer(
             val p = x.props
             val col = Kit.column(ctx, 4f)
             col.addView(Kit.formRow(ctx, title(p), help(p), null))
-            val sw = ColourSwatches.view(ctx, p["palette"].list().map { it.toString() }, p["labels"].list().map { it.toString() }, p.str("value")) { hex -> events.value(id, hex) }
-            sw.setPadding(dp(16f), 0, dp(16f), dp(8f))
-            col.addView(sw)
+            if (p.str("picker") == "name") { // Touch: the name colour picker (ColourPicker.kt)
+                col.addView(ColourPicker.view(ctx, p.str("text"), p.num("maxLength", 64.0).toInt()) { n -> events.value(id, "name:$n") }.apply { setPadding(dp(16f), 0, dp(16f), dp(8f)) })
+            } else {
+                val sw = ColourSwatches.view(ctx, p["palette"].list().map { it.toString() }, p["labels"].list().map { it.toString() }, p.str("value")) { hex -> events.value(id, hex) }
+                sw.setPadding(dp(16f), 0, dp(16f), dp(8f))
+                col.addView(sw)
+            }
             holder.addView(col)
         }
         return e
@@ -1684,7 +1688,10 @@ class ViewRenderer(
             // a chosen server keeps Join usable through the engine's next props
             b.isEnabled = (id == "mp/join/go" && serverListState.selected.isNotEmpty()) ||
                 !p.containsKey("enabled") || p.bool("enabled")
-            holder.addView(b, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            // Touch: width xs/s is a small button as wide as its label (a MATCH_PARENT child of this wrapping holder took the whole row)
+            val small = p.str("width") == "xs" || p.str("width") == "s"
+            if (small) b.minimumWidth = dp(if (p.str("width") == "xs") 64f else 96f)
+            holder.addView(b, FrameLayout.LayoutParams(if (small) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         return e
     }
