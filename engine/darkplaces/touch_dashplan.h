@@ -481,6 +481,10 @@ typedef struct td_out_s
 // The flight after a launch: stepped finely (TouchRescue_Predict's long
 // chords clip the lip of a short hop), sliding along walls and ceilings,
 // until it lands, enters a death volume or falls out of the world.
+// A landing this close to the lowest point of the map is not trusted.
+#define TD_BOTTOM_MARGIN 160.0f
+// ...nor, with no goal to reach, a drop this far below where the player stands.
+#define TD_DROP_MAX 320.0f
 #define TD_STEP    0.04f
 #define TD_MAXSTEP 90
 static void td_flight(tr_world_t *w, const td_cfg_t *c, const float pos0[3], const float vel0[3], td_out_t *o)
@@ -650,6 +654,9 @@ static int td_eval(tr_world_t *w, const td_cfg_t *c, const td_in_t *in, const td
 	out->health_loss = hl;
 	out->t_fire = t_f;
 	td_flight(w, c, pos2, v2, &out->out);
+	// the bottom of the map is where it kills (a nodrop or hurt floor the client cannot see): never a landing there
+	if (out->out.outcome == TR_LAND && out->out.land[2] < w->floor_z + TD_BOTTOM_MARGIN)
+		out->out.outcome = TR_VOID;
 	return 1;
 }
 
@@ -820,6 +827,8 @@ static void TouchDash_Plan(tr_world_t *w, td_cfg_t *c, const td_in_t *in, td_pla
 						float along = (cand.out.land[0] - in->org[0]) * h[0] + (cand.out.land[1] - in->org[1]) * h[1];
 						cand.score = -along + (cand.out.outcome == TR_LAND ? 0 : 5000);
 					}
+					if (!have_goal && cand.out.land[2] < in->org[2] - TD_DROP_MAX)
+						cand.score += 5000;
 					// a held weapon, less self damage, no dodge needed: small tie-breakers
 					cand.score += cand.health_loss * (have_goal ? 0.3f : 2.0f) + (cand.t_fire > 0 ? 6 : 0) + (cand.dodge ? 3 : 0);
 					td_better(&best, &have_best, &cand);

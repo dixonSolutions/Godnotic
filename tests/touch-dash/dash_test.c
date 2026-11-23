@@ -151,13 +151,14 @@ static float world_death(void *ctx, const float start[3], const float end[3])
 	return best;
 }
 
+static float g_floor_z = -600;
 static tr_world_t world(void)
 {
 	tr_world_t w;
 	memset(&w, 0, sizeof(w));
 	w.trace = world_trace;
 	w.death = world_death;
-	w.floor_z = -600;
+	w.floor_z = g_floor_z;
 	w.gravity = 800;
 	return w;
 }
@@ -453,6 +454,25 @@ int main(int argc, char **argv)
 		run(&c, &in, &p, "calibrated to half");
 		CHECK(p.action != TD_BOOST || p.land[0] < full, "a push measured weaker shortens the predicted launch");
 	}
+
+	// the bottom of the map is where it kills: no landing within 160 units of it
+	flat();
+	base_in(&in);
+	in.stick_fwd = 1;
+	cfg.dodging = 0;
+	g_floor_z = -100;
+	run(&cfg, &in, &p, "floor of the world right under the floor");
+	CHECK(p.action == TD_NONE, "ground near the lowest point of the map is not trusted: no boost");
+	g_floor_z = -600;
+	// an open drop far below is not boosted into
+	world_clear();
+	add_box(-3000, -3000, -64, 100, 3000, 0, K_SOLID);
+	add_box(100, -3000, -1000, 3000, 3000, -900, K_SOLID);
+	g_floor_z = -2000;
+	in.org[0] = 70;
+	run(&cfg, &in, &p, "ledge over a deep drop");
+	CHECK(p.action != TD_BOOST || p.land[2] > in.org[2] - 320, "an open forward boost never plans a drop of over 320 units");
+	g_floor_z = -600;
 
 	printf("%d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;

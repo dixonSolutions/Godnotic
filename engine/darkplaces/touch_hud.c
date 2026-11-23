@@ -2832,7 +2832,7 @@ static void draw_dash_extras(float a)
 	TouchDash_NoteButton(cx, cy, r);
 	label = TouchDash_Label();
 	if (label[0] && !TouchDash_PickerOpen())
-		widget_capsule(cx, cy + r * 1.45f, r * 0.95f, r * 0.32f, label, false, false, a * 0.85f, C_ACCENT);
+		widget_capsule(cx, cy - r * 1.45f, r * 0.95f, r * 0.32f, label, false, false, a * 0.85f, C_ACCENT);
 	n = TouchDash_Chips(chips, 10);
 	for (i = 0; i < n; i++)
 		widget_capsule(chips[i].x, chips[i].y, chips[i].hx, chips[i].hy, chips[i].label, chips[i].hot, chips[i].current, a, C_ACCENT);

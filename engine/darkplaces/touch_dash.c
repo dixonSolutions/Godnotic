@@ -89,7 +89,7 @@ static struct
 	int dodge_ok, dodge_fail;
 	// a plain dash being watched
 	double dodge_t;
-	float dodge_v0;
+	float dodge_v0, dodge_maxvz;
 	qbool dodge_ground;
 	// the HUD
 	float bx, by, br;
@@ -333,10 +333,10 @@ static void turn_toward(float yaw, float pitch, float dt)
 // A dodge. The mutator takes a dodge on a movement key going down while the
 // dodge button is held (or a double tap), so a stick already held would never
 // dodge: the move is let go of for a few frames, then pressed in the dodge's
-// direction with the button (the way touch_dodge.c does it), for 0.14 s.
+// direction with the button (the way touch_dodge.c does it), for 0.24 s.
 #define DODGE_BUTTON  8192   // button11: +dodge
-#define BURST_RELEASE 0.06
-#define BURST_END     0.20
+#define BURST_RELEASE 0.12
+#define BURST_END     0.36
 static void send_dodge(const float dir[2])
 {
 	td.burst = true;
@@ -633,19 +633,26 @@ static void measure_frame(double now)
 	}
 }
 
-// A plain dash watched: did the dodge move the player? (A server whose
-// mutators the client cannot read is found out this way.)
+// A plain dash watched: did the dodge lift the player? A dodge leaves the
+// ground at once at its up speed (200); walking, which the dash's own move
+// also does, never goes up. (A server whose mutators the client cannot read
+// is found out this way.)
 static void dodge_watch(double now)
 {
-	if (td.dodge_t <= 0 || now - td.dodge_t < 0.3)
+	if (td.dodge_t <= 0)
+		return;
+	if (cl.mvelocity[0][2] > td.dodge_maxvz)
+		td.dodge_maxvz = cl.mvelocity[0][2];
+	if (now - td.dodge_t < 0.4)
 		return;
 	{
 		float vh = sqrt(cl.mvelocity[0][0] * cl.mvelocity[0][0] + cl.mvelocity[0][1] * cl.mvelocity[0][1]);
-		debug(1, "dash: horizontal speed %.0f -> %.0f, up %.0f after 0.3 s (%s)", td.dodge_v0, vh, cl.mvelocity[0][2],
-			td.dodge_ground ? (fabs(vh - td.dodge_v0) > 120 || cl.mvelocity[0][2] > 120 ? "dodged" : "no dodge") : "from the air");
+		qbool dodged = td.dodge_maxvz > 100;
+		debug(1, "dash: horizontal speed %.0f -> %.0f, highest upward speed %.0f in 0.4 s (%s)", td.dodge_v0, vh, td.dodge_maxvz,
+			td.dodge_ground ? (dodged ? "dodged" : "no dodge") : "from the air");
 		if (td.dodge_ground)
 		{
-			if (fabs(vh - td.dodge_v0) > 120 || cl.mvelocity[0][2] > 120)
+			if (dodged)
 			{
 				td.dodge_ok++;
 				td.dodge_fail = 0;
@@ -697,6 +704,7 @@ static void tap_with(int force_dir, int force_weapon)
 	if (p.action == TD_DODGE)
 	{
 		td.dodge_t = host.realtime;
+		td.dodge_maxvz = 0;
 		td.dodge_v0 = sqrt(in.vel[0] * in.vel[0] + in.vel[1] * in.vel[1]);
 		td.dodge_ground = in.onground;
 		td.dashes++;
@@ -796,13 +804,13 @@ static const struct { const char *label; int dir; } dir_chips[] = { { "AUTO", 0 
 int TouchDash_Chips(touch_dash_chip_t *out, int max)
 {
 	int n = 0, i;
-	float hx = td.br * 1.0f, hy = td.br * 0.52f, gap = td.br * 0.18f, x0, y;
+	float hx = td.br * 0.92f, hy = td.br * 0.52f, gap = td.br * 0.4f, x0, y;
 	float cur_w = -1;
 	(void)cur_w;
 	if (!td.picker || max < 8)
 		return 0;
 	x0 = max(hx + 6, td.bx - td.br);
-	y = td.by - td.br * 1.9f;
+	y = td.by - td.br * 2.0f;
 	for (i = 0; i < 3 && n < max; i++, n++)
 	{
 		touch_dash_chip_t *c = &out[n];
@@ -819,7 +827,7 @@ int TouchDash_Chips(touch_dash_chip_t *out, int max)
 		static const char *const names[] = { "", "devastator", "blaster", "electro", "hagar" };
 		static const char *const shown[] = { "AUTO", "DEV", "BLA", "ELE", "HAG" };
 		int k;
-		y = td.by - td.br * 3.1f;
+		y = td.by - td.br * 3.3f;
 		for (k = 0, i = 0; k < 5 && n < max; k++)
 		{
 			touch_dash_chip_t *c;

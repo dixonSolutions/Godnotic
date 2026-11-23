@@ -82,7 +82,7 @@ run_case() { # name server-args... -- client-extra
 	kill %1 2> /dev/null; wait 2> /dev/null
 }
 
-want() { case " ${CASES:-on off floor ui} " in *" $1 "*) return 0;; esac; return 1; }
+want() { case " ${CASES:-on off floor ui qc} " in *" $1 "*) return 0;; esac; return 1; }
 
 # 1. dodging on: the server's mutator is read; a plain dash dodges; boosts land where predicted
 want on && {
@@ -153,10 +153,11 @@ if want ui; then
 	UIQ="$QUIET; set touch_dodge_visible 1; set touch_always_autojoin 1; set touch_autojoin_team auto"
 	p=$(port); ui_server $p
 	{
-		echo "0 cmd touch_dash_status"
-		echo "3 cmd echo MARK idle"; echo "3.1 cmd screenshot dash_idle"
+		echo "0 cmd touch_join auto"; echo "0.3 cmd togglemenu 0"; echo "1.5 cmd touch_join auto"; echo "1.8 cmd togglemenu 0"
+		echo "2 cmd touch_dash_status"
+		echo "3 cmd echo MARK idle"; echo "3.1 cmd screenshot shots/dash_idle.png"
 		echo "5 cmd echo MARK press"; echo "5 fdown 1 0.165 0.480"
-		echo "6.2 cmd echo MARK picker"; echo "6.3 cmd screenshot dash_picker"
+		echo "6.2 cmd echo MARK picker"; echo "6.3 cmd screenshot shots/dash_picker.png"
 		echo "7 fup 1 0.165 0.480"
 		echo "8 cmd echo MARK after"; echo "9 cmd touch_dash_status"
 		echo "10 cmd quit"
@@ -168,15 +169,16 @@ if want ui; then
 	read -r BLX BLY < <(sed -n 's/.*picker chip BLA at \([0-9.]*\) \([0-9.]*\).*/\1 \2/p' "$WORK/ui1/client.log" | head -1)
 	if [ -n "${UPX:-}" ]; then
 		{
+			echo "0 cmd touch_join auto"; echo "0.3 cmd togglemenu 0"; echo "1.5 cmd touch_join auto"; echo "1.8 cmd togglemenu 0"
 			echo "3 cmd echo MARK pickdir"; echo "3 fdown 1 0.165 0.480"
-			echo "4 cmd echo MARK hold"; echo "4.5 fmove 1 $UPX $UPY"; echo "4.9 cmd screenshot dash_picker_hover"
+			echo "4 cmd echo MARK hold"; echo "4.5 fmove 1 $UPX $UPY"; echo "4.9 cmd screenshot shots/dash_picker_hover.png"
 			echo "5.2 fup 1 $UPX $UPY"
 			echo "6 cmd echo DIR \$cl_touch_dash_dir WEAPON [\$cl_touch_dash_weapon]"
 			if [ -n "${BLX:-}" ]; then
 				echo "7 fdown 1 0.165 0.480"; echo "8 fmove 1 $BLX $BLY"; echo "8.5 fup 1 $BLX $BLY"
 				echo "9 cmd echo DIR \$cl_touch_dash_dir WEAPON [\$cl_touch_dash_weapon]"
 			fi
-			echo "9.5 cmd screenshot dash_after_pick"
+			echo "9.5 cmd screenshot shots/dash_after_pick.png"
 			echo "10 cmd quit"
 		} > "$WORK/case_ui2.txt"
 		ui_client ui2 "$WORK/case_ui2.txt" "$UIQ; connect 127.0.0.1:$p; defer 30 \"set xt_go 1\""
@@ -185,7 +187,19 @@ if want ui; then
 		echo "FAIL the picker printed no chips"; fail=1
 	fi
 	kill %1 2> /dev/null; wait 2> /dev/null
-	[ -n "${SHOTDIR:-}" ] && mkdir -p "$SHOTDIR" && cp "$WORK"/ui*/screenshots/*.png "$SHOTDIR/" 2> /dev/null
+	[ -n "${SHOTDIR:-}" ] && mkdir -p "$SHOTDIR" && cp "$WORK"/ui*/data/shots/*.png "$SHOTDIR/" 2> /dev/null
+fi
+
+# 5. the port's own CSQC HUD (a local game): its DASH button sends the same tap
+if want qc; then
+	{
+		echo "0 cmd touch_join auto"; echo "0.3 cmd togglemenu 0"; echo "1.5 cmd touch_join auto"; echo "1.8 cmd togglemenu 0"
+		echo "3 cmd echo MARK qc"; echo "3.1 fdown 1 0.165 0.480"; echo "3.25 fup 1 0.165 0.480"
+		echo "5 cmd touch_dash_status"
+		echo "6 cmd quit"
+	} > "$WORK/case_qc.txt"
+	client qc "$WORK/case_qc.txt" "$QUIET; set touch_dodge_visible 1; set g_dm 1; set g_warmup 0; set bot_number 1; set skill 1; map dance; defer 16 \"set xt_go 1\"" 100
+	python3 "$T/check_live.py" qc "$WORK/qc/client.log" || fail=1
 fi
 
 echo "test-touch-dash-live: $([ $fail = 0 ] && echo all passed || echo FAILED)"
