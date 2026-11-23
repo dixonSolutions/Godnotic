@@ -1047,8 +1047,17 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	float claim_top, claim_w;
 	float isz = max(m->fs * 1.5f, 18.0f * m->dp), pitch = max(isz * 1.5f, 40.0f * m->dp);
 	float tbx, tby, strip = isz * 1.24f + m->fs * 0.5f;
-	int j;
+	int j, show_strip;
 
+	/* the toolbar belongs to the lines on show (and to a toast it just raised): once they have
+	 * faded or been cleared the strip goes with them, never alone over the game */
+	n = TouchChatLog_FeedLines(&cl_log, mask, host.realtime, fade, idx, TCL_FEED_MAX);
+	show_strip = n > 0 || (tcl_toast[0] && host.realtime - tcl_toast_at < 1.8);
+	if (!show_strip)
+	{
+		TCL_Claim(0, 0, 0, 0);
+		return;
+	}
 	if (bottom - areah < 0)
 		areah = bottom;
 	top = bottom - areah;
@@ -1057,7 +1066,7 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	 * screen a header row inside it (the lines then get what is left): never on a message */
 	{
 		tcl_strip_t st;
-		if (cl_log.count > 0)
+		if (show_strip)
 		{
 			TouchChatLog_Strip(bottom, areah, isz, m->fs, m->rowh, &st);
 			tby = st.tb_y + isz * 0.12f;
@@ -1069,7 +1078,7 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	top = bottom - areah;
 	pitch = min(pitch, max(isz * 1.3f, (w - pad) / (float)TCL_ICONS)); /* never wider than the box */
 	tbx = x + pad;
-	for (j = 0; j < TCL_ICONS && cl_log.count > 0; j++) /* nothing to act on in an empty log */
+	for (j = 0; j < TCL_ICONS && show_strip; j++)
 	{
 		static const int ic[TCL_ICONS] = {TCL_I_SHARE, TCL_I_DOWNLOAD, TCL_I_COPY, TCL_I_CLEAR, TCL_I_LOG};
 		static const int id[TCL_ICONS] = {TG_SHARE, TG_DOWNLOAD, TG_COPY, TG_CLEAR, TG_LOG};
@@ -1083,7 +1092,6 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	TCL_DrawToast(m, tbx + claim_w * 0.5f, tby - m->fs * 2.2f);
 
 	/* the lines: newest at the bottom, as many as fit */
-	n = TouchChatLog_FeedLines(&cl_log, mask, host.realtime, fade, idx, TCL_FEED_MAX);
 	for (k = 0; k < n; k++)
 	{
 		const tcl_entry_t *e = TouchChatLog_Get(&cl_log, idx[k]);
