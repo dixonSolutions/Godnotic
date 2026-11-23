@@ -289,7 +289,7 @@ waitlog "$WORK/host2.log" "Server listening on address 0.0.0.0:26000" 90 \
 	&& ok "popup: Create with LAN ticked hosts on 26000" || { bad "popup: the menu's Host did not listen"; tail -5 "$WORK/host2.log"; }
 waitlog "$WORK/host2.log" '"modal":\["lan.host"\]' 40 \
 	&& ok "popup: it opens by itself when the hosted game is up" || bad "popup: it did not open: $(grep -ao '"modal":[^]]*]' "$WORK/host2.log" | tail -1)"
-grep -a '"lan.host/addresses/a0/text"' "$WORK/host2.log" | grep -aq '10.77.0.2:26000' \
+grep -a '"lan.host/a0/text"' "$WORK/host2.log" | grep -aq '10.77.0.2:26000' \
 	&& ok "popup: it shows 10.77.0.2:26000" || bad "popup: no address row"
 LINES_BEFORE=$(wc -l < "$WORK/host2.log")
 join popupjoin "" 40 &

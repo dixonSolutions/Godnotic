@@ -270,9 +270,12 @@ fn the_lan_popup_gives_addresses_to_copy_and_closes_when_someone_joins() {
     let s = snap("lan-popup.json");
     assert_eq!(s.modal(), ["lan.host"]);
     assert_eq!(s.context(), "game");
-    let a0 = s.node("lan.host/addresses/a0/copy").unwrap().obj("action").unwrap().clone();
+    let a0 = s.node("lan.host/a0/copy").unwrap().obj("action").unwrap().clone();
     assert_eq!((a0["kind"].as_str(), a0["text"].as_str()), (Some("copy"), Some("192.168.1.23:26000")));
-    assert!(s.node("lan.host/addresses/link/text").unwrap().str("body").unwrap().starts_with("godnotic://join/"));
+    let share = s.node("lan.host/status/share").unwrap().obj("action").unwrap().clone();
+    assert!(share["text"].as_str().unwrap().starts_with("godnotic://join/"), "one Share action carries the join link");
+    assert!(s.node("lan.host/addresses").is_none() && s.node("lan.host").unwrap().str("subtitle").is_none(), "no heading and no subtitle");
+    assert!(s.node("lan.host/autoclose").unwrap().str("help").is_none(), "the switch has no description");
     assert_eq!(s.node("lan.host/autoclose").unwrap().str("bind").as_deref(), Some("cvar:touch_lan_popup_autoclose"));
     // The host is already in the game: the popup has Copy and Close, and no Join.
     assert_eq!(s.node("lan.host").unwrap().obj("primary").unwrap()["id"], "host.close");

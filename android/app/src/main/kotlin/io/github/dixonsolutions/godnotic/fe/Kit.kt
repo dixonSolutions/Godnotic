@@ -162,8 +162,9 @@ object Kit {
             setTextColor(if (primary) 0xFF1A0A00.toInt() else Theme.TEXT)
             gravity = Gravity.CENTER
             minHeight = Theme.dp(ctx, MIN_TARGET_DP)
-            minimumWidth = Theme.dp(ctx, 96f)
-            val h = Theme.dp(ctx, 22f)
+            val iconOnly = label.isEmpty() && iconName.isNotEmpty()   // a small icon button (copy), not a wide pill
+            minimumWidth = Theme.dp(ctx, if (iconOnly) 48f else 96f)
+            val h = Theme.dp(ctx, if (iconOnly) 13f else 22f)
             setPadding(h, Theme.dp(ctx, 10f), h, Theme.dp(ctx, 10f))
             background = Theme.pill(ctx, primary)
             isFocusable = true

@@ -44,8 +44,6 @@
     "props": {
      "title": "Stormkeep",
      "subtitle": "Deathmatch · 7:42 left · 3rd of 5",
-     "image": "pk3:maps/stormkeep",
-     "aspect": "21:9",
      "meta": [
       {
        "icon": "trophy",
@@ -63,7 +61,7 @@
     "id": "pause/actions",
     "type": "grid",
     "props": {
-     "minItem": 200
+     "minItem": 160
     },
     "children": [
      "pause/actions/resume",
