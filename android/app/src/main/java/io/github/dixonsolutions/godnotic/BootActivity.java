@@ -215,6 +215,9 @@ public class BootActivity extends Activity {
             showWaitingForNetwork();
         });
         later.setOnClickListener(v -> {
+            // "Not now" is remembered: the music prompt does not come back on every launch
+            // (the "Download music" shortcut still asks).
+            consent(this).edit().putBoolean("music_declined", true).apply();
             pendingPlan = null;
             musicRequested = false;
             musicOnly = false;
@@ -629,7 +632,7 @@ public class BootActivity extends Activity {
         // Music is part of the game: a missing music pack is fetched like any
         // other. With the split set it is the first boot pack, so the download
         // screen can play the theme while first_play is still arriving.
-        boolean music = data.musicMissing();
+        boolean music = data.musicMissing() && (musicRequested || !consent(this).getBoolean("music_declined", false));
         Boolean agreed = chosenMusic;
         if (agreed == null && consentGiven(this) && data.assetsMissing()) {
             // Agreed in an earlier run that was quit, killed or lost its

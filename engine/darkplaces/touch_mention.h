@@ -33,6 +33,8 @@ void TouchChatLog_NotifyEnd(struct cvar_s *notifytime);
 qbool TouchChatLog_Key(int key, qbool down);
 /* keys.c, Key_Event in the game: while the log is open, the wheel, page keys and Escape are its. True when taken. */
 qbool TouchChatLog_GameKey(int key, qbool down);
+/* cl_screen.c, SCR_DrawScreen: the open log, drawn last so it is over every touch control. */
+void TouchChatLog_DrawOverlay(void);
 /* touch_vote.c, TouchVote_Finger: a finger on the feed's icons or names, or anywhere while the log is open. True when taken. */
 qbool TouchChatLog_Finger(int type, int id, float nx, float ny);
 /* console.c, Con_DrawNotify: the open log draws the chat input itself. */

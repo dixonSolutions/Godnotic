@@ -74,7 +74,9 @@ static float tcl_slop;
 static float tcl_pointer_x, tcl_pointer_y; /* the last press, console units */
 static float tcl_claim_r[4];   /* the area that takes a finger, console units */
 static double tcl_claim_at = -100;
-static float tcl_panel_rect[4];            /* the open log's panel: a press inside it, on nothing, does nothing */
+static float tcl_panel_rect[4];
+static int tcl_panel_due;				  /* the log is to be drawn by TouchChatLog_DrawOverlay this frame */
+static float tcl_panel_size, tcl_panel_dt;            /* the open log's panel: a press inside it, on nothing, does nothing */
 
 /* the pointer */
 static int tcl_ptr_down;
@@ -920,6 +922,16 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 				pw = max(pw * 0.5f, rx - edge - pxl);
 		}
 	}
+	/* a short log makes a short panel: the lines' height (as measured so far), a few rows at least,
+	 * up to what the screen has; it hangs from the top so nothing below it is covered for nothing */
+	{
+		float want = TouchChatLog_Content(&cl_log, mask, m->rowh, m->pad), maxbody = ph - hdr - footer;
+		if (tcl_content_h > want)
+			want = tcl_content_h;
+		want = max(want + m->rowh * 0.5f, m->rowh * 5);
+		if (want < maxbody)
+			ph = hdr + footer + want;
+	}
 	rowtop = pyt + hdr;
 	bodyh = ph - hdr - footer;
 	if (bodyh < m->rowh * 2)
@@ -1107,6 +1119,20 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	TCL_Claim(x, claim_top, max(claim_w, w), bottom - claim_top);
 }
 
+/* cl_screen.c, last thing drawn over the game: the open log is above every touch control (TURN, DUCK, the ammo,
+ * the weapon rail...): they are drawn before it and take no finger while it is open. */
+void TouchChatLog_DrawOverlay(void)
+{
+	tcl_metrics_t m;
+	if (!tcl_panel_due)
+		return;
+	tcl_panel_due = 0;
+	if (!tcl_panel || !touch_chatlog.integer || cls.state != ca_connected)
+		return;
+	TCL_Metrics(tcl_panel_size, &m);
+	TCL_DrawPanel(&m, tcl_panel_dt);
+}
+
 void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
 {
 	tcl_metrics_t m;
@@ -1132,7 +1158,10 @@ void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
 	tcl_ntg = 0;
 	if (tcl_panel)
 	{
-		TCL_DrawPanel(&m, dt);
+		/* the log is drawn last (TouchChatLog_DrawOverlay), over the touch controls */
+		tcl_panel_due = 1;
+		tcl_panel_size = size;
+		tcl_panel_dt = dt;
 		return;
 	}
 	tcl_popup = 0;
