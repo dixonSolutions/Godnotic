@@ -73,6 +73,12 @@ final class EngineSwap {
         return liveRelease;
     }
 
+    /** An engine swap of this process was accepted and has not reported healthy or failed yet. */
+    static boolean swapInFlight() {
+        LiveSwapGuard.State st = guard.state();
+        return st == LiveSwapGuard.State.ACCEPTED || st == LiveSwapGuard.State.STARTED;
+    }
+
     /** Whether the engine (and its loader) runs in this process: a swap needs one to replace. */
     static boolean engineRunning() {
         return appContext != null && XonoticActivity.running && "game".equals(ProcessState.stage());

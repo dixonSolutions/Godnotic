@@ -23,7 +23,8 @@ public class AndySUStateTest {
 
     @org.junit.Test public void applyProblemsExplainBlockedAndFailedRestarts() {
         assertEquals("Could not read the AndySU update state.", AndySUState.applyProblem(false, false, "", ""));
-        assertEquals(AndySUState.applyRefusedMessage(), AndySUState.applyProblem(true, true, "270", ""));
+        assertEquals("an open trial is shown as a wait or a way out, not as an error",
+                "", AndySUState.applyProblem(true, true, "270", ""));
         assertEquals("AndySU did not apply the update; try Apply now again.", AndySUState.applyProblem(true, false, "270", "270"));
         assertTrue(AndySUState.endsCheck("apply_refused"));
         assertEquals("", AndySUState.applyProblem(true, false, "270", "269"));
@@ -31,9 +32,10 @@ public class AndySUStateTest {
     }
 
     @Test public void stableTrialConfirmsAfterAMinuteOfUptime() {
-        assertFalse(AndySUState.trialStable(true, 59_999));
-        assertTrue(AndySUState.trialStable(true, 60_000));
-        assertFalse("no trial, nothing to confirm", AndySUState.trialStable(false, 3_600_000));
+        assertFalse(AndySUState.trialStable(true, 59_999, -1));
+        assertTrue(AndySUState.trialStable(true, 60_000, -1));
+        assertFalse("a fresh trial in an old process is not stable", AndySUState.trialStable(true, 3_600_000, 1_000));
+        assertFalse("no trial, nothing to confirm", AndySUState.trialStable(false, 3_600_000, -1));
     }
 
     @Test public void stagedRestartRespectsMatchAndPolicy() {

@@ -42,29 +42,170 @@ final class AndySUState {
         return since < 0 || since >= AUTO_RESTART_WINDOW_MS;
     }
 
-    /** A trial this process has run for this long without dying is a healthy release. */
+    /** A release that has run this long since its trial began, without dying, is a healthy release. */
     static final long TRIAL_STABLE_MS = 60_000;
+    /** Between two tries at confirming (the host commits on its main thread, so give it a moment). */
+    static final long TRIAL_RETRY_MS = 4_000;
+    /** After every way of confirming has been tried once, how often to go round again. */
+    static final long TRIAL_SLOW_RETRY_MS = 30_000;
+
+    /** The ways to commit the running release, in the order they are tried. */
+    static final int CONFIRM_API = 1;   // HostApi.markHealthy(): every host level
+    static final int CONFIRM_HOST = 2;  // com.andysu.host.AndySU.markHealthy(): the host object itself
+    static final int CONFIRM_CORE = 3;  // com.andysu.host.Core.markHealthy(root): the state file, last resort
+    static final int CONFIRM_METHODS = 3;
 
     /**
-     * Whether an unconfirmed trial may be confirmed by the app itself: the process has been up
-     * long enough that a release which would crash at start has already done so. The engine
-     * normally reports healthy first; this keeps menu-only use from dead-ending updates.
+     * Whether an unconfirmed trial may be confirmed by the app itself, from how long the trial has
+     * run, not from how long the process has: a live swap opens its trial in a process that may be
+     * hours old, and committing that trial at once would drop the host's rollback for an engine
+     * that has not started yet. {@code seenMs} is how long this process has watched this very
+     * trial; {@code ageMs} how long the host says it began ago (-1: unknown).
      */
-    static boolean trialStable(boolean trial, long uptimeMs) {
-        return trial && uptimeMs >= TRIAL_STABLE_MS;
+    static boolean trialStable(boolean trial, long seenMs, long ageMs) {
+        return trial && seenMs >= TRIAL_STABLE_MS && (ageMs < 0 || ageMs >= TRIAL_STABLE_MS);
+    }
+
+    /** How long ago the host opened the trial ({@code state.trial.started}, epoch seconds); -1 if it cannot tell. */
+    static long trialAgeMs(long startedSeconds, long nowMs) {
+        if (startedSeconds <= 0) return -1;
+        long age = nowMs - startedSeconds * 1000;
+        return age < 0 || age > 400L * 24 * 3600 * 1000 ? -1 : age;
+    }
+
+    /**
+     * Decides when and how the app confirms a trial the engine did not (the engine's own healthy
+     * report is the normal way: first world, 8 s of menu frames, or 30 s of frame loop). One gate
+     * per bridge; {@link #poll} once a second with what the host reports.
+     */
+    static final class TrialGate {
+        private String key = "";
+        private long seenAt;
+        private long lastAttemptAt = -1;
+        private int attempts;
+        private int cursor;
+        private int usable;
+        private boolean due;
+
+        /**
+         * @param key        identity of the open trial ("" when none is open)
+         * @param swapActive an engine swap of this process is under way (its trial is not stable yet)
+         * @param available  per method (index 1..CONFIRM_METHODS) whether this host has it
+         * @return the method to try now (CONFIRM_*), or 0
+         */
+        int poll(String key, long now, long ageMs, boolean swapActive, boolean[] available) {
+            if (key == null || key.isEmpty()) {
+                reset("", now);
+                return 0;
+            }
+            if (!key.equals(this.key)) reset(key, now);
+            usable = 0;
+            for (int m = 1; m <= CONFIRM_METHODS; m++) {
+                if (available != null && m < available.length && available[m]) usable++;
+            }
+            if (swapActive) {
+                // The release is being swapped in right now: its stability counts from the end of it.
+                seenAt = now;
+                due = false;
+                lastAttemptAt = -1;
+                attempts = 0;
+                cursor = 0;
+                return 0;
+            }
+            due = trialStable(true, now - seenAt, ageMs);
+            if (!due || usable == 0) return 0;
+            if (lastAttemptAt >= 0 && now - lastAttemptAt < (attempts < usable ? TRIAL_RETRY_MS : TRIAL_SLOW_RETRY_MS)) {
+                return 0;
+            }
+            for (int i = 0; i < CONFIRM_METHODS; i++) {
+                int method = (cursor + i) % CONFIRM_METHODS + 1;
+                if (available[method]) {
+                    cursor = method;
+                    attempts++;
+                    lastAttemptAt = now;
+                    return method;
+                }
+            }
+            return 0;
+        }
+
+        private void reset(String key, long now) {
+            this.key = key;
+            seenAt = now;
+            lastAttemptAt = -1;
+            attempts = 0;
+            cursor = 0;
+            usable = 0;
+            due = false;
+        }
+
+        /**
+         * The trial is stable and still open after every way of confirming it was tried (or the
+         * host has none): the screen stops waiting and says so.
+         */
+        boolean stuck(long now) {
+            if (key.isEmpty() || !due) return false;
+            if (usable == 0) return true;
+            return attempts >= usable && lastAttemptAt >= 0 && now - lastAttemptAt >= TRIAL_RETRY_MS;
+        }
+
+        /** Milliseconds until the first try, 0 once it is due or under way. */
+        long waitMs(long now, long ageMs) {
+            if (key.isEmpty()) return 0;
+            long a = TRIAL_STABLE_MS - (now - seenAt);
+            long b = ageMs < 0 ? 0 : TRIAL_STABLE_MS - ageMs;
+            return Math.max(0, Math.max(a, b));
+        }
+
+        int attempts() {
+            return attempts;
+        }
+    }
+
+    /**
+     * Whether an open trial blocks Apply live. The host's own swap is refused by the host while it
+     * is open. The app's engine and data swap does not need the host's trial at all: it waits only
+     * while the confirmation is under way, and goes ahead once every way of confirming was tried.
+     */
+    static boolean trialBlocksLive(boolean trial, boolean hostSwap, boolean stuck) {
+        return trial && (hostSwap || !stuck);
+    }
+
+    /** Under Apply live while the running release is being confirmed: no error, just the wait. */
+    static String trialWaitText(long msLeft) {
+        if (msLeft <= 0) return "Confirming the running version. Apply live is ready in a moment.";
+        long s = (msLeft + 999) / 1000;
+        return "Confirming the running version first (about " + s + " s). Apply live goes ahead right after.";
+    }
+
+    /** The host kept the running release unconfirmed after every try: say so, and offer Restart now. */
+    static String trialStuckText() {
+        return "AndySU has not accepted the confirmation of the running version, so it cannot swap an update in live. "
+                + "Restart now relaunches Godnotic; the update applies once the new start has been confirmed.";
+    }
+
+    /**
+     * The host's "apply_refused" is a record of one refused restart, not a state the screen can act
+     * on, and it stays in the status after the trial that caused it is confirmed. It reads as what
+     * the release is: staged while one is waiting, otherwise idle. The reason a swap cannot run
+     * now comes from the core's trial (wait, or the way out), never from this word.
+     */
+    static String settleApplyRefused(String state, String pending) {
+        if (!"apply_refused".equals(state)) return state;
+        return pending == null || pending.isEmpty() ? "idle" : "staged";
+    }
+
+    /** The decision for a start that the host's restart refused (Host API with restartToApply). */
+    static String applyRefusedMessage() {
+        return "AndySU refused the restart because it is still confirming the running version. Try again in a minute.";
     }
 
     static String applyProblem(boolean stateKnown, boolean trial, String pending, String attempted) {
         if (!stateKnown) return "Could not read the AndySU update state.";
         if (pending == null || pending.isEmpty()) return "";
-        if (trial) return applyRefusedMessage();
+        if (trial) return ""; // the Updates screen shows the wait or the way out, not an error
         if (pending.equals(attempted)) return "AndySU did not apply the update; try Apply now again.";
         return "";
-    }
-
-    /** Host API 4 refused to restart because the running release is still a trial. */
-    static String applyRefusedMessage() {
-        return "Still confirming the current version; try again after the game starts.";
     }
 
     /** How long the engine must stay idle before the apply policy goes back to the player's choice. */

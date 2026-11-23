@@ -682,6 +682,22 @@ network and the host's periodic job runs on any network, so it leaves `check_onl
 except while a release is staged: the host promotes a staged release at the next start only
 in `auto` mode. Wi-Fi only is on by default, like the game data download.
 
+**An unconfirmed trial** (core `state.trial` non-null: the host promoted or live-swapped a
+release and has not yet had a healthy report) never leaves Apply live a dead end. The engine's
+own healthy report normally closes it (first world, 8 s of menu frames, 30 s of frame loop).
+When it does not, `AndySUState.TrialGate` has the bridge confirm it itself once the trial has
+run 60 s, counted from when the trial began (the host's `trial.started` and when this process
+first saw it), never from when the process started: a live swap opens its trial in an old
+process, and committing it at once would drop the host's rollback for an engine that has not
+started. It tries `HostApi.markHealthy`, then the host object's `markHealthy`, then
+`Core.markHealthy(root)`, reading the state back after each. While it waits, the line under
+the staged release says so and **Apply live** waits and then swaps by itself. The app's
+engine and data swap (the owner's case: the Java code changed too) does not need the host's
+trial at all and goes ahead once every way has been tried. The host's own swap is refused by
+the host while a trial is open: then the screen shows why and offers **Restart now** instead.
+The host's `apply_refused` status is read as staged or idle; it is a record of one refused
+restart, not a reason.
+
 ### Settings → Updates on every other install
 
 The screen is never empty. `UIB_SecUpdates` (`touch_uib_settings.qc`) picks one of four:

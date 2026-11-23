@@ -117,11 +117,55 @@ final class AndySUCompat {
 
     /** Commit the running release (HostApi.markHealthy); false when the host cannot. */
     static boolean markHealthy() {
+        return confirmTrial(AndySUState.CONFIRM_API, null);
+    }
+
+    /** Whether this host has the given way of committing the running release (AndySUState.CONFIRM_*). */
+    static boolean canConfirm(int method) {
         try {
-            Object h = host();
-            if (h == null) return false;
-            api().getMethod("markHealthy").invoke(h);
-            return true;
+            switch (method) {
+                case AndySUState.CONFIRM_API:
+                    return host() != null && api().getMethod("markHealthy") != null;
+                case AndySUState.CONFIRM_HOST:
+                    return Class.forName("com.andysu.host.AndySU").getMethod("markHealthy") != null;
+                case AndySUState.CONFIRM_CORE:
+                    return Class.forName("com.andysu.host.Core").getMethod("markHealthy", String.class) != null;
+                default:
+                    return false;
+            }
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Commit the running release one way (AndySUState.CONFIRM_*): through the host API (every
+     * level), through the host object itself, or straight into the core's state file, which is
+     * what the first two end in. {@code root} is the host's root, for the last one. True when the
+     * call went through; whether the trial closed is for the caller to read back.
+     */
+    static boolean confirmTrial(int method, String root) {
+        try {
+            switch (method) {
+                case AndySUState.CONFIRM_API: {
+                    Object h = host();
+                    if (h == null) return false;
+                    api().getMethod("markHealthy").invoke(h);
+                    return true;
+                }
+                case AndySUState.CONFIRM_HOST: {
+                    Class<?> c = Class.forName("com.andysu.host.AndySU");
+                    c.getMethod("markHealthy").invoke(c.getField("INSTANCE").get(null));
+                    return true;
+                }
+                case AndySUState.CONFIRM_CORE: {
+                    if (root == null || root.isEmpty()) return false;
+                    Object r = Class.forName("com.andysu.host.Core").getMethod("markHealthy", String.class).invoke(null, root);
+                    return r != null && !String.valueOf(r).contains("\"error\"");
+                }
+                default:
+                    return false;
+            }
         } catch (Throwable t) {
             return false;
         }
