@@ -48,4 +48,18 @@ public class UpdateRetryTest {
         assertEquals("", UpdateRetry.friendly(null));
         assertTrue(UpdateRetry.publishingMessage().contains("still being published"));
     }
+
+    static final String NO_DNS = "java.net.UnknownHostException: Unable to resolve host "
+            + "\"release-assets.githubusercontent.com\": No address associated with hostname";
+
+    @Test public void offlineFailuresReadAsNoConnection() {
+        assertTrue(UpdateRetry.offline(NO_DNS));
+        assertTrue(UpdateRetry.offline("java.net.ConnectException: Failed to connect to github.com/140.82.112.3:443"));
+        assertTrue(UpdateRetry.offline("connect failed: ENETUNREACH (Network is unreachable)"));
+        assertFalse(UpdateRetry.offline("HTTP 404 downloading https://github.com/x/y.apk"));
+        assertFalse(UpdateRetry.offline(null));
+        assertTrue(UpdateRetry.retryable(NO_DNS));
+        assertEquals(UpdateRetry.offlineMessage(), UpdateRetry.friendly(NO_DNS));
+        assertFalse(UpdateRetry.friendly(NO_DNS).contains("Exception"));
+    }
 }

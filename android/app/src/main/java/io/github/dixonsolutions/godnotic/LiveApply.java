@@ -194,6 +194,15 @@ final class LiveApply {
      * What the app does when a live swap that was possible a moment ago is refused at the last step
      * (the loader's check, the host, a game that started meanwhile): say why and wait, never restart.
      */
+    /**
+     * Whether this process has a running engine a live swap can replace. The screen stage is not
+     * part of it: the launcher icon passes the boot screen on its way back to a running game, and
+     * that stage once made Apply live refuse in the menu with "the game is not running yet".
+     */
+    static boolean engineUp(boolean registered, boolean gameActivityAlive, boolean engineStarted) {
+        return registered && gameActivityAlive && engineStarted;
+    }
+
     static String refused(String reason) {
         String r = reason == null || reason.trim().isEmpty() ? "it was refused" : reason.trim();
         return "Could not apply the update live (" + r + "). It applies the next time Godnotic starts, or use Restart now.";
