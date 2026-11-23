@@ -310,6 +310,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     /** The preview (or the levelshot before it) showed on this join: the logo stays away. */
     private var previewSeen = false
     private var joinStage = ""
+    /** The map being joined, for the placeholder before its picture exists (engine `join_map`, else the app's map). */
+    private var joinMapName = ""
     private var joinStageAt = 0L
     /** The map's picture file the card shows (engine connect `levelshot`), decoded once per file. */
     private var shotPath = ""
@@ -397,7 +399,10 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val busy = JoinFlow.isBusy(stage) && !failed
         // The preview is for the rest of this join: a stage that reports back as
         // a load does not put the logo (or the black page) back over the world.
-        val shot = c.str("levelshot")
+        val hint = renderer?.joinHint?.takeIf { c.str("join_map").isEmpty() || it.first == c.str("join_map") }
+        joinMapName = c.str("join_map").ifEmpty { hint?.first ?: "" }.ifEmpty { app.str("map") }
+        // the map's picture in order: the engine's (list cache, packs, fetched levelshot), the dialog's, else the name on a gradient
+        val shot = c.str("levelshot").ifEmpty { hint?.second ?: "" }
         val showShot = JoinFlow.showShot(shot, c.bool("world"))
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
         val generic = JoinFlow.generic(c.str("levelshot_kind"))
@@ -445,7 +450,11 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             screen.gravity = Gravity.CENTER_HORIZONTAL
             screen.setBackgroundColor(android.graphics.Color.BLACK)
             screen.isClickable = true // nothing reaches the engine underneath
-            val banner = BootSplash.view(activity, 0.5f, 720)
+            // no logo in a join: until the map's picture or the world is there, its name on a dark gradient
+            val banner = Kit.text(activity, "", Theme.SP_DISPLAY, 0xFF7F93B8.toInt(), bold = true, lines = 1)
+            banner.typeface = Theme.display
+            banner.gravity = Gravity.CENTER
+            banner.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF050A16.toInt(), 0xFF0E1C3A.toInt()))
             screen.addView(banner, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             loadingBanner = banner
             val card = android.widget.LinearLayout(activity)
@@ -487,7 +496,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadingCancel = cancel; loadingRetry = retry; loadingBack = back
             card.addView(row)
             card.addView(bar, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Theme.dp(activity, 6f)).apply { topMargin = Theme.dp(activity, 12f) })
-            screen.addView(card, android.widget.LinearLayout.LayoutParams(Theme.dp(activity, 640f).coerceAtMost(activity.resources.displayMetrics.widthPixels - Theme.dp(activity, 32f)), ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = Theme.dp(activity, 48f) })
+            // the card is at the top in every phase and orientation, the map's picture or name fills the rest
+            screen.addView(card, 0, android.widget.LinearLayout.LayoutParams(Theme.dp(activity, 640f).coerceAtMost(activity.resources.displayMetrics.widthPixels - Theme.dp(activity, 32f)), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Theme.dp(activity, 24f); bottomMargin = Theme.dp(activity, 16f) })
             activity.addContentView(screen, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadingCard(true)
             showReconnect("")
@@ -499,14 +509,16 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // the black page and the logo back over the live world.
         lastTransparent = JoinFlow.transparent(stage, previewSeen)
         applyLook(showShot)
-        val pct = JoinFlow.progress(stage, c.num("download_progress"), c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt())
+        // the server is still sending its precache lists: not a load, not a download (the bar and the text say so)
+        val waitS = if (c.containsKey("wait_s")) c.num("wait_s").toInt() else -1
+        val pct = if (waitS >= 0) -1.0 else JoinFlow.progress(stage, c.num("download_progress"), c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt())
         val map = app.str("map")
         loadingTitle?.text = when {
             c.bool("local") -> if (map.isNotEmpty()) "Starting ${map.replaceFirstChar { it.uppercase() }}" else "Starting the match"
             c.str("address").isNotEmpty() -> "Joining ${serverLabel(c.str("address"))}"
             else -> "Joining"
         }
-        val what = JoinFlow.detail(
+        val what = if (waitS >= 0) JoinFlow.waiting(waitS) else JoinFlow.detail(
             stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
             c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(), c.str("join_map"),
         )
@@ -543,7 +555,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val bmp = shotBitmap
         val strip = showShot || lastTransparent
         previewStrip = strip
-        loadingBanner?.visibility = if (JoinFlow.banner(joinStage, previewSeen)) View.VISIBLE else View.GONE // never the logo in a join: a picture, the world, or plain dark
+        loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE // never the logo in a join: a picture, the world, or the map's name
+        (loadingBanner as? android.widget.TextView)?.let { t -> val m = joinMapName; if (t.text.toString() != m) t.text = m }
         when {
             showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash
@@ -551,11 +564,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             else -> screen.setBackgroundColor(android.graphics.Color.BLACK)
         }
         screen.isClickable = !(lastTransparent && !showShot)
-        screen.gravity = if (strip) Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM else Gravity.CENTER_HORIZONTAL
-        (loadingCardView?.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let {
-            val m = Theme.dp(activity, if (strip) 16f else 48f)
-            if (it.bottomMargin != m) { it.bottomMargin = m; loadingCardView?.layoutParams = it }
-        }
+        screen.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
     }
 
     private var loadingCardSent = ""
