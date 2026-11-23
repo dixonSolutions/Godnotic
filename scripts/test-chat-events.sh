@@ -214,9 +214,12 @@ TA "touch_chatlog_state"
 if [ "$(field "$d/t" selected)" = 2 ]; then ok "selection: tap toggles another line"; else bad "selection: second line not selected: $(state "$d/t")"; fi
 read -r dx dy < <(grep -a "^CHATLOG-TARGET download " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $dx $dy" "touch_chatlog_ptr up $dx $dy"
-sleep 2
-exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
-if [ -n "$exported" ] && [ "$(wc -l < "$exported")" = 2 ]; then ok "selection: first download tap exports two selected lines"; else bad "selection: download did not export the selection"; fi
+for n in $(seq 1 20); do
+	sleep 0.5
+	exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
+	[ -n "$exported" ] && break
+done
+if [ -n "$exported" ] && [ "$(wc -l < "$exported")" = 2 ]; then ok "selection: first download tap exports two selected lines"; else bad "selection: download did not export the selection: $exported $(wc -l < "${exported:-/dev/null}")"; fi
 T "touch_chatlog_ptr down $sx2 $sy2" "touch_chatlog_ptr up $sx2 $sy2"
 sleep 1
 TA "touch_chatlog_state"
@@ -239,8 +242,11 @@ sleep 1
 TA "touch_chatlog_state"
 read -r dx dy < <(grep -a "^CHATLOG-TARGET download " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $dx $dy" "touch_chatlog_ptr up $dx $dy"
-sleep 2
-exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
+for n in $(seq 1 20); do
+	sleep 0.5
+	exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
+	[ -n "$exported" ] && break
+done
 if [ -n "$exported" ] && [ -s "$exported" ] && grep -aq 'EventProbe' "$exported" && ! grep -aq 'chat-only-marker' "$exported"; then ok "filter: download exports filtered lines"; else bad "filter: download included chat or produced no file"; fi
 T "touch_chatlog_filter all"
 sleep 1
