@@ -21,6 +21,7 @@
 */
 
 #include "quakedef.h"
+#include "touch_orbit.h" // Touch: orbit camera
 #include "cl_video.h"
 #include "utf8lib.h"
 #include "csprogs.h"
@@ -2080,6 +2081,8 @@ Key_Event (int key, int ascii, qbool down)
 			break;
 		case key_game:
 			q = CL_VM_InputEvent(down ? 0 : 1, key, ascii);
+			if (!q && TouchOrbit_Key(key, down)) // Touch: wheel zoom of the orbit camera
+				q = true;
 			// ignore key repeats on binds and only send the bind if the event hasnt been already processed by csqc
 			if (!q && bind)
 			{

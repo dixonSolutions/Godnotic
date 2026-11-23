@@ -24,6 +24,8 @@ void TouchHUD_Init(void);
 
 // Whether the engine HUD should be running right now.
 qbool TouchHUD_Active(void);
+// A point (console units) that is no control and no pill: a finger there only looks (touch_orbit.c).
+qbool TouchHUD_PointFree(float px, float py);
 
 // Per-frame input: reads the engine finger table, assigns roles, emits
 // movement keys, view angles, attack/jump/crouch and the chrome pills.

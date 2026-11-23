@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // rights reserved.
 
 #include "quakedef.h"
+#include "touch_orbit.h" // Touch: orbit camera
 #include "csprogs.h"
 #include "thread.h"
 #include "touch_aim.h"
@@ -2339,5 +2340,6 @@ void CL_InitInput (void)
 
 	TouchAim_Init();
 	TouchHUD_Init();
+	TouchOrbit_Init(); // Touch: the orbit camera after death and at match end
 }
 

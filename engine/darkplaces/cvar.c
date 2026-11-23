@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // cvar.c -- dynamic variable tracking
 
 #include "quakedef.h"
+#include "touch_orbit.h" // Touch: orbit camera
 #include "touch_loadcvar.h" // Touch: cvar list index
 
 const char *cvar_dummy_description = "custom cvar";
@@ -1013,6 +1014,7 @@ void Cvar_WriteVariables (cvar_state_t *cvars, qfile_t *f)
 	cvar_t	*var;
 	char buf1[MAX_INPUTLINE], buf2[MAX_INPUTLINE];
 
+	TouchOrbit_RestoreCvars(); // Touch: the orbit camera's temporary cl_eventchase_* values are not the player's
 	// don't save cvars that match their default value
 	for (var = cvars->vars ; var ; var = var->next) {
 		if ((var->flags & CF_ARCHIVE) && (strcmp(var->string, var->defstring) || ((var->flags & CF_ALLOCATED) && !(var->flags & CF_DEFAULTSET))))

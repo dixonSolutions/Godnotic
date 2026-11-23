@@ -30,6 +30,7 @@ applies to both.
 #include "touch_topbar.h"
 #include "touch_cursor.h"
 #include "touch_feel.h"
+#include "touch_orbit.h"
 
 extern cvar_t vid_touchscreen;
 extern cvar_t vid_conwidth;
@@ -1659,6 +1660,13 @@ static int assign_role(float px, float py)
 	return ROLE_LOOK;
 }
 
+// Touch: a point no control, pill or strip row answers to (touch_orbit.c).
+qbool TouchHUD_PointFree(float px, float py)
+{
+	int role = assign_role(px, py);
+	return role == ROLE_LOOK || role == ROLE_IGNORED || role == ROLE_NONE || role == ROLE_MOVE;
+}
+
 // The JOIN part: while a spectator may join -- signon finished, in the
 // match, not the end screen.
 static qbool spec_join_shown(void)
@@ -1687,6 +1695,8 @@ static void look_cfg(touchlook_cfg_t *c)
 
 static void look_turn(float yaw, float pitch)
 {
+	if (TouchOrbit_Pinching()) // Touch: a pinch zooms the orbit camera, the view stands still
+		return;
 	if (cv("touch_invert_y", 0))
 		pitch = -pitch;
 	// aim friction: the drag turns slower over an enemy (touch_aim.c)

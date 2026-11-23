@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <ctype.h>
 
 #include "quakedef.h"
+#include "touch_orbit.h" // Touch: orbit camera
 #include "touch_cursor.h" // Touch
 #include "image.h"
 #include "utf8lib.h"
@@ -1586,6 +1587,8 @@ void IN_Move( void )
 		if (VID_TouchscreenHasRealDevices())
 			TouchHUD_LookWithoutControls();
 	}
+
+	TouchOrbit_Frame(); // Touch: orbit camera, under any CSQC
 
 	// Mouselook: always without touch controls, and next to them while a
 	// mouse aims (VID_TouchMouselook grabs it only then).

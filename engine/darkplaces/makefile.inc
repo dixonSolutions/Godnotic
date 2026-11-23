@@ -44,6 +44,7 @@ OBJ_COMMON= \
 	touch_turn.o \
 	touch_vote.o \
 	touch_hudmode.o \
+	touch_orbit.o \
 	touch_shellbtn.o \
 	touch_dodge.o \
 	touch_ledge.o \

@@ -8,6 +8,7 @@
 //   T glide ID X1 Y1 X2 Y2 DUR [up]   down at X1 Y1, moves to X2 Y2 over DUR s at 60 Hz, then up if "up"
 //   T mmove X Y             mouse to window pixel X Y
 //   T mdown [BUTTON] / T mup [BUTTON]  SDL mouse button (default left)
+//   T wheel N               mouse wheel, N > 0 up (zoom in), N < 0 down
 //   T key SYM               SDL keycode, pressed and released
 //   T keydown SYM / T keyup SYM       hold/release a key
 //   T cmd TEXT...           console text (Cbuf_AddText)
@@ -37,7 +38,7 @@ SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint
 	return test_window;
 }
 
-enum { E_FDOWN = 1, E_FMOVE, E_FUP, E_MMOVE, E_MDOWN, E_MUP, E_KEYD, E_KEYU, E_CMD, E_RESIZE };
+enum { E_FDOWN = 1, E_FMOVE, E_FUP, E_MMOVE, E_MDOWN, E_MUP, E_KEYD, E_KEYU, E_CMD, E_RESIZE, E_WHEEL };
 
 static double now(void) { struct timeval tv; gettimeofday(&tv, 0); return tv.tv_sec + tv.tv_usec / 1e6; }
 
@@ -84,6 +85,7 @@ static void load(void)
 		else if (!strcmp(w, "mmove") && sscanf(p, "%f %f", &x, &y) == 2) add(t, E_MMOVE, 0, x, y, 0);
 		else if (!strcmp(w, "mdown")) { id = SDL_BUTTON_LEFT; sscanf(p, "%d", &id); add(t, E_MDOWN, id, 0, 0, 0); }
 		else if (!strcmp(w, "mup")) { id = SDL_BUTTON_LEFT; sscanf(p, "%d", &id); add(t, E_MUP, id, 0, 0, 0); }
+		else if (!strcmp(w, "wheel") && sscanf(p, "%d", &id) == 1) add(t, E_WHEEL, id, 0, 0, 0);
 		else if (!strcmp(w, "keydown") && sscanf(p, "%d", &id) == 1) add(t, E_KEYD, id, 0, 0, 0);
 		else if (!strcmp(w, "keyup") && sscanf(p, "%d", &id) == 1) add(t, E_KEYU, id, 0, 0, 0);
 		else if (!strcmp(w, "key") && sscanf(p, "%d", &id) == 1) { add(t, E_KEYD, id, 0, 0, 0); add(t + 0.1, E_KEYU, id, 0, 0, 0); }
@@ -150,6 +152,9 @@ int SDL_PollEvent(SDL_Event *ev)
 			ev->type = e->type == E_KEYD ? SDL_KEYDOWN : SDL_KEYUP;
 			ev->key.keysym.sym = e->id; ev->key.keysym.scancode = SDL_GetScancodeFromKey(e->id);
 			ev->key.state = e->type == E_KEYD; ev->key.windowID = 1;
+			return 1;
+		case E_WHEEL:
+			ev->type = SDL_MOUSEWHEEL; ev->wheel.y = e->id; ev->wheel.x = 0; ev->wheel.windowID = 1; ev->wheel.direction = SDL_MOUSEWHEEL_NORMAL;
 			return 1;
 		case E_CMD:
 			console(e->text);

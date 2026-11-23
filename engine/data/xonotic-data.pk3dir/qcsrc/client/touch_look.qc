@@ -113,6 +113,8 @@ float Touch_Look_Gain(float speed)
 
 void Touch_Look_Turn(float yaw, float pitch)
 {
+	if (cvar("_touch_orbit_pinch")) // Touch: a pinch zooms the orbit camera (touch_orbit.c); the view stands still
+		return;
 	if (autocvar_touch_invert_y)
 		pitch = -pitch;
 	// Aim friction: the engine's touch aim assist (touch_aim.c) slows the drag

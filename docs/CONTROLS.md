@@ -2208,3 +2208,24 @@ XONOTIC_SCREEN_WIDTH=1224 XONOTIC_SCREEN_HEIGHT=2700 ./scripts/test-screen-calc.
 | `docs/TOUCH_UX_REDESIGN.md` | Visual system, input model, research and measurements |
 | `docs/TOUCH_LAYOUT_SPEC.md` | Coordinate contract |
 | `docs/SCREEN.md` | Display layer |
+
+## Orbit camera (after death, at the end of a round or match)
+
+`engine/darkplaces/touch_orbit.c`, under any CSQC (stock servers included). The camera is the
+game's own event chase; the module only drives it, and sends no command to the server.
+
+| | Touch | Desktop |
+|---|---|---|
+| Turn | one-finger drag (dead and round end: the normal look finger; match end and the map vote: this module) | mouse look; on the map vote hold the left button over empty space and drag |
+| Zoom | pinch | wheel |
+
+- Zoom scales `cl_eventchase_distance` between `touch_orbit_min` (0.25) and `touch_orbit_max` (4) times
+  the player's own value, eased; the player's value (and `cl_eventchase_death`) is put back when the
+  context ends, at respawn, at the next map, and before the config is written.
+- Dead: the first pinch, drag or wheel switches the chase on at once (`cl_eventchase_death 1`) instead
+  of waiting for the corpse to stop. A tap still respawns: only a drag past `touch_look_deadzone_px`
+  or a pinch moves the camera.
+- Vote: a finger that lands on a control, a pill or a vote entry never orbits; nothing is consumed, so
+  a tap votes as before. A server that counts empty space as "abstain" makes the vote's highlight
+  never empty, so nothing orbits there.
+- `touch_orbit 0` turns it off. `touch_orbit_state` prints the state; `scripts/test-touch-orbit.sh`.
