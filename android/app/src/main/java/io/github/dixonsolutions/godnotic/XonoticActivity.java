@@ -98,6 +98,10 @@ public final class XonoticActivity extends SDLActivity {
         EngineSwap.register(this);
         super.onCreate(savedInstanceState);
         running = true;
+        // Touch: password managers (autofill overlays) never pop over the game: SDL's hidden text input invites them
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            getWindow().getDecorView().setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        }
         ReplaceGuard.watch(this);
         ProcessState.stage(this, "game");
         ProcessState.engine(this, true);

@@ -55,3 +55,17 @@ class JoinCardTest {
         assertEquals(-1.0, JoinFlow.progress("downloading", 0.0, 0.0, "", 0, 0), 1e-9)
     }
 }
+
+class JoinBarTest {
+    @org.junit.Test fun overallIsOneContinuousBar() {
+        assertEquals(0.25, JoinFlow.overall("downloading", true, 0.5, 0.0), 1e-9)
+        assertEquals(0.5, JoinFlow.overall("loading", true, 1.0, 0.0), 1e-9)
+        assertEquals(0.75, JoinFlow.overall("loading", true, 1.0, 0.5), 1e-9)
+        assertEquals(0.5, JoinFlow.overall("loading", false, 0.0, 0.5), 1e-9)
+        assertEquals(-1.0, JoinFlow.overall("connecting", false, 0.0, 0.0), 1e-9)
+    }
+    @org.junit.Test fun downloadLineNamesBytesSpeedAndFiles() {
+        val t = JoinFlow.downloading("dlcache/zzz-pack-weapons_01.pk3", 3.0 * 1048576, 22.8 * 1048576, 1042.4 * 1024, 4, 2)
+        assertTrue(t, t.contains("3.0 of 22.8 MB") && t.contains("left") && t.contains("6 files"))
+    }
+}
