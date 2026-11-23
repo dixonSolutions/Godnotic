@@ -23,6 +23,7 @@ class TagRow(ctx: Context, cells: List<String>, textColor: Int, private val tabl
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         val pad = Theme.dp(ctx, if (table) 8f else 6f)
+        minimumHeight = if (table) 0 else Theme.dp(ctx, CardTags.HEADER_LINE_DP)
         for ((i, c) in cells.withIndex()) {
             if (i > 0 && !table) {
                 val bar = View(ctx)
@@ -43,10 +44,55 @@ class TagRow(ctx: Context, cells: List<String>, textColor: Int, private val tabl
                 addView(t, if (last) LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                     else LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, if (first && cells.size > 1) CardTags.NAME_WEIGHT else if (first) 1f else CardTags.MAP_WEIGHT))
             } else {
-                t.setPadding(pad, 0, pad, 0)
+                // a chip: its own width, starting flush with the title (no padding of its own)
+                t.setPadding(0, 0, 0, 0)
                 t.gravity = Gravity.CENTER_VERTICAL or Gravity.START
                 views.add(t)
-                addView(t, LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(t, LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+        }
+    }
+
+    /** Chips (not a table): each at its natural width with one gap either side of a separator; only the last gives way. */
+    private fun chipsMeasure(wSpec: Int, hSpec: Int) {
+        val gap = Theme.dp(context, CardTags.CHIP_GAP_DP)
+        val avail = if (MeasureSpec.getMode(wSpec) == MeasureSpec.UNSPECIFIED) 100000 else MeasureSpec.getSize(wSpec)
+        val texts = views
+        val natural = texts.map { t -> t.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)); t.measuredWidth }
+        val sepW = Math.max(1, Theme.dp(context, 1f))
+        val slots = CardTags.chipSlots(natural, avail, gap, sepW)
+        var maxH = suggestedMinimumHeight
+        for ((i, t) in texts.withIndex()) {
+            t.measure(MeasureSpec.makeMeasureSpec(slots[i][1], MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            maxH = Math.max(maxH, t.measuredHeight)
+        }
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            if (c !is TextView) c.measure(MeasureSpec.makeMeasureSpec(sepW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Theme.dp(context, 14f), MeasureSpec.EXACTLY))
+        }
+        chipSlots = slots
+        setMeasuredDimension(if (MeasureSpec.getMode(wSpec) == MeasureSpec.EXACTLY) avail else Math.min(avail, (slots.lastOrNull()?.let { it[0] + it[1] } ?: 0)), maxH)
+    }
+
+    private var chipSlots: List<IntArray> = emptyList()
+
+    /** The x of each chip as laid out by the last measure (a test reads it). */
+    val chipStarts: List<Int> get() = chipSlots.map { it[0] }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        if (table || chipSlots.size != views.size) { super.onLayout(changed, l, t, r, b); return }
+        val h = b - t
+        var ti = 0
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            if (c is TextView) {
+                val s = chipSlots[ti++]
+                c.layout(s[0], (h - c.measuredHeight) / 2, s[0] + c.measuredWidth, (h - c.measuredHeight) / 2 + c.measuredHeight)
+            } else {
+                // the separator sits one gap after the chip before it
+                val prev = chipSlots[ti - 1]
+                val x = prev[0] + prev[1] + Theme.dp(context, CardTags.CHIP_GAP_DP)
+                c.layout(x, (h - c.measuredHeight) / 2, x + c.measuredWidth, (h - c.measuredHeight) / 2 + c.measuredHeight)
             }
         }
     }
@@ -57,7 +103,7 @@ class TagRow(ctx: Context, cells: List<String>, textColor: Int, private val tabl
         val next = if (table) CardTags.tableSizeFor(MeasureSpec.getSize(wSpec), resources.displayMetrics.density)
             else CardTags.sizeFor(MeasureSpec.getSize(wSpec), resources.displayMetrics.density)
         if (next != sp) { sp = next; for (t in views) t.textSize = next }
-        super.onMeasure(wSpec, hSpec)
+        if (table) super.onMeasure(wSpec, hSpec) else chipsMeasure(wSpec, hSpec)
     }
 }
 
@@ -90,6 +136,30 @@ class TableRows(ctx: Context) : LinearLayout(ctx) {
 }
 
 object CardTags {
+    /** Home's card header (dp), the same on every card so the picture or the list starts at one height: title line, detail line. */
+    const val HEADER_TITLE_DP = 34f
+    const val HEADER_LINE_DP = 24f
+    const val HEADER_GAP_DP = 10f
+    const val HEADER_DP = 14f + HEADER_TITLE_DP + 4f + HEADER_LINE_DP + HEADER_GAP_DP
+    /** The gap either side of a chip separator (dp). */
+    const val CHIP_GAP_DP = 10f
+
+    /**
+     * Where each chip of a row [avail] px wide goes: `[x, width]` per chip, left to right from x = 0 (the
+     * title's left edge), a [gap], a [sepW] separator and another [gap] between them. Every chip keeps its
+     * natural width; only the last gives way (ellipsized) when the row runs out.
+     */
+    fun chipSlots(natural: List<Int>, avail: Int, gap: Int, sepW: Int): List<IntArray> {
+        val out = ArrayList<IntArray>()
+        var x = 0
+        for ((i, w) in natural.withIndex()) {
+            val cw = if (i == natural.size - 1) minOf(w, maxOf(0, avail - x)) else w
+            out.add(intArrayOf(x, cw))
+            x += cw + gap + sepW + gap
+        }
+        return out
+    }
+
     /** The most server lines a table card keeps (the QuakeC side sends at most this many). */
     const val MAX_ROWS = 12
     /** Lines shown when the height is unbounded. */
