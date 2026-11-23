@@ -1,6 +1,6 @@
 {
  "name": "control",
- "description": "Server control on this device's own game (no password): bots, kick, map and limits, cheats.",
+ "description": "Server control on this device's own game (no password): bots (count, skill, team), map, limits, kick, cheats.",
  "generated": "seed",
  "snapshot": {
   "uib": 1,
@@ -209,8 +209,8 @@
     },
     "children": [
      "ctl/bots",
-     "ctl/players",
      "ctl/match",
+     "ctl/players",
      "ctl/cheats"
     ]
    },
@@ -221,17 +221,29 @@
      "title": "Bots"
     },
     "children": [
-     "ctl/bots/n",
+     "ctl/bots/botform",
      "ctl/bots/apply"
     ]
    },
    {
-    "id": "ctl/bots/n",
+    "id": "ctl/bots/botform",
+    "type": "form",
+    "props": {
+     "density": "compact"
+    },
+    "children": [
+     "ctl/bots/botform/n",
+     "ctl/bots/botform/skill",
+     "ctl/bots/botform/team"
+    ]
+   },
+   {
+    "id": "ctl/bots/botform/n",
     "type": "stepper",
     "props": {
      "label": "Bots",
-     "bind": "vm:ctl.bots",
-     "value": 3,
+     "bind": "cvar:touch_ctl_bots",
+     "value": 4,
      "min": 0,
      "max": 32,
      "step": 1
@@ -239,14 +251,203 @@
     "children": []
    },
    {
+    "id": "ctl/bots/botform/skill",
+    "type": "choice",
+    "props": {
+     "label": "Skill",
+     "bind": "cvar:touch_ctl_skill",
+     "style": "segmented",
+     "value": "4",
+     "options": [
+      {
+       "value": "1",
+       "label": "Easy"
+      },
+      {
+       "value": "4",
+       "label": "Normal"
+      },
+      {
+       "value": "7",
+       "label": "Hard"
+      },
+      {
+       "value": "10",
+       "label": "Godlike"
+      }
+     ]
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/bots/botform/team",
+    "type": "choice",
+    "props": {
+     "label": "Team",
+     "bind": "cvar:touch_ctl_team",
+     "style": "segmented",
+     "value": "auto",
+     "options": [
+      {
+       "value": "auto",
+       "label": "Balanced"
+      },
+      {
+       "value": "red",
+       "label": "Red"
+      },
+      {
+       "value": "blue",
+       "label": "Blue"
+      }
+     ],
+     "help": "Team games only. Balanced spreads the bots over the teams."
+    },
+    "children": []
+   },
+   {
     "id": "ctl/bots/apply",
     "type": "button",
     "props": {
-     "label": "Apply",
+     "label": "Apply bots",
      "action": {
       "id": "ctl.bots",
-      "label": "Apply",
+      "label": "Apply bots",
       "icon": "check"
+     },
+     "style": "primary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match",
+    "type": "section",
+    "props": {
+     "title": "Match"
+    },
+    "children": [
+     "ctl/match/maprow",
+     "ctl/match/limits",
+     "ctl/match/matchbtns"
+    ]
+   },
+   {
+    "id": "ctl/match/maprow",
+    "type": "row",
+    "props": {},
+    "children": [
+     "ctl/match/maprow/map",
+     "ctl/match/maprow/go"
+    ]
+   },
+   {
+    "id": "ctl/match/maprow/map",
+    "type": "field",
+    "props": {
+     "label": "Map name",
+     "bind": "vm:ctl.map",
+     "value": ""
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/maprow/go",
+    "type": "button",
+    "props": {
+     "label": "Change map",
+     "action": {
+      "id": "ctl.map",
+      "label": "Change map",
+      "icon": "map"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/limits",
+    "type": "form",
+    "props": {
+     "density": "compact"
+    },
+    "children": [
+     "ctl/match/limits/time",
+     "ctl/match/limits/frags"
+    ]
+   },
+   {
+    "id": "ctl/match/limits/time",
+    "type": "stepper",
+    "props": {
+     "label": "Time limit",
+     "bind": "cvar:touch_ctl_timelimit",
+     "value": 20,
+     "min": 0,
+     "max": 120,
+     "step": 5,
+     "unit": "min"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/limits/frags",
+    "type": "stepper",
+    "props": {
+     "label": "Frag limit",
+     "bind": "cvar:touch_ctl_fraglimit",
+     "value": 30,
+     "min": 0,
+     "max": 500,
+     "step": 10
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/matchbtns",
+    "type": "row",
+    "props": {},
+    "children": [
+     "ctl/match/matchbtns/limitsapply",
+     "ctl/match/matchbtns/more",
+     "ctl/match/matchbtns/restart"
+    ]
+   },
+   {
+    "id": "ctl/match/matchbtns/limitsapply",
+    "type": "button",
+    "props": {
+     "label": "Apply limits",
+     "action": {
+      "id": "ctl.limits",
+      "label": "Apply limits",
+      "icon": "check"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/matchbtns/more",
+    "type": "button",
+    "props": {
+     "label": "More time",
+     "action": {
+      "id": "ctl.extend",
+      "label": "More time"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/matchbtns/restart",
+    "type": "button",
+    "props": {
+     "label": "Restart",
+     "action": {
+      "id": "ctl.restart",
+      "label": "Restart",
+      "icon": "resume"
      },
      "style": "secondary"
     },
@@ -256,7 +457,7 @@
     "id": "ctl/players",
     "type": "section",
     "props": {
-     "title": "Players"
+     "title": "Server"
     },
     "children": [
      "ctl/players/kickrow"
@@ -275,7 +476,7 @@
     "id": "ctl/players/kickrow/who",
     "type": "field",
     "props": {
-     "label": "Player number or name",
+     "label": "Kick: player number or name",
      "bind": "vm:ctl.kick",
      "value": ""
     },
@@ -292,45 +493,6 @@
       "icon": "close"
      },
      "style": "destructive"
-    },
-    "children": []
-   },
-   {
-    "id": "ctl/match",
-    "type": "section",
-    "props": {
-     "title": "Match"
-    },
-    "children": [
-     "ctl/match/restart",
-     "ctl/match/time"
-    ]
-   },
-   {
-    "id": "ctl/match/restart",
-    "type": "button",
-    "props": {
-     "label": "Restart",
-     "action": {
-      "id": "ctl.restart",
-      "label": "Restart",
-      "icon": "resume"
-     },
-     "style": "secondary"
-    },
-    "children": []
-   },
-   {
-    "id": "ctl/match/time",
-    "type": "stepper",
-    "props": {
-     "label": "Time limit",
-     "bind": "vm:ctl.timelimit",
-     "value": 20,
-     "min": 0,
-     "max": 120,
-     "step": 5,
-     "unit": "min"
     },
     "children": []
    },
