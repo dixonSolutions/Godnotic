@@ -945,11 +945,8 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	DrawQ_Fill(pxl, pyt, pw, hdr, 0.07f, 0.1f, 0.17f, 1, 0);
 	DrawQ_Fill(pxl, pyt + hdr, pw, max(1.0f, 1.0f / m->sy), 0.3f, 0.4f, 0.55f, 1, 0);
 
-	/* header: title, filter chips, count, actions */
-	dpsnprintf(s, sizeof(s), "Chat log");
-	DrawQ_String(pxl + m->fs, pyt + (title_h - m->fs * 1.2f) * 0.5f, s, 0, m->fs * 1.2f, m->fs * 1.2f, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
+	/* header: filter chips, count, actions (no title: the chips and the lines say what it is) */
 	{
-		float titlew = TCL_TextW(s, m->fs * 1.2f);
 		float cx = pxl + pw - tcl_min_target * 0.5f, cy = pyt + title_h * 0.5f;
 		static const int ic[5] = {TCL_I_CLOSE, TCL_I_SHARE, TCL_I_DOWNLOAD, TCL_I_COPY, TCL_I_CLEAR};
 		static const int id[5] = {TG_CLOSE, TG_SHARE, TG_DOWNLOAD, TG_COPY, TG_CLEAR};
@@ -962,7 +959,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 			cx -= tcl_min_target;
 		}
 		left = cx + tcl_min_target * 0.5f;
-		chipx = wide ? pxl + m->fs + titlew + m->fs * 1.5f : pxl + m->fs;
+		chipx = pxl + m->fs;
 		chipy = pyt + (wide ? 0 : title_h) + (title_h - chiph) * 0.5f;
 		for (i = 0; i < 3; i++)
 		{
