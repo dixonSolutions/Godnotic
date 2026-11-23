@@ -22,6 +22,7 @@ import android.view.WindowInsets
 import android.widget.FrameLayout
 import io.github.dixonsolutions.godnotic.BootSplash
 import io.github.dixonsolutions.godnotic.NativeBridge
+import io.github.dixonsolutions.godnotic.Net
 import java.io.File
 
 /**
@@ -89,6 +90,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         root.addView(toastLayer, match())
         dialogLayer.visibility = View.GONE
         Images.thumbDir = File(activity.cacheDir, "fe-thumbs")
+        MapShots.dir = File(activity.cacheDir, "fe-mapshots")
     }
 
     private fun match() = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -317,6 +319,10 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var joinStageAt = 0L
     /** The map's picture file the card shows (engine connect `levelshot`), decoded once per file. */
     private var shotPath = ""
+    /** What the card shows (path, kind, map): changes only by [JoinFlow.nextShot]. */
+    private var curShot = JoinFlow.Shot()
+    private var worldSince = 0L
+    private var fadeNext = false
     private var shotBitmap: android.graphics.Bitmap? = null
     /** The picture is the generic stand-in: dimmed and blurred behind the card. */
     private var shotGeneric = false
@@ -336,8 +342,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         loadingStrip = null; loadingText = null; loadingDetail = null; loadingBar = null; loadingTitle = null
         loadingBanner = null; loadingCardView = null; previewStrip = false
         loadingCancel = null; loadingRetry = null; loadingBack = null
+        if (signonSeen > 4096) signonExpected = signonSeen; signonSeen = 0.0; downloadSeen = 0.0; barPrev = -1.0
         previewSeen = false; joinError = null; lastLook = ""; sawDownload = false; barSweep?.cancel(); barSweep = null
-        shotPath = ""; shotBitmap = null; lastWorld = false
+        shotPath = ""; shotBitmap = null; lastWorld = false; curShot = JoinFlow.Shot(); worldSince = 0L; fadeNext = false
         if (engineSeen && app.isNotEmpty()) main.post { onApp(app) }
     }
 
@@ -406,26 +413,37 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val hint = renderer?.joinHint?.takeIf { c.str("join_map").isEmpty() || it.first == c.str("join_map") }
         joinMapName = c.str("join_map").ifEmpty { hint?.first ?: "" }.ifEmpty { app.str("map") }
         // the map's picture in order: the engine's (list cache, packs, fetched levelshot), the dialog's, else the name on a gradient
-        val shot = c.str("levelshot").ifEmpty { hint?.second ?: "" }
-        val showShot = JoinFlow.showShot(shot, c.bool("world"))
+        // the world takes the screen from the picture only when it has stayed drawable for a moment
+        val worldNow = c.bool("world")
+        val tNow = SystemClock.elapsedRealtime()
+        if (!worldNow) worldSince = 0L else if (worldSince == 0L) worldSince = tNow
+        lastWorld = JoinFlow.worldShows(worldNow, worldSince, tNow)
+        // a picture from the first frame of the join: the engine's, the dialog's, else a fetched one or art made from the name
+        val shot = JoinFlow.firstShot(c.str("levelshot"), hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.cached(it)?.path ?: MapShots.fallbackPath(it, "") })
+        val showShot = JoinFlow.showShot(curShot.path.ifEmpty { shot }, lastWorld)
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
-        val generic = JoinFlow.generic(c.str("levelshot_kind"))
-        if (shot != shotPath) {
-            shotPath = shot; shotBitmap = null; shotGeneric = generic
-            if (shot.isNotEmpty()) {
+        val kind = if (c.str("levelshot").isNotEmpty()) c.str("levelshot_kind") else MapShots.kindOf(shot)
+        val next = JoinFlow.nextShot(curShot, JoinFlow.Shot(shot, kind, c.str("join_map")))
+        if (next != curShot) {
+            val sameJoin = JoinFlow.sameJoin(curShot, next)
+            // the picture on screen stays until the new one is decoded; only another map's goes at once
+            if (!sameJoin) shotBitmap = null
+            curShot = next
+            shotPath = next.path; shotGeneric = JoinFlow.generic(next.kind); fadeNext = sameJoin && shotBitmap != null
+            val want = next.path
+            if (want.isNotEmpty()) {
                 val got = { bmp: android.graphics.Bitmap? ->
-                    if (shotPath == shot && bmp != null) {
+                    if (shotPath == want && bmp != null) {
                         shotBitmap = bmp // sharp: decoded for the screen, drawn bilinear, never blurred
                         applyLook(JoinFlow.showShot(shotPath, lastWorld))
                     }
                 }
                 // a picture already on disk is drawn with the card, not a frame or two after it
-                val now = Images.cached(shot, JoinFlow.SHOT_WIDTH) ?: Images.now(shot, JoinFlow.SHOT_WIDTH)
-                if (now != null) got(now) else Images.load(shot, JoinFlow.SHOT_WIDTH, got)
+                val now = Images.cached(want, JoinFlow.SHOT_WIDTH) ?: Images.now(want, JoinFlow.SHOT_WIDTH)
+                if (now != null) got(now) else Images.load(want, JoinFlow.SHOT_WIDTH, got)
             }
         }
-        shotGeneric = generic
-        lastWorld = c.bool("world")
+
         // The join dialog is the one join screen; the card goes when it opens.
         val joinDialog = client?.modal?.lastOrNull() == "join"
         if (cardIgnoreBusy) { if (busy) return; cardIgnoreBusy = false }
@@ -451,14 +469,13 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             // console), drawn by Android so it moves during a blocking load
             val screen = android.widget.LinearLayout(activity)
             screen.orientation = android.widget.LinearLayout.VERTICAL
-            screen.gravity = Gravity.CENTER_HORIZONTAL
+            screen.gravity = JoinFlow.CARD_GRAVITY // the card sits at the bottom from its first frame
             screen.setBackgroundColor(android.graphics.Color.BLACK)
             screen.isClickable = true // nothing reaches the engine underneath
             // no logo in a join: until the map's picture or the world is there, its name on a dark gradient
             val banner = Kit.text(activity, "", Theme.SP_DISPLAY, 0xFF7F93B8.toInt(), bold = true, lines = 1)
             banner.typeface = Theme.display
             banner.gravity = Gravity.CENTER
-            banner.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF0B1730.toInt(), 0xFF1D4A8C.toInt()))
             screen.addView(banner, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             loadingBanner = banner
             val card = android.widget.LinearLayout(activity)
@@ -512,6 +529,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             activity.addContentView(screen, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadingCard(true)
             showReconnect("")
+            syncMetered()
             loadingStrip = screen; loadingText = t; loadingDetail = d; loadingBar = bar; loadingTitle = title
             screen.requestApplyInsets()
             loadingCardView = card
@@ -532,7 +550,12 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val shown = JoinFlow.shownStage(stage, dlBusy)
         if (shown == "downloading") sawDownload = true
         // one continuous bar: the downloads (when this join has any) are the first half, precache and the map load the rest
-        val pct = if (waitS >= 0) -1.0 else JoinFlow.overall(shown, sawDownload, dlFrac, JoinFlow.progress(shown, 0.0, c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt()))
+        val sigBytes = c.num("sig_bytes")
+        if (sigBytes > signonSeen) signonSeen = sigBytes
+        if (allBytes > downloadSeen) downloadSeen = allBytes
+        val pct0 = JoinFlow.overall(shown, sawDownload, dlFrac, JoinFlow.progress(shown, 0.0, c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt()),
+            waiting = waitS >= 0, signon = JoinFlow.signonFraction(sigBytes, signonExpected))
+        val pct = JoinFlow.monotonic(barPrev, pct0).also { barPrev = it }
         val map = app.str("map")
         loadingTitle?.text = when {
             c.bool("local") -> if (map.isNotEmpty()) "Starting ${map.replaceFirstChar { it.uppercase() }}" else "Starting the match"
@@ -546,6 +569,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadStage = c.str("load_stage"), loadN = c.int("load_n"), loadM = c.int("load_m"),
             precache = c.str("precache"), precacheN = c.num("precache_n").toInt(), precacheTotal = c.num("precache_total").toInt(),
             load = c.str("load"), map = c.str("join_map"), status = c.str("status"),
+            usedBytes = JoinFlow.used(signonSeen, downloadSeen), metered = meteredLink,
         ))
         val reconnect = app.str("reconnect")
         loadingText?.text = if (stage == "connecting" && reconnect.isNotEmpty()) reconnect else lines.head
@@ -595,16 +619,32 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         loadingBanner?.visibility = if (haveBmp || world) View.GONE else View.VISIBLE
         (loadingBanner as? android.widget.TextView)?.let { t -> val m = joinMapName; if (t.text.toString() != m) t.text = m }
         when {
-            haveBmp -> screen.background = ShotDrawable(bmp!!, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
+            haveBmp -> setShotBackground(screen, bmp!!, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             world -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            else -> screen.setBackgroundColor(0xFF0B1730.toInt())
+            else -> if (screen.background !== nameBackdrop) screen.background = nameBackdrop // the whole screen, behind the card too
         }
         screen.isClickable = !world
-        screen.gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
+        screen.gravity = JoinFlow.CARD_GRAVITY
         val look = if (haveBmp) "picture" else if (world) "world" else "name"
         if (look != lastLook) { lastLook = look; Log.i(tag, "Join card: look=$look map=$joinMapName stage=$joinStage") }
     }
     private var lastLook = ""
+    /** No picture yet: the same gradient on the WHOLE screen (the banner has none of its own, so no band shows behind the card). */
+    private val nameBackdrop by lazy {
+        android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(JoinFlow.BACKDROP_TOP, JoinFlow.BACKDROP_BOTTOM))
+    }
+
+    /** The picture is set once per bitmap (not rebuilt on every look); a better one fades in over the shown one, never via a blank frame. */
+    private fun setShotBackground(screen: View, bmp: android.graphics.Bitmap, dim: Float) {
+        val cur = screen.background
+        val curShot = (cur as? ShotDrawable) ?: ((cur as? android.graphics.drawable.TransitionDrawable)?.let { it.getDrawable(1) as? ShotDrawable })
+        if (curShot != null && curShot.same(bmp, dim)) return
+        val nd = ShotDrawable(bmp, dim)
+        if (fadeNext && curShot != null) {
+            screen.background = android.graphics.drawable.TransitionDrawable(arrayOf(curShot, nd)).also { it.isCrossFadeEnabled = true; it.startTransition(JoinFlow.FADE_MS) }
+        } else screen.background = nd
+        fadeNext = false
+    }
 
     /** Display cutout safe insets (API 28+), else none. */
     private fun cutoutInsets(ins: WindowInsets): IntArray =
@@ -616,6 +656,21 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
     private var barSweep: android.animation.ValueAnimator? = null
     /** This join had downloads: they are the first half of the one bar. */
     private var sawDownload = false
+    /** This join runs over a metered link (mobile data, or a Wi-Fi marked metered): the engine is told, the card says so. */
+    private var meteredLink = false
+
+    /** Read the link once per join (a binder call, not one per snapshot) and tell the engine (cvar touch_net_metered). */
+    private fun syncMetered() {
+        val m = JoinFlow.metered(Net.kind(activity))
+        meteredLink = m
+        NativeBridge.enqueue(FeArgs.command("set", "touch_net_metered", if (m) "1" else "0"))
+    }
+    /** The server's first data and the downloads of this join, the most seen (the card's "MB used"). */
+    private var barPrev = -1.0
+    private var signonSeen = 0.0
+    private var downloadSeen = 0.0
+    /** What the last join's first data came to: the next join's bar is measured against it. */
+    private var signonExpected = JoinFlow.SIGNON_EXPECTED
 
     private var loadingCardSent = ""
 
