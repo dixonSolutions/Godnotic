@@ -38,7 +38,30 @@ final class UpdateRetry {
                 || m.contains("http 5") || m.contains("timeout") || m.contains("timed out")
                 || m.contains("connection reset") || m.contains("connection refused")
                 || m.contains("unexpected end of stream") || m.contains("incomplete")
-                || m.contains("checksum");
+                || m.contains("checksum") || offline(m);
+    }
+
+    /**
+     * Whether the phone simply had no usable connection: the name did not resolve, the network
+     * was unreachable, or the connection never opened. Java says {@code UnknownHostException:
+     * Unable to resolve host ...: No address associated with hostname}, which is not something a
+     * player can read; it means "you are offline", and the next check succeeds once the phone is.
+     */
+    static boolean offline(String message) {
+        if (message == null) {
+            return false;
+        }
+        String m = message.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("unknownhostexception") || m.contains("unable to resolve host")
+                || m.contains("no address associated with hostname")
+                || m.contains("network is unreachable") || m.contains("enetunreach")
+                || m.contains("failed to connect to") || m.contains("noroutetohost")
+                || m.contains("no route to host") || m.contains("software caused connection abort");
+    }
+
+    /** "No internet connection" with what to do, for every offline failure. */
+    static String offlineMessage() {
+        return "No internet connection. Check again once you are online.";
     }
 
     /** A 404 is the one that means the publisher has not finished, rather than a broken phone. */
@@ -58,6 +81,9 @@ final class UpdateRetry {
     static String friendly(String message) {
         if (stillPublishing(message)) {
             return publishingMessage();
+        }
+        if (offline(message)) {
+            return offlineMessage();
         }
         return message == null ? "" : message;
     }
