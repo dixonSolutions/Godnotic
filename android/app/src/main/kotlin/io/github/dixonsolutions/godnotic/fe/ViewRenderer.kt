@@ -63,6 +63,9 @@ class ViewRenderer(
         var empty: LinearLayout? = null
         /** tabs: the strip (pinned when the tabs are a screen's child) */
         var strip: View? = null
+        /** screen: the header row and its title block, for the Settings search icon */
+        var bar: ViewGroup? = null
+        var titles: View? = null
     }
 
     private val serverListStates = HashMap<String, ServerListState>()
@@ -97,6 +100,8 @@ class ViewRenderer(
         // Home's bar of tabs: the screen's last strip, under the action bar
         if (p.type == "screen" && type == "tabbar") { (p.view as? ViewGroup)?.addView(e.view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)); return }
         if (p.type == "split") { splitAdd(p, e); return }
+        // Settings: the search field is an icon in the title bar that opens inline (not a heading and a field)
+        if (p.type == "screen" && type == "field" && id == "search" && props.str("kind") == "search") { headerSearch(p, e); return }
         val place = UiLayout.placement(p.type, type, hints, props)
         val group = when (place) {
             Placement.TOP -> p.top
@@ -424,6 +429,7 @@ class ViewRenderer(
         bottom.visibility = View.GONE
         root.addView(bottom)
         val e = Entry(id, "screen", root, body, props)
+        e.bar = bar; e.titles = titles
         e.top = top; e.bottom = bottom; e.fill = fill; e.scroller = sv; e.body = body
         // sticky section headers and the collapsing header
         sv.setOnScrollChangeListener { _, _, y, _, _ ->
@@ -488,6 +494,62 @@ class ViewRenderer(
             }
         }
         return e
+    }
+
+
+    /**
+     * Settings search: an icon in the title bar. Tapping it swaps the title for the field
+     * (focused, keyboard up); the X clears the query, closes the field and returns to the
+     * categories. Open while a query exists, so a rebuild keeps it open.
+     */
+    private fun headerSearch(screen: Entry, field: Entry) {
+        val bar = screen.bar ?: return
+        val titles = screen.titles ?: return
+        val input = field.view.tag as? android.widget.EditText
+        val host = Kit.row(ctx, 4f)
+        host.gravity = Gravity.CENTER_VERTICAL
+        val open = Kit.quiet(ctx, "", "search") { }
+        open.contentDescription = "Search settings"
+        val close = Kit.quiet(ctx, "", "close") { }
+        close.contentDescription = "Close search"
+        (field.view.parent as? ViewGroup)?.removeView(field.view)
+        field.view.visibility = View.GONE
+        host.addView(field.view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        host.addView(close)
+        host.addView(open)
+        val trailingIdx = bar.childCount - 1
+        bar.addView(host, trailingIdx, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        var shown = true // forced to closed below
+        fun show(on: Boolean, focus: Boolean) {
+            if (on == shown && !focus) return
+            shown = on
+            titles.visibility = if (on) View.GONE else View.VISIBLE
+            field.view.visibility = if (on) View.VISIBLE else View.GONE
+            close.visibility = if (on) View.VISIBLE else View.GONE
+            open.visibility = if (on) View.GONE else View.VISIBLE
+            (host.layoutParams as LinearLayout.LayoutParams).apply { width = if (on) 0 else ViewGroup.LayoutParams.WRAP_CONTENT; weight = if (on) 1f else 0f }
+            host.requestLayout()
+            if (on && focus && input != null) input.post {
+                input.requestFocus()
+                (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)?.showSoftInput(input, 0)
+            }
+            if (!on && input != null) {
+                input.clearFocus()
+                (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)?.hideSoftInputFromWindow(input.windowToken, 0)
+            }
+        }
+        open.setOnClickListener { Kit.haptic(it); show(true, true) }
+        close.setOnClickListener {
+            Kit.haptic(it)
+            input?.setText("")
+            field.props = field.props + ("value" to "")
+            events.value(field.id, "")
+            show(false, false)
+        }
+        val inner = field.bind
+        field.bind = { x -> inner?.invoke(x); if (x.props.str("value").isNotEmpty()) show(true, false) }
+        show(false, false)
+        bindSafe(field)
     }
 
     /** The last sticky section whose header scrolled above the top stays pinned; the next one pushes it up. */
@@ -741,8 +803,12 @@ class ViewRenderer(
     private fun split(id: String, props: Map<String, Any?>): Entry {
         val row = Kit.row(ctx, 20f)
         row.gravity = Gravity.TOP
-        val wdp = ctx.resources.displayMetrics.widthPixels / ctx.resources.displayMetrics.density
-        val compact = wdp < 720
+        val prefs = ctx.getSharedPreferences("godnotic_ui", Context.MODE_PRIVATE)
+        fun landscape() = ctx.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        fun key() = if (landscape()) "settings_rail_expanded_land" else "settings_rail_expanded_port"
+        // portrait starts collapsed, landscape expanded; the toggle is remembered per orientation
+        var wasLandscape = landscape()
+        var expanded = try { prefs.getBoolean(key(), wasLandscape) } catch (ex: RuntimeException) { wasLandscape }
         val rail = Kit.column(ctx, 6f)
         val railScroll = ScrollView(ctx)
         railScroll.isVerticalScrollBarEnabled = true
@@ -754,14 +820,36 @@ class ViewRenderer(
         paneScroll.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
         paneScroll.overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
         paneScroll.addView(panes)
-        row.addView(railScroll, LinearLayout.LayoutParams(dp(if (compact) 76f else 300f), ViewGroup.LayoutParams.MATCH_PARENT))
+        val railLp = LinearLayout.LayoutParams(dp(76f), ViewGroup.LayoutParams.MATCH_PARENT)
+        row.addView(railScroll, railLp)
         row.addView(paneScroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         val e = Entry(id, "split", row, panes, props)
         e.strip = null
+        fun setExpanded(on: Boolean, remember: Boolean) {
+            expanded = on
+            if (remember) try { prefs.edit().putBoolean(key(), on).apply() } catch (ex: RuntimeException) { }
+            bindSafe(e)
+        }
         e.bind = { x ->
+            val wdp = ctx.resources.displayMetrics.widthPixels / ctx.resources.displayMetrics.density
+            railLp.width = dp(if (expanded) minOf(300f, wdp * 0.45f) else 76f)
+            railScroll.layoutParams = railLp
             rail.removeAllViews()
             val sel = x.props.str("value")
             val list = nodes.values.filter { it.parent == x.id && it.type == "pane" }.sortedBy { panes.indexOfChild(it.view) }
+            // the toggle: expands the rail to icon + title, or folds it to icons
+            val toggle = Kit.row(ctx, 14f)
+            toggle.minimumHeight = dp(48f)
+            toggle.setPadding(dp(14f), dp(8f), dp(14f), dp(8f))
+            toggle.background = Theme.surface(ctx, Color.TRANSPARENT, 14f, Color.TRANSPARENT)
+            toggle.isClickable = true; toggle.isFocusable = true
+            val tIcon = View(ctx)
+            tIcon.background = Icons.drawable("menu", dp(24f), Theme.TEXT_MUTED)
+            toggle.addView(tIcon, LinearLayout.LayoutParams(dp(24f), dp(24f)))
+            if (expanded) toggle.addView(Kit.text(ctx, "Categories", Theme.SP_CAPTION, Theme.TEXT_MUTED, bold = true, lines = 1), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            toggle.contentDescription = if (expanded) "Collapse categories" else "Expand categories"
+            toggle.setOnClickListener { v -> Kit.haptic(v); setExpanded(!expanded, true) }
+            rail.addView(toggle)
             for (p in list) {
                 val on = p.props.str("key") == sel
                 val item = Kit.row(ctx, 14f)
@@ -772,16 +860,19 @@ class ViewRenderer(
                 val icon = View(ctx)
                 icon.background = Icons.drawable(p.props.str("icon"), dp(24f), if (on) Theme.EMBER else Theme.BLUE)
                 item.addView(icon, LinearLayout.LayoutParams(dp(24f), dp(24f)))
-                if (!compact) {
+                if (expanded) {
                     val texts = Kit.column(ctx)
                     texts.addView(Kit.text(ctx, p.props.str("label"), Theme.SP_BODY, if (on) Color.WHITE else Theme.TEXT, bold = true, lines = 1))
                     p.props.str("subtitle").takeIf { it.isNotEmpty() }?.let { texts.addView(Kit.text(ctx, it, Theme.SP_CAPTION, Theme.TEXT_MUTED, lines = 1)) }
                     item.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 }
                 item.contentDescription = p.props.str("label") + if (on) ", selected" else ""
+                item.tooltipText = p.props.str("label")
                 item.setOnClickListener { v ->
                     Kit.haptic(v)
                     x.props = x.props + ("value" to p.props.str("key"))
+                    // portrait: choosing a category folds the rail so the page gets the width (not remembered)
+                    if (!landscape()) expanded = false
                     bindSafe(x)
                     paneScroll.scrollTo(0, 0)
                     events.value(x.id, p.props.str("key"))
@@ -789,6 +880,23 @@ class ViewRenderer(
                 rail.addView(item)
             }
             for (p in list) p.view.visibility = if (p.props.str("key") == sel || (sel.isEmpty() && p === list.firstOrNull())) View.VISIBLE else View.GONE
+        }
+        // a swipe on the rail: right opens it, left folds it
+        val swipe = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(a: android.view.MotionEvent?, b: android.view.MotionEvent, vx: Float, vy: Float): Boolean {
+                if (Math.abs(vx) < Math.abs(vy) * 1.5f || Math.abs(vx) < 600f) return false
+                if ((vx > 0) != expanded) setExpanded(vx > 0, true)
+                return true
+            }
+        })
+        railScroll.setOnTouchListener { _, ev -> swipe.onTouchEvent(ev); false }
+        // rotating: the other orientation has its own remembered choice
+        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (landscape() != wasLandscape) {
+                wasLandscape = landscape()
+                expanded = try { prefs.getBoolean(key(), wasLandscape) } catch (ex: RuntimeException) { wasLandscape }
+                row.post { bindSafe(e) }
+            }
         }
         return e
     }
@@ -1515,9 +1623,10 @@ class ViewRenderer(
         if (secret) line.addView(lock)
         val helpV = Kit.text(ctx, "", Theme.SP_CAPTION, Theme.TEXT_MUTED)
         col.addView(titleV); col.addView(line); col.addView(helpV)
+        col.tag = input
         e.bind = { x ->
             val p = x.props
-            val inBar = nodes[x.parent ?: ""]?.type in setOf("toolbar", "actionbar", "row")
+            val inBar = nodes[x.parent ?: ""]?.type in setOf("toolbar", "actionbar", "row") || (x.id == "search" && x.props.str("kind") == "search" && nodes[x.parent ?: ""]?.type == "screen")
             titleV.text = title(p); titleV.visibility = if (titleV.text.isEmpty() || inBar) View.GONE else View.VISIBLE
             if (inBar) col.setPadding(0, 0, 0, 0)
             input.hint = p.str("placeholder").ifEmpty { title(p) }

@@ -179,6 +179,11 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
         });
         header.pack_end(&data);
     }
+    // Settings: search is an icon beside the title; it opens an inline field, the X closes it and clears the query
+    let search_node = if s.id == "settings" { store.children(&s.id).into_iter().find(|k| k.id == "search" && k.kind == "field") } else { None };
+    if let Some(k) = search_node {
+        settings_search(app, k, &header, &title);
+    }
     if s.str("kind").as_deref() != Some("home") { tv.add_top_bar(&header); }
     if let Some(from) = s.from_mod() {
         let l = label(&format!("From the mod {from}"), &["gn-from-mod"]);
@@ -192,7 +197,7 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
     for k in &kids {
         // The engine's card for the chosen server: the info dialog shows it (as on Android), so
         // it is never docked into the page, where its picture pushed the bottom bar off screen.
-        if k.hidden() || k.id == SERVER_DETAILS {
+        if k.hidden() || k.id == SERVER_DETAILS || (search_node.is_some() && k.id == "search") {
             continue;
         }
         match k.kind.as_str() {
@@ -264,6 +269,80 @@ pub fn screen(app: &App, store: &Store, s: &Node) -> gtk::Widget {
     };
     tv.set_content(Some(&content));
     tv.upcast()
+}
+
+
+thread_local! {
+    /// The Settings search field is open (kept across the screen's rebuilds).
+    static SEARCH_OPEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Settings search as a header icon: a search button beside the title; pressed, the title
+/// gives way to a focused field and a close button that clears the query.
+fn settings_search(app: &App, k: &Node, header: &adw::HeaderBar, title: &adw::WindowTitle) {
+    let query = k.str("value").unwrap_or_default();
+    if !query.is_empty() {
+        SEARCH_OPEN.with(|o| o.set(true));
+    }
+    let open = gtk::Button::from_icon_name("system-search-symbolic");
+    open.set_tooltip_text(Some("Search settings"));
+    open.update_property(&[gtk::accessible::Property::Label("Search settings")]);
+    open.add_css_class("flat");
+    let close = gtk::Button::from_icon_name("window-close-symbolic");
+    close.set_tooltip_text(Some("Close search"));
+    close.update_property(&[gtk::accessible::Property::Label("Close search")]);
+    close.add_css_class("flat");
+    let field = entry(app, k);
+    field.set_hexpand(true);
+    let holder = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    holder.set_hexpand(true);
+    holder.append(&field);
+    let apply = {
+        let (header, title, open, close, field, holder) = (header.downgrade(), title.clone(), open.clone(), close.clone(), field.clone(), holder.clone());
+        move |on: bool, focus: bool| {
+            let Some(header) = header.upgrade() else { return };
+            open.set_visible(!on);
+            close.set_visible(on);
+            if on {
+                header.set_title_widget(Some(&holder));
+                if focus {
+                    let f = field.clone();
+                    glib::idle_add_local_once(move || {
+                        f.grab_focus();
+                        if let Some(e) = f.dynamic_cast_ref::<gtk::Editable>() {
+                            e.select_region(-1, -1);
+                        }
+                    });
+                }
+            } else {
+                header.set_title_widget(Some(&title));
+            }
+        }
+    };
+    let a2 = apply.clone();
+    open.connect_clicked(move |_| {
+        SEARCH_OPEN.with(|o| o.set(true));
+        a2(true, true);
+    });
+    let a3 = apply.clone();
+    let w = Rc::downgrade(app);
+    let id = k.id.clone();
+    let f2 = field.clone();
+    close.connect_clicked(move |_| {
+        SEARCH_OPEN.with(|o| o.set(false));
+        if let Some(e) = f2.dynamic_cast_ref::<gtk::Editable>() {
+            e.set_text("");
+        }
+        if let Some(a) = w.upgrade() {
+            value(&a, &id, json!(""));
+            filter_lists(&a, "");
+        }
+        a3(false, false);
+    });
+    holder.append(&close);
+    header.pack_end(&open);
+    let on = SEARCH_OPEN.with(|o| o.get());
+    apply(on, on && query.is_empty());
 }
 
 fn actionbar(app: &App, store: &Store, n: &Node) -> gtk::Widget {
@@ -1641,6 +1720,28 @@ fn split(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     sv.upcast()
 }
 
+
+fn rail_file() -> std::path::PathBuf {
+    glib::user_config_dir().join("godnotic").join("settings-rail")
+}
+
+/// Is the Settings rail expanded? Remembered per orientation; portrait starts folded, landscape open.
+fn rail_expanded(portrait: bool) -> bool {
+    let key = if portrait { "portrait" } else { "landscape" };
+    std::fs::read_to_string(rail_file()).ok().and_then(|t| t.lines().find_map(|l| l.strip_prefix(&format!("{key}=")).map(|v| v.trim() == "expanded"))).unwrap_or(!portrait)
+}
+
+fn rail_remember(portrait: bool, expanded: bool) {
+    let (mut port, mut land) = (rail_expanded(true), rail_expanded(false));
+    if portrait { port = expanded } else { land = expanded }
+    let f = |b: bool| if b { "expanded" } else { "folded" };
+    let path = rail_file();
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(path, format!("portrait={}\nlandscape={}\n", f(port), f(land)));
+}
+
 /// Settings (`split` with `style: vertical-tabs`, docs/UI_BRIDGE.md 4.11): its
 /// `pane` children are the sections, `value` the chosen one, which alone has
 /// content. The sidebar lists every section (label, icon, subtitle); choosing one
@@ -1657,15 +1758,19 @@ fn vertical_tabs(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     lb.set_selection_mode(gtk::SelectionMode::Single);
     let mut keys = Vec::new();
     let mut chosen = None;
+    let mut text_boxes: Vec<gtk::Box> = Vec::new();
     for p in &panes {
         let key = p.str("key").unwrap_or_else(|| p.id.clone());
         let r = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         r.set_margin_top(8);
         r.set_margin_bottom(8);
+        r.set_tooltip_text(Some(&p.title()));
+        r.update_property(&[gtk::accessible::Property::Label(&p.title())]);
         if let Some(ic) = p.str("icon").and_then(|i| icon(&i)) {
             r.append(&gtk::Image::from_icon_name(ic));
         }
         let texts = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text_boxes.push(texts.clone());
         texts.append(&label(&p.title(), &[]));
         if let Some(sub) = p.str("subtitle").filter(|s| !s.is_empty()) {
             let l = label(&sub, &["dim-label", "caption"]);
@@ -1690,7 +1795,19 @@ fn vertical_tabs(app: &App, store: &Store, n: &Node) -> gtk::Widget {
         }
     });
     let side_sw = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&lb).vexpand(true).build();
-    let sidebar = adw::NavigationPage::builder().title(n.str("title").unwrap_or_else(|| "Sections".into())).child(&side_sw).tag("sidebar").build();
+    // the rail folds to icons: a toggle on top, remembered per orientation (a window taller than wide is portrait)
+    let portrait = app.ui.borrow().as_ref().map(|u| { let (w, h) = (u.win.width(), u.win.height()); h > w && w > 0 }).unwrap_or(false);
+    let toggle = gtk::ToggleButton::new();
+    toggle.set_icon_name("open-menu-symbolic");
+    toggle.add_css_class("flat");
+    toggle.set_halign(gtk::Align::Start);
+    toggle.set_margin_start(6);
+    toggle.set_margin_top(4);
+    toggle.update_property(&[gtk::accessible::Property::Label("Categories")]);
+    let side_col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    side_col.append(&toggle);
+    side_col.append(&side_sw);
+    let sidebar = adw::NavigationPage::builder().title(n.str("title").unwrap_or_else(|| "Sections".into())).child(&side_col).tag("sidebar").build();
     let pane = panes.iter().find(|p| p.str("key").as_deref() == Some(sel.as_str())).copied();
     let content_w: gtk::Widget = match pane {
         Some(p) => {
@@ -1715,6 +1832,26 @@ fn vertical_tabs(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     let content = adw::NavigationPage::builder().title(pane.map(|p| p.title()).unwrap_or_default()).child(&content_w).tag("detail").build();
     let sv = adw::NavigationSplitView::builder().sidebar(&sidebar).content(&content).min_sidebar_width(220.0).max_sidebar_width(300.0).build();
     let narrow = app.narrow.get();
+    {
+        let sv2 = sv.clone();
+        let apply = move |expanded: bool| {
+            for t in &text_boxes {
+                t.set_visible(expanded);
+            }
+            let (lo, hi) = if expanded { (220.0, 300.0) } else { (64.0, 64.0) };
+            sv2.set_min_sidebar_width(lo);
+            sv2.set_max_sidebar_width(hi);
+        };
+        let start = rail_expanded(portrait);
+        toggle.set_active(start);
+        toggle.set_tooltip_text(Some(if start { "Collapse categories" } else { "Expand categories" }));
+        apply(start);
+        toggle.connect_toggled(move |t| {
+            rail_remember(portrait, t.is_active());
+            t.set_tooltip_text(Some(if t.is_active() { "Collapse categories" } else { "Expand categories" }));
+            apply(t.is_active());
+        });
+    }
     sv.set_collapsed(narrow);
     sv.set_show_content(!narrow || n.bool("detailOpen").unwrap_or(false));
     // one column: the split view's own back (its header arrow, a swipe) returns

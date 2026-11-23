@@ -732,7 +732,14 @@ A result for a gated row that has since gone (haptics after the engine reports n
 vibrator) shows a toast, "Not available on this device", and opens the sub-tab anyway.
 
 The search field itself is a `field` with `kind: "search"` at the top of the Settings
-screen, above the split, bound to `vm:settings.query`; results replace the split while
+screen, above the split, bound to `vm:settings.query`. The renderers draw it as a search
+icon in the title bar, not as a heading and a full-width field: tapping the icon swaps the
+title for the field (focused, keyboard up) and an X, which clears the query, closes the
+field and returns to the categories. The category rail folds: icons only (with names as
+content descriptions and tooltips) or icon and title; a toggle at its top, and on Android
+a swipe on it, switch between them, the choice is remembered per orientation (portrait
+starts folded, landscape open) and choosing a category in portrait folds it again. This is
+renderer-only; the bridge is unchanged; results replace the split while
 the query is non-empty and the split comes back when it is cleared or a result is
 chosen. Nothing about this needs a new node type; `field`, `list` and `reveal` are the
 only additions, and `reveal` is a property.
