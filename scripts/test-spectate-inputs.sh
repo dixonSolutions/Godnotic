@@ -20,33 +20,34 @@ port=$((27500 + RANDOM % 400))
 "$ENGINE" -dedicated -xonotic -basedir "$BASEDIR" -userdir "$WORK/server" +set port "$port" +set sv_public 0 +set bot_number 2 +map stormkeep > "$WORK/server.log" 2>&1 & server_pid=$!
 for n in $(seq 1 600); do grep -q 'Server spawned' "$WORK/server.log" && break; sleep .1; done
 grep -q 'Server spawned' "$WORK/server.log" || { echo 'FAIL: server did not start'; exit 1; }
+DELAY=${DELAY:-15}
 cat > "$WORK/client/data/run.cfg" <<CFG
 seta touch_profile_done 1
 connect 127.0.0.1:$port
-defer 12 "touch_join_answered; togglemenu 0"
-defer 16 "+attack"
-defer 17 "-attack"
-defer 19 "_touch_test_spectate_inputs"
-defer 20 "_touch_test_spectate_inputs"
-defer 21 "_touch_test_spectate_inputs"
-defer 22 "_touch_test_spectate_inputs"
-defer 23 "_touch_test_spectate_inputs"
-defer 24 "_touch_test_spectate_inputs"
-defer 25 "_touch_test_spectate_inputs"
-defer 26 "_touch_test_spectate_inputs"
-defer 27 "_touch_test_spectate_inputs"
-defer 28 "_touch_test_spectate_inputs"
-defer 29 "_touch_test_spectate_inputs"
-defer 30 "_touch_test_spectate_inputs 85 0"
-defer 32 "screenshot spectate-touch.png"
-defer 34 "_touch_test_spectate_inputs 170 1"
-defer 36 "screenshot spectate-keyboard.png"
-defer 38 "touch_spectate_inputs 0; _touch_test_spectate_inputs"
-defer 40 "_touch_test_spectate_inputs; screenshot spectate-disabled.png"
-defer 42 "quit"
+defer $((12 + DELAY)) "touch_join_answered; togglemenu 0"
+defer $((16 + DELAY)) "+attack"
+defer $((17 + DELAY)) "-attack"
+defer $((19 + DELAY)) "_touch_test_spectate_inputs"
+defer $((20 + DELAY)) "_touch_test_spectate_inputs"
+defer $((21 + DELAY)) "_touch_test_spectate_inputs"
+defer $((22 + DELAY)) "_touch_test_spectate_inputs"
+defer $((23 + DELAY)) "_touch_test_spectate_inputs"
+defer $((24 + DELAY)) "_touch_test_spectate_inputs"
+defer $((25 + DELAY)) "_touch_test_spectate_inputs"
+defer $((26 + DELAY)) "_touch_test_spectate_inputs"
+defer $((27 + DELAY)) "_touch_test_spectate_inputs"
+defer $((28 + DELAY)) "_touch_test_spectate_inputs"
+defer $((29 + DELAY)) "_touch_test_spectate_inputs"
+defer $((30 + DELAY)) "_touch_test_spectate_inputs 85 0"
+defer $((32 + DELAY)) "screenshot spectate-touch.png"
+defer $((34 + DELAY)) "_touch_test_spectate_inputs 170 1"
+defer $((36 + DELAY)) "screenshot spectate-keyboard.png"
+defer $((38 + DELAY)) "touch_spectate_inputs 0; _touch_test_spectate_inputs"
+defer $((40 + DELAY)) "_touch_test_spectate_inputs; screenshot spectate-disabled.png"
+defer $((42 + DELAY)) "quit"
 CFG
 size=${SIZE:-640x360}
-timeout 80 "$ENGINE" -xonotic -nosound -basedir "$BASEDIR" -userdir "$WORK/client" +vid_fullscreen 0 +vid_width "${size%x*}" +vid_height "${size#*x}" +set _touch_assets_ready 1 +exec run.cfg > "$WORK/client.log" 2>&1 & client_pid=$!
+timeout $((80 + DELAY)) "$ENGINE" -xonotic -nosound -basedir "$BASEDIR" -userdir "$WORK/client" +vid_fullscreen 0 +vid_width "${size%x*}" +vid_height "${size#*x}" +set _touch_assets_ready 1 +exec run.cfg > "$WORK/client.log" 2>&1 & client_pid=$!
 wait "$client_pid" || { client_pid=; echo 'FAIL: client failed'; exit 1; }; client_pid=
 python3 - "$WORK/client.log" "$WORK/client" <<'PYTEST'
 import pathlib
