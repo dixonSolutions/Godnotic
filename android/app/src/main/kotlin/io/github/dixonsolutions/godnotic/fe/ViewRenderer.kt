@@ -459,6 +459,8 @@ class ViewRenderer(
             // Home has no header (the banner is its title): the space goes to the banner and cards
             bar.visibility = if (p["header"].obj().bool("hidden") || (kindHome && p["actions"].list().isEmpty())) View.GONE else View.VISIBLE
             body.fit = kindHome && !modal
+            // Home's cards: the outer margins are the gap between the cards (16 dp)
+            if (kindHome && !modal) body.setPadding(dp(16f), body.paddingTop, dp(16f), body.paddingBottom)
             body.requestLayout()
             titleV.visibility = if (kindHome) View.INVISIBLE else View.VISIBLE // Home shows the banner instead
             back.visibility = if (host.canBack() && !kindHome && !modal) View.VISIBLE else View.GONE
@@ -919,7 +921,6 @@ class ViewRenderer(
     private fun card(id: String, props: Map<String, Any?>, hero: Boolean): Entry {
         if (hero) return heroCard(id, props)
         val c = Kit.card(ctx, clickable = true, radiusDp = 16f)
-        if (id == "home/tiles/mp") c.tag = "mp-card" // FitBody gives it the taller allowance
         // photo cards: the picture on top; section cards: an icon slot beside the text
         val img = RoundImage(ctx, 0f)
         val bar = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -943,7 +944,9 @@ class ViewRenderer(
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)
         // Home's cards: the title, then the details as one line of equal cells (a table card: a line per server)
-        val summaryV = Kit.text(ctx, "", Theme.SP_CAPTION - 2f, Theme.TEXT_MUTED, lines = 1)
+        val summaryV = Kit.text(ctx, "", Theme.SP_CAPTION - 2f, Theme.TEXT_MUTED, lines = 1).apply {
+            minHeight = dp(CardTags.HEADER_LINE_DP); gravity = Gravity.CENTER_VERTICAL // the same line height as a chip row
+        }
         val tagsBox = Kit.column(ctx, 2f)
         texts.addView(badges); texts.addView(titleV); texts.addView(summaryV); texts.addView(tagsBox); texts.addView(subtitle); texts.addView(meta); texts.addView(actions)
         row.addView(slot, LinearLayout.LayoutParams(dp(52f), dp(52f)))
@@ -968,6 +971,11 @@ class ViewRenderer(
             subtitle.text = p.str("subtitle")
             val tagged = CardTags.tagged(p)
             col.textFirst = tagged
+            // Home's cards: the title always starts at the same top padding, whatever the text below it holds
+            row.gravity = if (tagged) Gravity.TOP else Gravity.CENTER_VERTICAL
+            // the same header on every card: title line, detail line, then the picture or the list at one height
+            titleV.minHeight = if (tagged) dp(CardTags.HEADER_TITLE_DP) else 0
+            row.minimumHeight = dp(if (tagged) CardTags.HEADER_DP else 88f)
             tagsBox.removeAllViews()
             val lines = CardTags.rows(p)
             if (p.str("display") == "table" || lines.isNotEmpty()) {
@@ -976,7 +984,7 @@ class ViewRenderer(
                 // across its full inner width (a TableRows measures and hides what does not fit)
                 val tbl = TableRows(ctx)
                 for (r in lines) tbl.addView(TagRow(ctx, r, Theme.TEXT, table = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(CardTags.tableRowDp(0f))))
-                tagsBox.addView(tbl, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                tagsBox.addView(tbl, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(CardTags.HEADER_GAP_DP) })
             } else {
                 summaryV.text = ""
                 CardTags.of(p).takeIf { it.isNotEmpty() }?.let { tagsBox.addView(TagRow(ctx, it, Theme.TEXT_MUTED)) }
@@ -2304,10 +2312,6 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
     /** Home, fitted: the cells share the exact height given (see FitBody); [stack]: one column. */
     var fill = false
     var stack = false
-    /** Home, landscape: the child at [tallIndex] (among the visible ones) is [tallH] tall, the others [otherH], top-aligned. */
-    var tallIndex = -1
-    var tallH = 0
-    var otherH = 0
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val width = MeasureSpec.getSize(wSpec)
         if (wrap) {
@@ -2330,13 +2334,10 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
         if (exactH) {
             val rows = max(1, (visible + cols - 1) / cols)
             val ch = max(0, (MeasureSpec.getSize(hSpec) - gap * (rows - 1)) / rows)
-            var vi = 0
             for (i in 0 until childCount) {
                 val c = getChildAt(i)
                 if (c.visibility == GONE) continue
-                val h = if (tallIndex >= 0 && !stack) (if (vi == tallIndex) tallH else otherH) else ch
-                c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
-                vi++
+                c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
             }
             setMeasuredDimension(width, MeasureSpec.getSize(hSpec))
             return
@@ -2379,7 +2380,7 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             for ((k, c) in row.withIndex()) {
                 val x = k * (cw + gap)
                 val left = if (rtl) width - x - cw else x
-                c.layout(left, y, left + cw, y + (if (tallIndex >= 0 && fill && !stack) c.measuredHeight else rowH))
+                c.layout(left, y, left + cw, y + rowH)
             }
             y += rowH + gap
             i += cols
