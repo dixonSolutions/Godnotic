@@ -76,10 +76,24 @@ buttons, InUse), `touch_hud.c` (DASH press/hold/release, `draw_dash_extras`), `m
 - ~/.cache/godnotic-work/dash-shots/real_tap.png (real server, real masks), real_up_blaster.png, real_fwd_blaster.png, real_*_devastator.png.
 Fixed from the first look: the capsule sat inside the stick area (moved above DASH), chips overlapped (spacing widened).
 
+## Android emulator (real public server, real adb input)
+Debug APK (x86_64, `assembleDebug` through heavy-run.sh, libsdl/mipmap/assets copied from chatev) installed on emulator-5580, game data pushed, joined
+`66.226.73.30:27301` (Sonoran Arena, stock maps, real ping) with `+connect` and played through the app: dismissed the first-run music prompt, Android's
+full-screen notice and the server's stats question by adb taps. Frames (JPG, 1400 px): ~/.cache/godnotic-work/dash-shots-android/
+- 0_after_prompt.jpg (joining), 0b_dialogs_gone.jpg, **1_capsule.jpg** (the match, DASH with its "DODGE" capsule above it, no overlap with the stick/buttons),
+  2_after_first_tap.jpg, **3_picker.jpg** (after `adb shell input swipe x y x y 3500`: the picker open, chips AUTO UP FORWARD / AUTO BLA, DASH highlighted),
+  4_after_pick.jpg, 5_boost_midair.jpg, 6_after_boost.jpg. Console excerpt (condump): console-excerpt.txt.
+- The FIRST `adb shell input tap` on DASH acted: exactly one `touch dash: tap: dodge (...)` line, then the 0.4 s watch ("no dodge": this server has no dodging).
+  Holding for the picker made no tap line (no misfire) and printed the chips at 0.134/0.204/0.274 x 0.380 and 0.134/0.187 x 0.315.
+- NOT captured: the slide onto UP and the boost on Android (frames 4-6 are the same view, nothing fired: the UP chip coordinates were not parsed because
+  my first console pull raced, so the script slid to (0,0)). The same sequence passed with real finger events on the desktop engine (ui2 case) and the boost
+  fired on the real server from the desktop client (blaster up/forward above).
+- Layout: the second picker row sits next to the small stock panel icons (trash/copy/download/share) at the left; they are close, not overlapping.
+
 ## NOT verified / not done
-- ANDROID: not built or run. A local debug APK needs the SDL Java glue, native deps and the data payload staged by android-build.sh /
-  android-stage-assets.sh (hundreds of MB over the metered link); my gradle attempt stopped at missing `org.libsdl.app`. No emulator screenshot,
-  no adb-input match on a real server from Android. `ci/dash` is pushed so CI compiles it. The tablet was not touched.
+- ANDROID, partly done (see "Android emulator" below): APK built and run on the emulator on a real public server; the first adb tap, the
+  long-press picker and the capsule are shown; the slide-to-UP pick and the boost on Android were NOT captured (a second run could not get an
+  emulator slot: 14 jobs queued, and one earlier run lost its emulator mid-run).
 - The native Kotlin/GTK settings screens: only the bridge fixture and the QC dialog source changed; no screenshot of the native Settings page
   (the QC menu dialog and bridge tree were not rendered to a picture).
 - Real-server runs were headless desktop, not through adb touch input; one real server gave usable boosts (Blaster only).
