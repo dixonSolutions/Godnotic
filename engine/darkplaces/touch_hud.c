@@ -513,6 +513,16 @@ static void set_key(const char *name, qbool *state, qbool down)
 
 static void spec_release(void);
 
+// The contacts the finger table still holds when the app has been away: their
+// releases never come, and TouchHUD_ReleaseAll alone let the next frame claim
+// them again as new fingers (a held hook, grenade or FIRE stuck on).
+void TouchHUD_DropContacts(void)
+{
+	int i;
+	for (i = 0; i < TOUCHHUD_ENGINE_FINGERS - 1; i++)
+		multitouch[i][0] = 0;
+}
+
 void TouchHUD_ReleaseAll(void)
 {
 	int i;
@@ -658,6 +668,13 @@ static void TouchHUD_TestFinger_f(cmd_state_t *cmd)
 
 static void TouchHUD_TestStrip_f(cmd_state_t *cmd);
 
+// Test hook: what the app leaving does to the fingers (touch_android.c).
+static void TouchHUD_TestAway_f(cmd_state_t *cmd)
+{
+	TouchHUD_ReleaseAll();
+	TouchHUD_DropContacts();
+}
+
 static void TouchHUD_TestView_f(cmd_state_t *cmd)
 {
 	Con_Printf("TESTVIEW yaw=%.2f pitch=%.2f\n", cl.viewangles[YAW], cl.viewangles[PITCH]);
@@ -677,6 +694,7 @@ void TouchHUD_Init(void)
 	Cmd_AddCommand(CF_CLIENT, "touch_move", TouchMove_f, "the touch stick's analog move from the CSQC HUD: touch_move <x right> <y down>, length 0..1");
 	Cmd_AddCommand(CF_CLIENT, "_touch_cancel_join", TouchHUD_CancelJoin_f, "stop a connect attempt (CANCEL on the loading screen)");
 	Cmd_AddCommand(CF_CLIENT, "_touch_test_finger", TouchHUD_TestFinger_f, "test hook: _touch_test_finger <slot> <0|1> [x y] puts a finger down or up");
+	Cmd_AddCommand(CF_CLIENT, "_touch_test_away", TouchHUD_TestAway_f, "test hook: release every finger as the app going to the background does");
 	Cmd_AddCommand(CF_CLIENT, "_touch_test_strip", TouchHUD_TestStrip_f, "test hook: print where the weapon strip's HOOK and NADE bands are (0..1)");
 	Cmd_AddCommand(CF_CLIENT, "_touch_test_view", TouchHUD_TestView_f, "test hook: print the view angles");
 	Cmd_AddCommand(CF_CLIENT, "_touch_restore_viewmodel", TouchHUD_RestoreViewmodel_f, "turn r_drawviewmodel back on once for installs that archived the old forced 0 (queued by Host_Init)");

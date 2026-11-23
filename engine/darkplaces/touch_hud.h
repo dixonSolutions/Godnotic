@@ -70,6 +70,7 @@ void TouchHUD_SyncStockPanels(void);
 
 // Release every key this module is holding (disconnect, menu, CSQC swap).
 void TouchHUD_ReleaseAll(void);
+void TouchHUD_DropContacts(void);
 // Called when a CSQC finished loading or was unloaded: the weapon list and the
 // WEAPONS stat index are read from its globals.
 void TouchHUD_ProgsChanged(void);

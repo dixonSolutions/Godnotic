@@ -46,7 +46,7 @@ press() { # t slot band frac label : press, report, release
   step "$(echo "$1 + 0.9" | bc)" "_touch_test_finger $2 0"
 }
 {
-  echo "0 cmd touch_join spectate"; echo "0.2 cmd togglemenu 0"; echo "4 cmd touch_join auto"; echo "6 cmd cmd give all"
+  echo "0 cmd touch_join spectate"; echo "0.2 cmd togglemenu 0"; echo "4 cmd touch_join auto"; echo "6 cmd cmd give all"; echo "6.5 cmd cmd god"; echo "32.2 cmd cmd give all"; echo "37.6 cmd cmd give all"; echo "37.7 cmd cmd god"; echo "37.8 cmd cmd god"
   echo "8 cmd _touch_test_strip"
 } > "$T"
 press 9 0 nade 0.5 nade_centre
@@ -62,9 +62,17 @@ step 25.5 "screenshot live-hook-held.png"; step 26 "_touch_test_finger 0 0"; ste
 step 33 "_touch_test_strip 0 nade 0.5"; step 33.5 "_touch_test_strip 1 hook 0.5"; step 34 "echo MARK both_nade_first"; step 34.05 "touch_hook_status"; step 34.1 "touch_nade_status"
 step 34.5 "screenshot live-nade-held.png"; step 35 "_touch_test_finger 0 0"; step 35 "_touch_test_finger 1 0"
 step 36.5 "screenshot live-waiting.png"
-step 37.5 "quit"
+# lost releases: a second down for the same finger id, then one up (an Android cancel or a lost up leaves the
+# finger table with a ghost slot no up clears); then the app going to the background with a finger held.
+# HOOK entry centre at 1920x1200 with 17 weapons: x 0.9620, y 0.8515 (the STRIP line is checked against it).
+echo "38 fdown 3 0.9620 0.8515" >> "$T"; echo "38.3 fdown 3 0.9620 0.8515" >> "$T"; step 39 "echo MARK dup_down"; step 39.05 "touch_hook_status"
+echo "40 fup 3 0.9620 0.8515" >> "$T"; step 40.4 "echo MARK dup_up_early"; step 40.45 "touch_hook_status"; step 41.2 "echo MARK dup_up"; step 41.25 "touch_hook_status"
+echo "42 fdown 3 0.9620 0.8515" >> "$T"; step 43 "echo MARK away_down"; step 43.05 "touch_hook_status"
+step 43.2 "_touch_test_away"; step 44.2 "echo MARK away_after"; step 44.25 "touch_hook_status"
+step 45.5 "quit"
 sort -n -s -k1,1 "$T" -o "$T"
 run nades '+set g_nades 1' "$T"
+[ -n "${KEEPLOG:-}" ] && cp "$WORK/nades.log" "$KEEPLOG"
 python3 - "$WORK/nades.log" <<'PY' || fail=1
 import re, sys
 log = open(sys.argv[1], errors='replace').read().splitlines()
@@ -104,6 +112,16 @@ hk, nd, st, av = held('both_hook_first')
 check(hk == 1 and nd == 0, 'hook held first: a finger on NADE is ignored (hook %s, nade %s)' % (hk, nd))
 hk, nd, st, av = held('both_nade_first')
 check(nd == 1 and hk == 0, 'nade held first: a finger on HOOK is ignored (hook %s, nade %s)' % (hk, nd))
+hk, nd, st, av = held('dup_down')
+check(hk == 1, 'a repeated down for the same finger keeps the hook held (hook %s)' % hk)
+hk, nd, st, av = held('dup_up')
+check(hk == 0, 'one up releases it: no ghost slot keeps the hook held (hook %s)' % hk)
+hk, nd, st, av = held('away_down')
+check(hk == 1, 'the hook is held by the finger before the app leaves (hook %s)' % hk)
+hk, nd, st, av = held('away_after')
+check(hk == 0, 'the app going to the background lets go of the hook and does not re-claim the ghost finger (hook %s)' % hk)
+m = re.search(r'STRIP .*hooktop=([0-9.]+) hookbot=([0-9.]+)', strip[0]) if strip else None
+check(bool(m) and abs((float(m.group(1)) + float(m.group(2))) / 2 - 0.8515) < 0.004, 'geometry for the finger tests still holds (HOOK entry centre 0.8515)')
 sys.exit(1 if bad else 0)
 PY
 echo "screens: build/touch-strip-live-*.png"

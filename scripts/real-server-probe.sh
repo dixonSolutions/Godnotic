@@ -37,7 +37,7 @@ if [ "$MODE" = tap ]; then
   Y=$(awk -v a="$w0y" -v r="$rowh" -v i=$i 'BEGIN{printf "%.4f", a+r*i}')
   echo "29 cmd echo MARK before"; echo "29.1 cmd touch_hud_state"; echo "29.15 cmd touch_hook_status"
   if [ -n "${SYNTH:-}" ]; then echo "30 cmd _touch_test_strip 0 hook 0.5"; else echo "30 fdown 1 $X $Y"; fi; echo "30.8 cmd echo MARK down"; echo "30.85 cmd touch_hook_status"; echo "30.9 cmd touch_nade_status"; echo "31 cmd screenshot real-$N-tapdown.png"
-  if [ -n "${SYNTH:-}" ]; then echo "32 cmd _touch_test_finger 0 0"; else echo "32 fup 1"; fi; echo "32.8 cmd echo MARK up"; echo "32.85 cmd touch_hook_status"; echo "32.9 cmd touch_hud_state"; echo "33 cmd screenshot real-$N-tapup.png"
+  if [ -n "${SYNTH:-}" ]; then echo "32 cmd _touch_test_finger 0 0"; else echo "32 fup 1 $X $Y"; fi; echo "32.8 cmd echo MARK up"; echo "32.85 cmd touch_hook_status"; echo "32.9 cmd touch_hud_state"; echo "33 cmd screenshot real-$N-tapup.png"
   } >> "$T"
 fi
 echo "45 cmd quit" >> "$T"
