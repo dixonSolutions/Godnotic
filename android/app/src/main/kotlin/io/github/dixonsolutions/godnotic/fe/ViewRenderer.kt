@@ -1253,6 +1253,7 @@ class ViewRenderer(
                         Icons.drawable("fullscreen", dp(24f), Theme.TEXT)?.let { setCompoundDrawablesRelativeWithIntrinsicBounds(it, null, null, null) }
                         background = Theme.rounded(0xAA050B18.toInt(), dp(24f).toFloat())
                         contentDescription = "Fullscreen"
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                         tag = "fullscreen"
                         setOnClickListener { open() }
                     }
@@ -1711,13 +1712,21 @@ class ViewRenderer(
         // Touch: the player name shows its colours, and its keypad types into this same field (NameField.kt)
         val isName = props.str("kind") == "name"
         var keypadView: View? = null
+        // the name as the game shows it, under the field (only when it has codes): the player sees the result, not the codes
+        val previewV = Kit.text(ctx, "", Theme.SP_TITLE, Theme.TEXT, bold = true).apply { visibility = View.GONE; setPadding(dp(14f), 0, 0, 0) }
+        fun updatePreview(t: String) {
+            val r = NameField.rendered(t)
+            previewV.text = r ?: ""
+            previewV.visibility = if (r == null) View.GONE else View.VISIBLE
+        }
         if (isName) {
+            col.addView(previewV, col.indexOfChild(line) + 1)
             input.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: android.text.Editable?) { if (s != null) NameField.style(s) }
+                override fun afterTextChanged(s: android.text.Editable?) { if (s != null) { NameField.style(s); updatePreview(s.toString()) } }
             })
-            input.text?.let { NameField.style(it) }
+            input.text?.let { NameField.style(it); updatePreview(it.toString()) }
         }
         fun keyTapped(key: String) {
             val max = e.props.int("maxLength").takeIf { it > 0 } ?: NameColour.MAX_LEN

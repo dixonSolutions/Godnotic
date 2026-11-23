@@ -69,6 +69,33 @@ object NameField {
         }
     }
 
+    /**
+     * The name as the game shows it: the codes gone, each letter in its colour, game-font glyphs as the game
+     * draws them. The line under the field, so the player sees the result and not the codes. Null when
+     * the name has no codes or glyphs (nothing to show beyond the field itself).
+     */
+    fun rendered(text: String): CharSequence? {
+        val segs = NameColour.segments(text)
+        if (segs.none { it.kind != NameColour.Kind.TEXT }) return null
+        val sb = android.text.SpannableStringBuilder()
+        for (seg in segs) {
+            val start = sb.length
+            when (seg.kind) {
+                NameColour.Kind.CODE -> continue
+                NameColour.Kind.TEXT -> {
+                    sb.append(text.substring(seg.start, seg.end).replace("^^", "^"))
+                    sb.setSpan(ForegroundColorSpan(Color.parseColor(seg.hex)), start, sb.length, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    if (NameColour.needsBacking(seg.hex)) sb.setSpan(BackgroundColorSpan(BACKING), start, sb.length, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                NameColour.Kind.GLYPH -> NameColour.glyphLook(text[seg.start])?.let {
+                    sb.append(it.text)
+                    sb.setSpan(ForegroundColorSpan(if (it.gold) GOLD else Color.parseColor(seg.hex)), start, sb.length, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+        }
+        return sb
+    }
+
     /** The keypad: three groups behind a segmented control, keys of at least 48 dp, three rows high and scrolling. */
     fun keypad(ctx: Context, groups: List<Map<String, Any?>>, insert: (String) -> Unit): View {
         val root = Kit.column(ctx, 8f)

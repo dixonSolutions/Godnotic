@@ -403,6 +403,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         if (addr.isNotEmpty() && addr == joinAddress && joinLabel.isNotEmpty()) joinLabel else addr
 
     private fun onConnect(c: Map<String, Any?>) {
+        if (c.str("stage") in setOf("connecting", "loading", "joining")) { hideKeyboard(); root.clearFocus() } // the system keyboard never stays up over a join or a match
         // the snapshot names the server only while joining or playing: keep it for the
         // password prompt and the Could not join dialog that come after
         if (c.str("address").isNotEmpty()) { joinAddress = c.str("address"); joinLabel = c.str("label") }
@@ -806,6 +807,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
 
     private fun setVisible(show: Boolean) {
         wantVisible = show
+        if (!show) hideKeyboard()
         val v = if (show && screens.isNotEmpty()) View.VISIBLE else View.GONE
         if (root.visibility != v) {
             root.visibility = v
