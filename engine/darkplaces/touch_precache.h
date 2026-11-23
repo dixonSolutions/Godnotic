@@ -16,6 +16,9 @@ void TouchPre_Sub(const char *stage, int n, int m);
 // A part of the world load just finished; adds its time to the profile and
 // moves the sub-progress on to the next part.
 void TouchPre_Mark(const char *part);
+// TouchPre_Mark only on the first pass of a loop (i == 0), so an upstream
+// "if (i == 0) one statement" keeps its shape
+void TouchPre_MarkFirst(int i, const char *part);
 
 // The values the front end publishes ("load_stage", "load_n", "load_m",
 // "load_sub"): stage is "" outside a precache.

@@ -7856,12 +7856,10 @@ static void Mod_Q3BSP_Load(model_t *mod, void *buffer, void *bufferend)
 		Mod_MakeCollisionBIH(mod, true, &mod->render_bih);
 
 		// generate VBOs and other shared data before cloning submodels
+		TouchPre_MarkFirst(i, "submodels"); // Touch:
 		if (i == 0)
-		{
-			TouchPre_Mark("submodels"); // Touch:
 			Mod_BuildVBOs();
-			TouchPre_Mark("vbos"); // Touch:
-		}
+		TouchPre_MarkFirst(i, "vbos"); // Touch:
 	}
 	mod = loadmodel;
 

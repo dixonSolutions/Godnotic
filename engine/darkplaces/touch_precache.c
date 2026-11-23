@@ -315,3 +315,9 @@ void TouchPre_PrintSummary(void)
 	for (i = 0; i < tp_nparts; i++)
 		Con_Printf("PRECACHE world part %-12s %8.1f ms (cpu %.1f)\n", tp_parts[i].name, tp_parts[i].ms, tp_parts[i].cpu);
 }
+
+void TouchPre_MarkFirst(int i, const char *part)
+{
+	if (i == 0)
+		TouchPre_Mark(part);
+}
