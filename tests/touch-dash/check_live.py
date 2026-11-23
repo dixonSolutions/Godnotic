@@ -108,8 +108,8 @@ if mode == "ui1":
     check(any(l.startswith("MARK picker") for l in log), "the run reached the picker")
     chips = re.findall(r"picker chip (\w+) at ([\d.]+) ([\d.]+)", "\n".join(log))
     names = [c[0] for c in chips]
-    check(all(n in names for n in ("AUTO", "UP", "FORWARD")), f"holding DASH opens the picker with the direction chips ({names})")
-    check(any(n in names for n in ("BLA", "DEV")), "and a chip for the weapon held")
+    check(all(n in names for n in ("Auto", "Up", "Forward")), f"holding DASH opens the picker with the direction chips ({names})")
+    check(any(n in names for n in ("Blaster", "Devastator")), "and a chip for the weapon held")
     check(not any("tap:" in l for l in section("press")), "holding DASH does not dash")
     check(any(re.match(r"touch dash: boost 1", l) for l in log), "the weapon boost setting is on by default")
 if mode == "qc":
@@ -118,7 +118,7 @@ if mode == "ui2":
     d = [l for l in log if l.startswith("DIR ")]
     check(bool(d) and d[0].startswith("DIR 1 "), f"sliding onto UP and letting go sets the direction to up ({d[:1]})")
     if len(d) > 1:
-        check("[blaster]" in d[1], f"and onto BLA sets the weapon ({d[1]})")
+        check("[blaster]" in d[1], f"and onto Blaster sets the weapon ({d[1]})")
 
 print(f"check_live {mode}:", "FAILED" if fails else "all passed")
 sys.exit(1 if fails else 0)

@@ -165,8 +165,8 @@ if want ui; then
 	ui_client ui1 "$WORK/case_ui1.txt" "$UIQ; connect 127.0.0.1:$p; defer 30 \"set xt_go 1\""
 	python3 "$T/check_live.py" ui1 "$WORK/ui1/client.log" || fail=1
 	# second run: slide onto the chips the first run printed and let go
-	read -r UPX UPY < <(sed -n 's/.*picker chip UP at \([0-9.]*\) \([0-9.]*\).*/\1 \2/p' "$WORK/ui1/client.log" | head -1)
-	read -r BLX BLY < <(sed -n 's/.*picker chip BLA at \([0-9.]*\) \([0-9.]*\).*/\1 \2/p' "$WORK/ui1/client.log" | head -1)
+	read -r UPX UPY < <(sed -n 's/.*picker chip Up at \([0-9.]*\) \([0-9.]*\).*/\1 \2/p' "$WORK/ui1/client.log" | head -1)
+	read -r BLX BLY < <(sed -n 's/.*picker chip Blaster at \([0-9.]*\) \([0-9.]*\).*/\1 \2/p' "$WORK/ui1/client.log" | head -1)
 	if [ -n "${UPX:-}" ]; then
 		{
 			echo "0 cmd touch_join auto"; echo "0.3 cmd togglemenu 0"; echo "1.5 cmd touch_join auto"; echo "1.8 cmd togglemenu 0"

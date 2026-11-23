@@ -2832,10 +2832,19 @@ static void draw_dash_extras(float a)
 	TouchDash_NoteButton(cx, cy, r);
 	label = TouchDash_Label();
 	if (label[0] && !TouchDash_PickerOpen())
-		widget_capsule(cx, cy - r * 1.45f, r * 0.95f, r * 0.32f, label, false, false, a * 0.85f, C_ACCENT);
+	{
+		// as wide as the text and a margin each side
+		float lhy = r * 0.32f, lhx = max(r * 0.95f, lhy * (0.8f + 0.27f * (float)strlen(label)));
+		widget_capsule(cx, cy - r * 1.45f, lhx, lhy, label, false, false, a * 0.85f, C_ACCENT);
+	}
 	n = TouchDash_Chips(chips, 10);
 	for (i = 0; i < n; i++)
-		widget_capsule(chips[i].x, chips[i].y, chips[i].hx, chips[i].hy, chips[i].label, chips[i].hot, chips[i].current, a, C_ACCENT);
+	{
+		// the choice in force is a ring round the chip, never a mark over its text
+		widget_capsule(chips[i].x, chips[i].y, chips[i].hx, chips[i].hy, chips[i].label, chips[i].hot, false, a, C_ACCENT);
+		if (chips[i].current)
+			shape_capsule_ring_stroke(chips[i].x, chips[i].y, chips[i].hx + chips[i].hy * 0.14f, chips[i].hy + chips[i].hy * 0.14f, chips[i].hy * 0.16f, C_ACCENT, a * A_RIM_ACTIVE);
+	}
 }
 
 static void draw_pill(const char *xk, float dx, const char *yk, float dy, const char *sk, float ds, const char *ak, float da, const char *label, qbool pressed, float a)

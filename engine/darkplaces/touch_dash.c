@@ -735,18 +735,18 @@ void TouchDash_Frame(void)
 		td.pv_next = now + 0.3;
 		if (td.pv.action == TD_BOOST && td.pv.weapon >= 0)
 		{
-			static const char *const abbr[][2] = { { "devastator", "DEV" }, { "blaster", "BLA" }, { "electro", "ELE" }, { "hagar", "HAG" } };
+			static const char *const names[][2] = { { "devastator", "Devastator" }, { "blaster", "Blaster" }, { "electro", "Electro" }, { "hagar", "Hagar" } };
 			const char *a = "";
 			int i;
 			for (i = 0; i < 4; i++)
-				if (!strcmp(abbr[i][0], touch_weapons[td.pv.weapon].netname))
-					a = abbr[i][1];
-			dpsnprintf(td.label, sizeof(td.label), "%s %s", a, td.pv.dir == TD_UP ? "UP" : "FWD");
+				if (!strcmp(names[i][0], touch_weapons[td.pv.weapon].netname))
+					a = names[i][1];
+			dpsnprintf(td.label, sizeof(td.label), "%s %s", a, td.pv.dir == TD_UP ? "up" : "forward");
 		}
 		else if (td.pv.action == TD_DODGE)
-			dp_strlcpy(td.label, "DODGE", sizeof(td.label));
+			dp_strlcpy(td.label, "Dodge", sizeof(td.label));
 		else
-			dp_strlcpy(td.label, "-", sizeof(td.label));
+			dp_strlcpy(td.label, "No boost", sizeof(td.label));
 	}
 	else if (!cl_touch_dash_boost.integer || blocked)
 	{
@@ -799,55 +799,58 @@ void TouchDash_Press(double now)
 	}
 }
 
-static const struct { const char *label; int dir; } dir_chips[] = { { "AUTO", 0 }, { "UP", 1 }, { "FORWARD", 2 } };
+static const struct { const char *label; int dir; } dir_chips[] = { { "Auto", 0 }, { "Up", 1 }, { "Forward", 2 } };
+static const char *const wep_names[] = { "", "devastator", "blaster", "electro", "hagar" };
+static const char *const wep_shown[] = { "Auto", "Devastator", "Blaster", "Electro", "Hagar" };
 
+// A chip as wide as its text and a margin each side, so no label touches an edge.
+static float chip_hx(const char *label, float hy)
+{
+	return hy * (0.8f + 0.27f * (float)strlen(label));
+}
+
+static void chip_set(touch_dash_chip_t *c, const char *label, float x_left, float y, float hy, qbool current)
+{
+	memset(c, 0, sizeof(*c));
+	dp_strlcpy(c->label, label, sizeof(c->label));
+	c->hx = chip_hx(label, hy);
+	c->hy = hy;
+	c->x = x_left + c->hx;
+	c->y = y;
+	c->current = current;
+	c->hot = fabs(td.fx - c->x) <= c->hx && fabs(td.fy - c->y) <= c->hy;
+}
+
+// Two rows above DASH: the direction, and the weapon. Their left edge stays right of the
+// chat log's icon row (the stock chat area docks four small icons at the screen's left), and
+// the rows are a full chip apart.
 int TouchDash_Chips(touch_dash_chip_t *out, int max)
 {
 	int n = 0, i;
-	float hx = td.br * 0.92f, hy = td.br * 0.52f, gap = td.br * 0.4f, x0, y;
-	float cur_w = -1;
-	(void)cur_w;
+	float hy = td.br * 0.5f, gap = td.br * 0.3f, left0, left, y;
 	if (!td.picker || max < 8)
 		return 0;
-	x0 = max(hx + 6, td.bx - td.br);
-	y = td.by - td.br * 2.0f;
+	left0 = max(td.bx - td.br, 0.14f * max(1.0f, vid_conwidth.value));
+	left = left0;
+	y = td.by - td.br * 2.1f;
 	for (i = 0; i < 3 && n < max; i++, n++)
 	{
-		touch_dash_chip_t *c = &out[n];
-		memset(c, 0, sizeof(*c));
-		dp_strlcpy(c->label, dir_chips[i].label, sizeof(c->label));
-		c->hx = hx;
-		c->hy = hy;
-		c->x = x0 + i * (2 * hx + gap);
-		c->y = y;
-		c->current = cl_touch_dash_dir.integer == dir_chips[i].dir;
-		c->hot = fabs(td.fx - c->x) <= c->hx && fabs(td.fy - c->y) <= c->hy;
+		chip_set(&out[n], dir_chips[i].label, left, y, hy, cl_touch_dash_dir.integer == dir_chips[i].dir);
+		left += 2 * out[n].hx + gap;
 	}
+	y = td.by - td.br * 3.4f;
+	left = left0;
+	for (i = 0; i < 5 && n < max; i++)
 	{
-		static const char *const names[] = { "", "devastator", "blaster", "electro", "hagar" };
-		static const char *const shown[] = { "AUTO", "DEV", "BLA", "ELE", "HAG" };
-		int k;
-		y = td.by - td.br * 3.3f;
-		for (k = 0, i = 0; k < 5 && n < max; k++)
+		if (i > 0)
 		{
-			touch_dash_chip_t *c;
-			if (k > 0)
-			{
-				int j = tw_index(names[k]), h = j >= 0 ? hud_index_of(j) : -1;
-				if (h < 0 || !TouchHUD_WeaponOwned(h))
-					continue;
-			}
-			c = &out[n++];
-			memset(c, 0, sizeof(*c));
-			dp_strlcpy(c->label, shown[k], sizeof(c->label));
-			c->hx = hx * 0.7f;
-			c->hy = hy;
-			c->x = max(c->hx + 6, td.bx - td.br) + i * (2 * c->hx + gap);
-			c->y = y;
-			c->current = !strcmp(cl_touch_dash_weapon.string, names[k]);
-			c->hot = fabs(td.fx - c->x) <= c->hx && fabs(td.fy - c->y) <= c->hy;
-			i++;
+			int j = tw_index(wep_names[i]), h = j >= 0 ? hud_index_of(j) : -1;
+			if (h < 0 || !TouchHUD_WeaponOwned(h))
+				continue;
 		}
+		chip_set(&out[n], wep_shown[i], left, y, hy, !strcmp(cl_touch_dash_weapon.string, wep_names[i]));
+		left += 2 * out[n].hx + gap;
+		n++;
 	}
 	return n;
 }
@@ -897,12 +900,10 @@ void TouchDash_Release(float px, float py)
 			Cvar_SetValueQuick(&cl_touch_dash_dir, dir_chips[i].dir);
 		else
 		{
-			static const char *const wn[] = { "", "devastator", "blaster", "electro", "hagar" };
-			static const char *const sh[] = { "AUTO", "DEV", "BLA", "ELE", "HAG" };
 			int k;
 			for (k = 0; k < 5; k++)
-				if (!strcmp(sh[k], chips[i].label))
-					Cvar_SetQuick(&cl_touch_dash_weapon, wn[k]);
+				if (!strcmp(wep_shown[k], chips[i].label))
+					Cvar_SetQuick(&cl_touch_dash_weapon, wep_names[k]);
 		}
 		td.pv_next = 0;
 		debug(1, "picked %s (dir %d, weapon \"%s\")", chips[i].label, cl_touch_dash_dir.integer, cl_touch_dash_weapon.string);

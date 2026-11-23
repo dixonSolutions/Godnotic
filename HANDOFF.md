@@ -16,8 +16,8 @@ The DASH button (and the port's CSQC DASH, and `touch_dash [up|forward|auto] [we
   no open drop over 320 u; the weapon in hand preferred (switch delay counted);
 - executes: switch weapon, turn the view, re-plan from the real state once the weapon is up, fire 0.1 s, turn back, take the
   old weapon back (auto-shoot/auto-switch stand down meanwhile);
-- see and pick: a capsule above DASH ("BLA UP", "DEV FWD", "DODGE", "-"); long-press (0.35 s) opens chips AUTO/UP/FORWARD and
-  AUTO + the boost weapons held; slide and let go. A tap then acts on release (`cl_touch_dash_longpress 0` = act on press, no picker).
+- see and pick: a capsule above DASH ("Blaster up", "Devastator forward", "Dodge", "No boost"); long-press (0.35 s) opens chips Auto/Up/Forward and
+  Auto + the boost weapons held (Devastator, Blaster, Electro, Hagar); slide and let go. A tap then acts on release (`cl_touch_dash_longpress 0` = act on press, no picker).
 - Settings > Controls > Touch controls > Buttons (QC dialog and bridge): "Weapon boost on DASH", default ON (`cl_touch_dash_boost`).
   Off = exactly the old `+dodge`. All tunables are `cl_touch_dash_*` cvars (docs/CONTROLS.md, "Smart DASH").
 
@@ -115,3 +115,17 @@ full-screen notice and the server's stats question by adb taps. Frames (JPG, 140
 - The stock-data flatpak the coordination notes mention is gone (`~/.local/share/flatpak/.../xonotic/data` missing, `godnotic-audit/base` pk3 links
   dangle), so the stock-server suites cannot run; I used the 20261107 packs plus the audit progs as a foreign-CSQC server.
 - Forward Devastator boost after another-level landing: one MISS in the numbers above.
+
+## Picker polish after the coordinator's look at the Android frames (this commit)
+- The choice in force is a RING round its chip (the old pip overlapped "Auto"); a finger over a chip fills it.
+- Chips are as wide as their text plus a margin (no more "FORWARD" touching its edges); readable names (Auto, Up, Forward, Devastator,
+  Blaster, Electro, Hagar) instead of BLA/DEV; the indicator capsule reads "Blaster up" / "Devastator forward" / "Dodge" / "No boost" and widens to its text.
+- The picker's left edge stays right of the chat-log icon row (>= 14% of the screen width) and its rows are a full chip apart.
+- The four small trash/copy/download/share icons are NOT mine: they are the chat-log actions from `engine/darkplaces/touch_chatlog.c` (main, chat work:
+  commits 20ca67d9 "Chat: live typing line, @mention picker..., chat log with fade, scroll-back and export", 25015175 "Chat log icons: dock on the chat box",
+  9ff1af6d "Chat polish: crisp pixel-size log icons hidden on an empty log", 4bfede6d "Chat log icons: draw the pixel-size art as runs of device pixels").
+  They show whenever the chat log holds a line (`TouchChatLog_IconsShown`), and a live match always puts lines in it (join, flag and kill messages), so they sit in
+  the top-left under the health panel for the whole match. Left as they are.
+- Desktop re-run after the merge with origin/main: dash 50/50, boost 42, hook 88, dodge 43; live suite on/off/floor/ui/qc all passed (6 forced boosts each,
+  one MISS in the "on" run: Blaster up, 257 units below the predicted level); srvinfo test passed; uibridge: engine_test, input_test, firstrun passed (settings fixture DRIFT is
+  there before this work); cargo 23 + 13; `make sv-release` and `build-web.sh --engine-only` built; debug APK built.
