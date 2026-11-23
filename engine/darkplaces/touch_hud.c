@@ -22,6 +22,7 @@ applies to both.
 #include "touch_aim.h"
 #include "touch_hook.h"
 #include "touch_nade.h"
+#include "touch_strip.h"
 #include "touch_turn.h"
 #include "touch_ui.h"
 #include "touch_altfire.h"
@@ -969,7 +970,7 @@ static int num_weapons = 0;
 // code), -1 on any other server: touch_altfire.h then judges from the stock
 // balance.
 static int stat_altfire = -1;
-static float fire2_fade, zoom_fade, hook_fade;
+static float fire2_fade, zoom_fade;
 // The CSQC's viewmodels[0] (the wepent) tells the held weapon and its clip,
 // which no stat does: global offset plus the fields read from it each frame.
 typedef struct qcfield_s { int ofs; int type; } qcfield_t;
@@ -1311,8 +1312,10 @@ typedef struct strip_s
 	float half_w, half_h;  // plate half size (rows, grip and pad)
 	float row_w, row_h, pad;
 	float top;             // first row's top
-	int nade;              // a NADE row under the weapons (the nades mutator)
+	int hook;              // the HOOK entry after the weapons (touch_hook.c)
+	int nade;              // a NADE action row under the list (the nades mutator)
 	float nade_top;        // its top
+	float act_h;           // its height
 	float grip_top;        // the grip's top (the last row's bottom)
 } strip_t;
 
@@ -1322,15 +1325,18 @@ static int strip_layout(strip_t *st)
 	float total, w = ui_w(), h = ui_h();
 	int i;
 	st->n = 0;
+	// The HOOK entry stands for the Hook weapon too (it is held, not selected),
+	// so that weapon is not also a row of its own.
+	st->hook = TouchHook_RowState() != TOUCH_HOOKROW_HIDDEN;
 	for (i = 0; i < num_weapons && st->n < MAX_WEAPONS; i++)
-		if (weapons[i].impulse >= 0 && weapon_owned(i))
+		if (weapons[i].impulse >= 0 && weapon_owned(i) && !(st->hook && !strcmp(weapons[i].name, "hook")))
 			st->index[st->n++] = i;
-	// The NADE row's place is kept for as long as the server has nades, so
-	// the weapon rows never move when a grenade comes or goes.
+	// The HOOK entry's and the NADE row's places are kept for as long as the
+	// server has a hook / nades, so the weapon rows never move when one comes or goes.
 	st->nade = TouchNade_State() != TOUCH_NADE_HIDDEN;
 	// Fit: a strip taller than WEP_FIT_H of the screen shrinks, draw and
 	// hit-test alike, so no row ever runs off it.
-	total = (st->n + st->nade) * WEP_ROW_H + WEP_GRIP_H + 2 * WEP_PAD;
+	total = TouchStrip_Units(st->n, st->hook, st->nade) + TSTRIP_GRIP_H + 2 * TSTRIP_PAD;
 	st->u = ui_scale() * weplist_scale();
 	if (total * st->u > WEP_FIT_H * h)
 		st->u = WEP_FIT_H * h / total;
@@ -1343,9 +1349,10 @@ static int strip_layout(strip_t *st)
 	st->cy = bound(WEP_MARGIN_TOP * h + st->half_h, st->cy, (1 - WEP_MARGIN_Y) * h - st->half_h);
 	st->cx = bound(st->half_w, st->cx, w - st->half_w);
 	st->top = st->cy - st->half_h + st->pad;
-	st->nade_top = st->top + st->n * st->row_h;
-	st->grip_top = st->top + (st->n + st->nade) * st->row_h;
-	return st->n;
+	st->act_h = TSTRIP_ACT_H * st->u;
+	st->nade_top = st->top + (st->n + st->hook) * st->row_h + TSTRIP_GAP * st->u;
+	st->grip_top = st->nade ? st->nade_top + st->act_h : st->top + (st->n + st->hook) * st->row_h;
+	return st->n + st->hook + st->nade;
 }
 
 // Whether this module draws the strip this frame: under a server's CSQC, in
@@ -1375,37 +1382,38 @@ static qbool grip_hit(float px, float py)
 		&& py >= st.grip_top && py <= st.grip_top + max(WEP_GRIP_H * st.u, WEP_GRIP_GRAB * screen_min());
 }
 
-// Tap on a strip row: the row's impulse, or -1. Same pad as Touch_Weapons_HitImpulse.
+// What a finger at (px, py) lands on in the strip (touch_strip.h): one band,
+// never two. *row is the weapon row for TSTRIP_WEAPON.
+static int strip_kind(float px, float py, int *row)
+{
+	strip_t st;
+	tstrip_t g;
+	int ns = TouchNade_State();
+	if (row)
+		*row = -1;
+	if (!strip_drawn() || strip_layout(&st) <= 0)
+		return TSTRIP_MISS;
+	g.n = st.n;
+	g.hook = st.hook;
+	g.hook_press = st.hook && (TouchHook_RowState() == TOUCH_HOOKROW_READY || TouchHook_RowState() == TOUCH_HOOKROW_HELD)
+		&& !role_owned(ROLE_NADE);
+	g.nade = st.nade;
+	g.nade_press = st.nade && (ns == TOUCH_NADE_READY || ns == TOUCH_NADE_COOKING) && !role_owned(ROLE_HOOK);
+	g.u = st.u;
+	g.cx = st.cx;
+	g.top = st.top;
+	g.row_w = st.row_w;
+	return TouchStrip_Hit(&g, px, py, row);
+}
+
+// Tap on a strip weapon row: the row's impulse, or -1.
 static int strip_hit(float px, float py)
 {
 	strip_t st;
-	float pad;
-	int i;
-	if (!strip_drawn() || strip_layout(&st) <= 0)
+	int row;
+	if (strip_kind(px, py, &row) != TSTRIP_WEAPON || strip_layout(&st) <= 0)
 		return -1;
-	pad = min(st.row_w, st.row_h) * 0.12f;
-	for (i = 0; i < st.n; i++)
-	{
-		float y = st.top + i * st.row_h;
-		if (px >= st.cx - st.row_w * 0.5f - pad && px <= st.cx + st.row_w * 0.5f + pad && py >= y - pad && py <= y + st.row_h + pad)
-			return weapons[st.index[i]].impulse;
-	}
-	return -1;
-}
-
-// On the NADE row, while there is a grenade to throw or one cooking.
-static qbool nade_hit(float px, float py)
-{
-	strip_t st;
-	float pad;
-	int state = TouchNade_State();
-	if (state != TOUCH_NADE_READY && state != TOUCH_NADE_COOKING)
-		return false;
-	if (!strip_drawn() || strip_layout(&st) <= 0 || !st.nade)
-		return false;
-	pad = min(st.row_w, st.row_h) * 0.12f;
-	return px >= st.cx - st.row_w * 0.5f - pad && px <= st.cx + st.row_w * 0.5f + pad
-		&& py >= st.nade_top - pad && py <= st.nade_top + st.row_h + pad;
+	return weapons[st.index[row]].impulse;
 }
 
 static void draw_rrect(float cx, float cy, float hx, float hy, const float *rgb, float a)
@@ -1451,30 +1459,44 @@ static void draw_weapon_strip(float a)
 			a * (current ? A_INK : A_INK * 0.55f)))
 			shape_label((icon_left + icon_right) * 0.5f, y, num_fs, wd->name, C_INK, a * (current ? A_INK : A_INK * 0.55f));
 	}
+	// The HOOK entry, after the weapons: the hook is picked from this list.
+	// Held while the finger is down (or the fall rescue holds it); faint when
+	// the server has a hook but none is to hand (no fuel).
+	if (st.hook)
+	{
+		int rs = TouchHook_RowState();
+		float y = st.top + st.n * h + h * 0.5f, left = st.cx - w * 0.5f + pad;
+		float icon_left = left + num_slot + pad, icon_right = st.cx + w * 0.5f - pad;
+		float ia = rs == TOUCH_HOOKROW_EMPTY ? A_INK * 0.25f : (rs == TOUCH_HOOKROW_HELD ? A_INK : A_INK * 0.55f);
+		if (rs == TOUCH_HOOKROW_HELD || role_owned(ROLE_HOOK))
+			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+		shape_label_right(left + num_slot, y, num_fs, "H", C_INK, a * ia * 0.7f);
+		shape_label((icon_left + icon_right) * 0.5f, y, num_fs, "HOOK", C_INK, a * ia);
+	}
 	// The NADE row: the grenade icon and its bonus count; while it cooks, the
 	// fuse spent fills it from the left, turning red near the end; while the
 	// next is on its way, a faint label.
 	if (st.nade)
 	{
 		int state = TouchNade_State(), bonus = TouchNade_Bonus();
-		float y = st.top + st.n * h + h * 0.5f, left = st.cx - w * 0.5f + pad;
+		float y = st.nade_top + st.act_h * 0.5f, ah = st.act_h, left = st.cx - w * 0.5f + pad;
 		float icon_left = left + num_slot + pad, icon_right = st.cx + w * 0.5f - pad;
 		float ia = state == TOUCH_NADE_WAITING ? A_INK * 0.25f : A_INK;
 		if (state == TOUCH_NADE_COOKING)
 		{
 			float t = TouchNade_Timer();
 			const float *c = t > 0.6f ? C_DANGER : C_ACCENT;
-			DrawQ_Fill(st.cx - w * 0.5f, y - h * 0.5f, w * t, h, c[0], c[1], c[2], a * A_SURFACE_ACTIVE, 0);
+			DrawQ_Fill(st.cx - w * 0.5f, y - ah * 0.5f, w * t, ah, c[0], c[1], c[2], a * A_SURFACE_ACTIVE, 0);
 		}
 		else if (role_owned(ROLE_NADE))
-			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+			draw_rrect(st.cx, y, w * 0.5f, ah * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
 		if (bonus > 0)
 		{
 			char num[8];
 			dpsnprintf(num, sizeof(num), "%d", bonus);
 			shape_label_right(left + num_slot, y, num_fs, num, C_INK, a * ia);
 		}
-		if (!skin_pic_fit(skin_pic("nade_normal"), (icon_left + icon_right) * 0.5f, y, icon_right - icon_left, h - pad * 2, a * ia))
+		if (!skin_pic_fit(skin_pic("nade_normal"), (icon_left + icon_right) * 0.5f, y, icon_right - icon_left, ah - pad * 2, a * ia))
 			shape_label((icon_left + icon_right) * 0.5f, y, num_fs, "NADE", C_INK, a * ia);
 	}
 	// The grip: two short lines across the middle of its band.
@@ -1614,10 +1636,19 @@ static int assign_role(float px, float py)
 	// (Touch_Weapons_Hit).
 	if (grip_hit(px, py))
 		return role_owned(ROLE_WEPGRIP) ? ROLE_IGNORED : ROLE_WEPGRIP;
-	if (nade_hit(px, py))
+	switch (strip_kind(px, py, NULL))
+	{
+	case TSTRIP_NADE:
 		return role_owned(ROLE_NADE) ? ROLE_IGNORED : ROLE_NADE;
-	if (strip_hit(px, py) >= 0)
+	case TSTRIP_HOOK:
+		return role_owned(ROLE_HOOK) ? ROLE_IGNORED : ROLE_HOOK;
+	case TSTRIP_WEAPON:
 		return ROLE_WEPSTRIP;
+	case TSTRIP_DEAD:
+		return ROLE_IGNORED; // a row (or the gap) that cannot be pressed now keeps the finger: no neighbour gets it
+	default:
+		break;
+	}
 	if (in_edge_deadzone(px, py))
 		return ROLE_IGNORED;
 	if (!cv("vid_mouse_confirmed", 0) && cv("touch_fire_visible", 1) && hit_circle(px, py, cv("touch_fire_x", 0.855f), cv("touch_fire_y", 0.680f), cv("touch_fire_size", 0.160f), 1.15f))
@@ -1634,8 +1665,6 @@ static int assign_role(float px, float py)
 		return ROLE_WEAPON;
 	if (zoom_available() && hit_circle(px, py, cv("touch_zoom_x", 0.860f), cv("touch_zoom_y", 0.480f), cv("touch_zoom_size", 0.100f), 1.10f))
 		return ROLE_ZOOM;
-	if (TouchHook_ButtonShown() && hit_circle(px, py, cv("touch_hook_x", 0.765f), cv("touch_hook_y", 0.615f), cv("touch_hook_size", 0.100f), 1.10f))
-		return ROLE_HOOK;
 	if (TouchTurn_ButtonShown() && hit_circle(px, py, cv("touch_turn_x", 0.300f), cv("touch_turn_y", 0.840f), cv("touch_turn_size", 0.085f), 1.10f))
 		return ROLE_TURN;
 	if (cv("touch_reload_visible", 0) && hit_circle(px, py, cv("touch_reload_x", 0.720f), cv("touch_reload_y", 0.480f), cv("touch_reload_size", 0.100f), 1.10f))
@@ -2368,7 +2397,8 @@ void TouchHUD_Frame(void)
 			if (f->role == ROLE_WEPGRIP)
 			{
 				strip_t st;
-				f->grab_n = strip_layout(&st);
+				strip_layout(&st);
+				f->grab_n = (int)(TouchStrip_Units(st.n, st.hook, st.nade) + 0.5f);
 				f->grab_u = st.u;
 			}
 			if (f->role == ROLE_RELOAD)
@@ -2511,7 +2541,7 @@ void TouchHUD_Frame(void)
 		{
 			// The grip follows the finger: the plate grows by twice the drag,
 			// since it is anchored at its centre.
-			float u_new = f->grab_u + 2 * (f->last_y - f->down_y) / (f->grab_n * WEP_ROW_H + WEP_GRIP_H);
+			float u_new = f->grab_u + 2 * (f->last_y - f->down_y) / (f->grab_n + WEP_GRIP_H);
 			float scale = bound(WEP_SCALE_MIN, u_new / ui_scale(), WEP_SCALE_MAX);
 			if (fabs(scale - cl_touch_weplist_scale.value) > 0.001f)
 			{
@@ -3523,11 +3553,6 @@ void TouchHUD_Draw(void)
 			draw_circle_widget("touch_fire2_x", 0.770f, "touch_fire2_y", 0.755f, "touch_fire2_size", 0.100f, "ALT", key_attack2, a * fire2_fade, C_DANGER);
 		if (zoom_fade > 0)
 			draw_circle_widget("touch_zoom_x", 0.860f, "touch_zoom_y", 0.480f, "touch_zoom_size", 0.100f, "ZOOM", key_zoom, a * zoom_fade, C_ACCENT);
-		// HOOK fades the same way: there while a hook is to hand
-		// (touch_hook_visible 2), and while it is held
-		hook_fade = cv("touch_hook_visible", 2) > 0 ? TouchAltFire_Fade(hook_fade, TouchHook_ButtonShown() || TouchHook_Held(), fade_dt) : 0;
-		if (hook_fade > 0)
-			draw_circle_widget("touch_hook_x", 0.765f, "touch_hook_y", 0.615f, "touch_hook_size", 0.100f, "HOOK", TouchHook_Held(), a * hook_fade, C_ACCENT);
 	}
 	if (TouchTurn_ButtonShown())
 		draw_circle_widget("touch_turn_x", 0.300f, "touch_turn_y", 0.840f, "touch_turn_size", 0.085f, "TURN", TouchTurn_Spinning() || role_owned(ROLE_TURN), a, C_ACCENT);
@@ -3676,8 +3701,6 @@ void TouchHUD_PrintRects(void)
 		rect_circle("TURN", "touch_turn_x", 0.300f, "touch_turn_y", 0.840f, "touch_turn_size", 0.085f);
 	if (cv("touch_zoom_visible", 2) > 0)
 		rect_circle("ZOOM", "touch_zoom_x", 0.860f, "touch_zoom_y", 0.480f, "touch_zoom_size", 0.100f);
-	if (cv("touch_hook_visible", 2) > 0)
-		rect_circle("HOOK", "touch_hook_x", 0.765f, "touch_hook_y", 0.615f, "touch_hook_size", 0.100f);
 	if (readouts_shown())
 	{
 		float hud_u = ui_scale() * max(0.4f, cv("touch_hud_scale", 0.85f));

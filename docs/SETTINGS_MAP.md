@@ -228,7 +228,7 @@ as a bridge row are marked **dup**.
 | Show the weapon bar | `touch_weplist_visible` | checkbox **dup** |
 | Across / Down | `touch_weplist_x` 0.04 to 0.97, `touch_weplist_y` 0.15 to 0.85 | sliders |
 | Readout size | `touch_hud_scale` | slider 0.6 to 1.4 **dup** |
-| Hook button | `touch_hook_visible` | radio Off 0 / When available 2 / Always 1 |
+| Hook in weapon bar | `touch_hook_visible` | radio Off 0 / On 2 (old 1 reads as On) |
 | Catch me with the hook when I fall off the map | `cl_touch_hook_rescue` | checkbox |
 | TURN button | `touch_turn_visible` | checkbox |
 | Turn by | `touch_turn_angle` | slider 90 to 360 step 45 |
@@ -434,7 +434,7 @@ Subtitle: "Look, move stick, buttons, layout".
   (Hold / Toggle); Aim while firing `touch_fire_drag_look`; Aim from HOP, DUCK and ALT
   too `touch_button_drag_look`; HOP `touch_hop_mode` with all four modes, labelled
   "Hold" 0 / "Hold, and a KEEP switch" 3 / "Keeps going after a long press" 1 / "Jumps
-  while you move" 2; Hook button `touch_hook_visible` (Off / When available / Always);
+  while you move" 2; Hook in weapon bar `touch_hook_visible` (Off / On);
   Grenade row `cl_touch_nade_row` (with `cl_touch_nade_autothrow` as a default, on);
   Spectator bar `touch_specbar_visible`; Vibrate on button presses `touch_haptics`
   (gated as today).
