@@ -1141,6 +1141,17 @@ class ViewRenderer(
         if (waiting.size == 1) events.image(ref, dp(480f), dp(270f))
     }
 
+    /**
+     * The picture file of an INSTALLED map when it is known already (the list's rows and cards have asked for it), else
+     * null and the engine is asked now: a join to a stock map shows the map's own picture from its first frame, not art.
+     */
+    fun mapPicture(map: String): String? {
+        val ref = "pk3:maps/" + map
+        knownPath(ref)?.let { return it }
+        prefetch(ref)
+        return null
+    }
+
     /** Fetches a picture ahead of its view (the card of a chosen server, Home's top map). */
     private fun prefetch(ref: String) {
         knownPath(ref)?.let { Images.load(it, CARD_PX) { }; return } // the file is known: only decode it ahead
@@ -1778,8 +1789,12 @@ class ViewRenderer(
                 img.onMissing = { img.set(art) }
                 val have = MapShots.cached(map)?.let { Images.now(it.path, CARD_PX) }
                 img.set(have ?: art)
-                if (have == null) MapShots.fetchAsync(map) { f ->
-                    Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                if (have == null) {
+                    // the real picture, with no host of ours: the picture host, else the server's own map pack by Range requests
+                    val host = address.substringBeforeLast(':').trim('[', ']'); val port = address.substringAfterLast(':').toIntOrNull() ?: 26000
+                    MapShots.fetchAllAsync(map, host, port, JoinFlow.metered(Net.kind(ctx))) { f ->
+                        Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                    }
                 }
             }
         }

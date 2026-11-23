@@ -100,11 +100,11 @@ internal object MapShots {
         return c.inputStream
     }
 
-    private fun looksLikeImage(b: ByteArray) =
+    internal fun looksLikeImage(b: ByteArray) =
         b.size > 8 && ((b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte()) || (b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()))
 
     /** Fetches [map]'s picture now (call off the main thread): the file, or null (and a note that it is not there). */
-    fun fetch(map: String, now: Long = System.currentTimeMillis()): File? {
+    fun fetch(map: String, now: Long = System.currentTimeMillis(), noteMissing: Boolean = true): File? {
         val d = dir ?: return null
         if (!valid(map)) return null
         cached(map)?.let { return it }
@@ -126,8 +126,30 @@ internal object MapShots {
                 if (tmp.renameTo(f)) { none.delete(); return f }
             } catch (e: Exception) { /* the next source; a picture is a courtesy */ }
         }
-        try { none.writeText(""); none.setLastModified(now) } catch (e: Exception) { }
+        if (noteMissing) noteMissing(map, now)
         return null
+    }
+
+    fun noteMissing(map: String, now: Long = System.currentTimeMillis()) {
+        val d = dir ?: return
+        try { File(d, map + ".none").also { it.writeText(""); it.setLastModified(now) } } catch (e: Exception) { }
+    }
+
+    fun recentlyMissing(map: String, now: Long = System.currentTimeMillis()): Boolean =
+        dir?.let { File(it, map + ".none") }?.let { it.isFile && now - it.lastModified() < NEGATIVE_TTL_MS } == true
+
+    /**
+     * What the popup runs for a map it has no picture of: the picture host first (a 404 is quick), then the server's
+     * own pack ([ServerShots]). One failure note for both, so neither is asked again for hours.
+     */
+    fun fetchAllAsync(map: String, host: String, port: Int, metered: Boolean, done: (File) -> Unit) {
+        synchronized(inflight) { if (!inflight.add(map)) return }
+        pool.execute {
+            try {
+                val f = fetch(map, noteMissing = false) ?: (if (recentlyMissing(map)) null else ServerShots.fromServer(map, host, port, metered))
+                if (f != null) done(f) else noteMissing(map)
+            } finally { synchronized(inflight) { inflight.remove(map) } }
+        }
     }
 
     /** [fetch] on the pool, once per map at a time; [done] runs on the pool thread with the file. */

@@ -338,6 +338,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
 
     /** The card goes (the join is over, or was cancelled); the native screen below it shows again. */
     private fun dropCard() {
+        Log.i(tag, "Join card: dropped stage=$joinStage app=${app.str("state")} world=$lastWorld idleMs=${SystemClock.elapsedRealtime() - joinStageAt}")
         loadingStrip?.let { (it.parent as? ViewGroup)?.removeView(it) }
         loadingStrip = null; loadingText = null; loadingDetail = null; loadingBar = null; loadingTitle = null
         loadingBanner = null; loadingCardView = null; previewStrip = false
@@ -419,7 +420,10 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         if (!worldNow) worldSince = 0L else if (worldSince == 0L) worldSince = tNow
         lastWorld = JoinFlow.worldShows(worldNow, worldSince, tNow)
         // a picture from the first frame of the join: the engine's, the dialog's, else a fetched one or art made from the name
-        val shot = JoinFlow.firstShot(c.str("levelshot"), hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.cached(it)?.path ?: MapShots.fallbackPath(it, "") })
+        // a fetched real picture (popup finished after Join, or an earlier visit) beats the dialog's art; the engine's own beats both
+        val realLocal = joinMapName.takeIf { it.isNotEmpty() }?.let { MapShots.cached(it)?.path }
+        val installed = joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { renderer?.mapPicture(it) }
+        val shot = JoinFlow.firstShot(c.str("levelshot"), realLocal ?: installed ?: hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.fallbackPath(it, "") })
         val showShot = JoinFlow.showShot(curShot.path.ifEmpty { shot }, lastWorld)
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
         val kind = if (c.str("levelshot").isNotEmpty()) c.str("levelshot_kind") else MapShots.kindOf(shot)
@@ -487,7 +491,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             title.typeface = Theme.display
             val t = Kit.text(activity, "", Theme.SP_BODY, Theme.TEXT, lines = 1)
             t.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-            val d = Kit.text(activity, "", Theme.SP_BODY, Theme.TEXT_MUTED, lines = 1)
+            val d = Kit.text(activity, "", Theme.SP_BODY, Theme.TEXT_MUTED, lines = 2) // file, size, speed, time left and the mobile-data note: two lines, never cut off
             d.visibility = View.GONE
             val bar = android.widget.ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal)
             bar.isIndeterminate = true
@@ -530,6 +534,8 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             loadingCard(true)
             showReconnect("")
             syncMetered()
+            activity.currentFocus?.clearFocus()
+            hideKeyboard() // the address field's keyboard must not stay up over (and shrink) the join card
             loadingStrip = screen; loadingText = t; loadingDetail = d; loadingBar = bar; loadingTitle = title
             screen.requestApplyInsets()
             loadingCardView = card

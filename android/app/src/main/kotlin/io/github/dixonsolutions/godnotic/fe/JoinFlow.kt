@@ -65,6 +65,9 @@ internal object JoinFlow {
         if (!hasCard || cancelled) return false
         if (failed) return true
         if (appState == "ingame" || appState == "paused") return false
+        // the engine reads `idle` while it loads the world in one blocking step (it draws nothing and reports no stage); the
+        // app still says `loading`: the card stays until the game is entered, or the screen is black for the whole step
+        if (appState == "loading") return true
         return reconnecting || idleMs < FAIL_GRACE_MS
     }
 
@@ -132,6 +135,25 @@ internal object JoinFlow {
     /** Top and bottom of the backdrop that fills the whole screen when there is no picture (the card floats over it). */
     const val BACKDROP_TOP = 0xFF0B1730.toInt()
     const val BACKDROP_BOTTOM = 0xFF1D4A8C.toInt()
+
+    /** One layer of the join screen, rows [top, bottom) of a screen [h] rows high. */
+    data class Layer(val name: String, val top: Int, val bottom: Int, val paints: Boolean)
+
+    /**
+     * What FrontendHost composes: the backdrop (the picture, or the gradient) is the screen's own background over ALL
+     * rows; the map-name banner is a transparent text box above the card; the card floats at the bottom. No layer
+     * other than the backdrop paints a background behind or below the card (the "wedge").
+     */
+    fun layers(h: Int, cardTop: Int, cardBottom: Int): List<Layer> = listOf(
+        Layer("backdrop", 0, h, true), Layer("banner", 0, cardTop, false), Layer("card", cardTop, cardBottom, true),
+    )
+
+    /** The gradient's colour at row [y] of [h]: a straight blend, so no row differs from its neighbours by more than one step. */
+    fun backdropColorAt(y: Int, h: Int): Int {
+        val f = if (h <= 1) 0f else y.coerceIn(0, h - 1) / (h - 1f)
+        fun ch(s: Int) = (((BACKDROP_TOP shr s) and 255) * (1 - f) + ((BACKDROP_BOTTOM shr s) and 255) * f).toInt()
+        return (255 shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+    }
 
     /** Cross-fade length when a better picture replaces the shown one. */
     const val FADE_MS = 200
