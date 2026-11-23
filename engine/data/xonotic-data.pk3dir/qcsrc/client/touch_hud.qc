@@ -85,21 +85,36 @@ vector Touch_Hud_DrawSkinPicFit(vector center, vector box, string pic, float alp
 // Authored against the 540-unit short axis like every other token, then scaled
 // by Touch_UIScale() and touch_hud_scale.
 
+// Same numbers as the engine HUD (touch_vitals.h, tested by tests/touch-hud).
 const float TOUCH_HUD_ROW_H    = 30; // one stat row, icon height included
 const float TOUCH_HUD_ROW_GAP  = 6;
-const float TOUCH_HUD_ICON     = 22;
+const float TOUCH_HUD_ICON     = 26;
 const float TOUCH_HUD_NUM_SLOT = 54; // fits four digits at readout size
-const float TOUCH_HUD_BAR_W    = 122;
-const float TOUCH_HUD_BAR_H    = 9;
+const float TOUCH_HUD_BAR_W    = 72;
+const float TOUCH_HUD_BAR_H    = 10;
 
+// The unit follows the physical screen: the number is 40 dp tall, held between
+// 6.0% and 8.5% of the short side, and the block never takes more than 23.5% of
+// the height or 30% of the width. touch_hud_scale (default 0.85) is the user's
+// ratio on top of that.
 float Touch_Hud_Scale(void)
 {
-	return Touch_UIScale() * max(0.4, autocvar_touch_hud_scale);
+	vector ui = Touch_UISize();
+	float lo = 0.060 * Touch_ScreenMin() / 24;
+	float hi = 0.085 * Touch_ScreenMin() / 24;
+	float u = bound(lo, 40 * Touch_DpUnits() / 24, hi);
+	u *= max(0.4, autocvar_touch_hud_scale) / 0.85;
+	u = min(u, 0.235 * ui.y / 93);
+	u = min(u, (ui.x < ui.y ? 0.46 : 0.265) * ui.x / 170);
+	return u;
 }
+
+// the ammo row under health and armour is drawn smaller (touch_vitals.h VITALS_AMMO_SCALE)
+float touch_hud_mul = 1;
 
 float Touch_Hud_U(float authored)
 {
-	return authored * Touch_Hud_Scale();
+	return authored * Touch_Hud_Scale() * touch_hud_mul;
 }
 
 // Three rows: health, armour, ammo. Ammo used to be its own free-floating anchor
@@ -112,7 +127,7 @@ vector Touch_Hud_StatusSize(void)
 {
 	float w = Touch_Hud_U(TOUCH_HUD_ICON + TOUCH_SPACE_1 + TOUCH_HUD_NUM_SLOT
 		+ TOUCH_SPACE_2 + TOUCH_HUD_BAR_W);
-	float h = Touch_Hud_U(TOUCH_HUD_ROW_H * 3 + TOUCH_HUD_ROW_GAP * 2);
+	float h = Touch_Hud_U((TOUCH_HUD_ROW_H + TOUCH_HUD_ROW_GAP) * 2 + TOUCH_HUD_ROW_H * 0.7);
 	return w * eX + h * eY;
 }
 
@@ -120,6 +135,32 @@ vector Touch_Hud_StatusSize(void)
 vector Touch_Hud_StatusCenter(void)
 {
 	return Touch_WidgetCenter(autocvar_touch_hud_x, autocvar_touch_hud_y, 0);
+}
+
+// Top-left of the block: centred where the layout puts it, then kept inside the
+// screen and the safe-area insets (_touch_safe_insets "l t r b density", in
+// physical pixels).
+vector Touch_Hud_StatusOrigin(void)
+{
+	vector ui = Touch_UISize();
+	vector size = Touch_Hud_StatusSize();
+	vector c = Touch_Hud_StatusCenter();
+	float px2con = cvar("vid_width") > 0 ? ui.x / cvar("vid_width") : 1;
+	float il = 0, it = 0, ir = 0, ib = 0;
+	if (tokenize_console(cvar_string("_touch_safe_insets")) >= 4)
+	{
+		il = stof(argv(0)) * px2con;
+		it = stof(argv(1)) * px2con;
+		ir = stof(argv(2)) * px2con;
+		ib = stof(argv(3)) * px2con;
+	}
+	float m = 6 * Touch_DpUnits();
+	vector o = c - size * 0.5;
+	float xmax = max(il + m, ui.x - ir - m - size.x);
+	float ymax = max(it + m, ui.y - ib - m - size.y);
+	o.x = bound(il + m, o.x, xmax);
+	o.y = bound(it + m, o.y, ymax);
+	return o;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,8 +243,7 @@ void Touch_Hud_DrawStatRow(vector origin, string icon, string fallback, int valu
 
 void Touch_Hud_DrawStatus(float alpha)
 {
-	vector size = Touch_Hud_StatusSize();
-	vector origin = Touch_Hud_StatusCenter() - size * 0.5;
+	vector origin = Touch_Hud_StatusOrigin();
 	float row_pitch = Touch_Hud_U(TOUCH_HUD_ROW_H + TOUCH_HUD_ROW_GAP);
 
 	int health = max(0, STAT(HEALTH));
@@ -225,7 +265,9 @@ void Touch_Hud_DrawStatus(float alpha)
 	// "no armour readout" looked the same.
 	Touch_Hud_DrawStatRow(origin + eY * row_pitch, "armor", "AR", armor,
 		max(100, autocvar_touch_hud_maxarmor), armor > 0 ? alpha : alpha * 0.7);
+	touch_hud_mul = 0.7;
 	Touch_Hud_DrawAmmoRow(origin + eY * row_pitch * 2, alpha);
+	touch_hud_mul = 1;
 }
 
 // ---------------------------------------------------------------------------

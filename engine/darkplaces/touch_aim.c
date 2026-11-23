@@ -36,6 +36,7 @@ primary, no lead, no switching.
 #include "touch_hud.h"
 #include "touch_aim.h"
 #include "touch_weapons.h"
+#include "touch_aim_guide.h"
 #include "touch_aim_input.h"
 #include "touch_hook.h"
 #include "touch_spectate.h"
@@ -67,6 +68,10 @@ cvar_t cl_touch_autoshoot_alt = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_alt
 	"Arc bolts beyond the beam, the blaster shot of an empty Vaporizer or Overkill weapon"};
 cvar_t cl_touch_autoshoot_lead = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_lead", "1",
 	"Auto-shoot and the aim pull lead moving targets with projectile weapons (aim where the shot will meet them) and loft grenades and orbs for the distance"};
+cvar_t cl_touch_guide_predict = {CF_CLIENT | CF_ARCHIVE, "cl_touch_guide_predict", "1",
+	"A guided Devastator rocket is steered to where it will meet the target: the target's filtered velocity and acceleration, its jumps, the walls, and the rocket's real speed and turn rate (touch_aim_guide.h). 0 = steer at a constant-velocity intercept"};
+cvar_t cl_touch_guide_sens = {CF_CLIENT | CF_ARCHIVE, "cl_touch_guide_sens", "0.55",
+	"Look sensitivity while a guided Devastator rocket is being steered by hand or by auto-shoot (1 = unchanged); eased in and out, and the finger's speed gain is off, so a drag turns the same amount every time"};
 cvar_t cl_touch_autoshoot_steer = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_steer", "1",
 	"Devastator: auto-shoot keeps fire held so the rocket follows the crosshair, keeps the crosshair on the enemy and detonates the rocket next to them"};
 cvar_t cl_touch_autoshoot_safe = {CF_CLIENT | CF_ARCHIVE, "cl_touch_autoshoot_safe", "1",
@@ -385,6 +390,13 @@ static struct
 	int rk_way_said;
 	double rk_fired;     // when the press that launched the guided rocket went out
 	double rk_launch_seen; // when the guided rocket was first tracked
+	tg_state_t rk_gst;   // predictive guide (touch_aim_guide.h): meeting time and aim point kept between frames
+	tg_track_t rk_gtrk;  // acceleration estimate of the target
+	vec3_t rk_snap_org, rk_snap_vel, rk_snap_acc; // the target as last seen
+	tg_plan_t rk_plan;
+	qbool rk_plan_ok;
+	double guide_press;  // when fire went down with a guided weapon in hand
+	float guide_gain;    // eased look-sensitivity factor while a rocket is steered
 	freerk_t freerk[FREE_MAX];
 	int num_free;
 	// from the loaded CSQC
@@ -416,6 +428,8 @@ void TouchAim_Init(void)
 	Cvar_RegisterVariable(&cl_touch_autoshoot_alt);
 	Cvar_RegisterVariable(&cl_touch_autoshoot_lead);
 	Cvar_RegisterVariable(&cl_touch_autoshoot_steer);
+	Cvar_RegisterVariable(&cl_touch_guide_predict);
+	Cvar_RegisterVariable(&cl_touch_guide_sens);
 	Cvar_RegisterVariable(&cl_touch_autoshoot_safe);
 	Cvar_RegisterVariable(&cl_touch_autoswitch);
 	Cvar_RegisterVariable(&cl_touch_autoshoot_air);
@@ -468,6 +482,7 @@ void TouchAim_Init(void)
 	Cvar_RegisterVariable(&cl_touch_hud_state);
 	TouchHook_Init();
 	ta.lookscale = 1;
+	ta.guide_gain = 1;
 	ta.teamplay_ofs = -1;
 	ta.projtype_ofs = -1;
 	ta.animstate_ofs = -1;
@@ -595,6 +610,11 @@ qbool TouchAim_AutoFire2(void)
 float TouchAim_LookScale(void)
 {
 	return ta.lookscale;
+}
+
+qbool TouchAim_GuideActive(void)
+{
+	return ta.guide_gain > 0.001f && ta.guide_gain < 0.999f;
 }
 
 void TouchAim_SetHudAimTouch(qbool touching)
@@ -2666,6 +2686,64 @@ static qbool free_detonate(const vec3_t me, float splash)
 	return false;
 }
 
+// Predictive guide (touch_aim_guide.h). The rocket's numbers are the server's
+// own where the client has them (g_balance_devastator_*), else the weapon table.
+static float guide_cvar(const char *name, float def)
+{
+	cvar_t *v = Cvar_FindVar(&cvars_all, name, ~0);
+	return v && v->value > 0 ? v->value : def;
+}
+
+static void guide_rocket(tg_rocket_t *r)
+{
+	const touch_wep_t *dev = TouchWep_Find("devastator");
+	r->speed = guide_cvar("g_balance_devastator_speed", dev ? dev->pri.speed : 1000);
+	r->accel = guide_cvar("g_balance_devastator_speedaccel", dev ? dev->pri.accel : ROCKET_SPEED);
+	r->speed_max = guide_cvar("g_balance_devastator_speedmax", dev ? dev->pri.speed_max : ROCKET_SPEED);
+	r->rate_deg = guide_cvar("g_balance_devastator_guiderate", ROCKET_GUIDE_RATE);
+	r->goal = guide_cvar("g_balance_devastator_guidegoal", ROCKET_GUIDE_GOAL);
+	r->splash = dev ? dev->pri.splash : 110;
+}
+
+static int guide_trace(void *ctx, const float a[3], const float b[3], float end[3])
+{
+	trace_t tr = CL_TraceLine(a, b, MOVE_NOMONSTERS, NULL, SUPERCONTENTS_SOLID, 0, 0, collision_extendmovelength.value, true, false, NULL, true, false);
+	(void)ctx;
+	if (tr.startsolid || tr.fraction >= 1)
+		return 0;
+	VectorCopy(tr.endpos, end);
+	return 1;
+}
+
+// The plan for the guided rocket this frame, from the target as last seen
+// (moved on by its own model while out of sight, then let go).
+static qbool guide_plan(const vec3_t eye, float dt, tg_plan_t *plan)
+{
+	tg_rocket_t r;
+	tg_target_t g;
+	const track_t *tt = &ta.tracks[ta.rk_target & (TRACK_MAX - 1)];
+	float age = (float)(host.realtime - ta.rk_tseen);
+	if (!cl_touch_guide_predict.integer || VectorLength(ta.rk_vel) < 100)
+		return false;
+	guide_rocket(&r);
+	memset(&g, 0, sizeof(g));
+	VectorCopy(ta.rk_snap_org, g.org);
+	VectorCopy(ta.rk_snap_vel, g.vel);
+	VectorCopy(ta.rk_snap_acc, g.acc);
+	g.gravity = cl.movevars_gravity;
+	if (tt->airborne && tt->t_land >= 0 && cl_touch_autoshoot_air.integer)
+	{
+		g.airborne = 1;
+		g.floor_z = tt->floor_z + (tt->bmax[2] > tt->bmin[2] ? 0.5f * (tt->bmax[2] - tt->bmin[2]) : 36.0f);
+	}
+	if (!TouchGuide_Advance(&g, age))
+		return false;
+	TouchGuide_Plan(&r, ta.rk_org, ta.rk_vel, eye, &g, cl_touch_autoshoot_clear.integer ? guide_trace : NULL, NULL, dt, &ta.rk_gst, plan);
+	if (plan->valid && cl_touch_aim_debug.integer >= 4)
+		Con_Printf("touch aim: guide: meet in %.2f s, closest %.0f units at %.2f s%s\n", plan->t_meet, plan->miss, plan->t_close, plan->hits_world ? " (hits the world)" : "");
+	return plan->valid != 0;
+}
+
 // Devastator with steering: press fire once lined up, keep it held while the
 // rocket flies (the server guides it toward the view ray), detonate it next
 // to the enemy with a one-frame attack2, then release fire long enough for
@@ -2696,6 +2774,9 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 			ta.rk_plan_next = 0;
 			VectorCopy(near->center, ta.rk_target_org);
 			VectorCopy(near->vel, ta.rk_target_vel);
+			VectorCopy(near->center, ta.rk_snap_org);
+			VectorCopy(near->vel, ta.rk_snap_vel);
+			VectorClear(ta.rk_snap_acc);
 			rk_set(RK_LAUNCH, va(vabuf, sizeof(vabuf), "lined up on player %d at %.0f units", near->entnum, near->dist));
 			set_firing(true, false, near->entnum);
 		}
@@ -2711,12 +2792,16 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 			VectorCopy(PRVM_clientedictvector(PRVM_EDICT_NUM(ta.rk_ent), origin), ta.rk_org);
 			VectorClear(ta.rk_vel);
 			ta.rk_seen = ta.rk_launch_seen = now;
+			memset(&ta.rk_gst, 0, sizeof(ta.rk_gst));
+			memset(&ta.rk_gtrk, 0, sizeof(ta.rk_gtrk));
 			rk_set(RK_FLY, va(vabuf, sizeof(vabuf), "tracking own rocket, edict %d", ta.rk_ent));
 		}
 		else if (now - max(ta.rk_time, ta.rk_launch_seen + ROCKET_REFIRE - REFIRE_EARLY) > ROCKET_DEAD_RECKON)
 		{
 			// none seen (yet): it is on its way along the view, steered there
 			ta.rk_launch = ta.rk_time;
+			memset(&ta.rk_gst, 0, sizeof(ta.rk_gst));
+			memset(&ta.rk_gtrk, 0, sizeof(ta.rk_gtrk));
 			rk_set(RK_FLY, "no rocket of ours seen: dead reckoning along the view");
 		}
 		return;
@@ -2724,7 +2809,7 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 	{
 		prvm_edict_t *ed = ta.rk_ent > 0 && ta.rk_ent < prog->num_edicts ? PRVM_EDICT_NUM(ta.rk_ent) : NULL;
 		vec3_t org, d, rel_v, me, rk_late;
-		float sp;
+		float sp, gd_now = 1e9f, gd_closing = 0;
 		if (!ta.rk_ent && now - ta.rk_launch < ROCKET_FIND_TIME)
 		{
 			// a late rocket (the weapon was still reloading): track it after all
@@ -2797,6 +2882,9 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 		{
 			VectorCopy(near->center, ta.rk_target_org);
 			VectorCopy(near->vel, ta.rk_target_vel);
+			VectorCopy(near->center, ta.rk_snap_org);
+			VectorCopy(near->vel, ta.rk_snap_vel);
+			TouchGuide_TrackUpdate(&ta.rk_gtrk, near->vel, dt, ta.rk_snap_acc);
 			ta.rk_tseen = now;
 		}
 		else if (!cl_touch_autoshoot_clear.integer || now - ta.rk_tseen < LAST_SEEN_EXTRAP)
@@ -2818,11 +2906,20 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 		// judged where the server will have rocket and target when the press
 		// arrives: the screen shows both that much late
 		VectorMA(ta.rk_org, cl_touch_autoshoot_predict.integer ? shot_latency() : 0, rel_v, rk_late);
+		ta.rk_plan_ok = ta.rk_ent && guide_plan(eye, dt, &ta.rk_plan);
+		{
+			vec3_t to;
+			VectorSubtract(ta.rk_target_org, rk_late, to);
+			gd_now = VectorLength(to);
+			gd_closing = gd_now > 0.01f ? DotProduct(to, rel_v) / gd_now : 0; // > 0: getting closer
+		}
 		// (only a rocket of ours that is seen is set off: a dead-reckoned
 		// one may not be where it is guessed, or not out yet)
 		if (dev && ta.rk_ent && (cl_touch_autoshoot_group.integer && group_enemies() >= 2
 			? detonate_group(dev->pri.splash, me, dt)
-			: TouchWep_Detonate(rk_late, rel_v, ta.rk_target_org, me, dev->pri.splash))
+			: (TouchWep_Detonate(rk_late, rel_v, ta.rk_target_org, me, dev->pri.splash)
+				|| (ta.rk_plan_ok && TouchGuide_Detonate(&ta.rk_plan, gd_now, gd_closing, (cl_touch_autoshoot_predict.integer ? shot_latency() : 0) + dt,
+					VectorDistance(me, rk_late), dev->pri.splash))))
 			&& !free_hold(ta.rk_target) && !mate_at_blast(rk_late, dev->pri.splash))
 		{
 			rk_set(RK_DETONATE, va(vabuf, sizeof(vabuf), "rocket %.0f units from player %d", VectorDistance(ta.rk_org, ta.rk_target_org), ta.rk_target));
@@ -2926,6 +3023,10 @@ static void steer_devastator(const vec3_t eye, const aimtarget_t *near, qbool wa
 			}
 			else
 				VectorCopy(at, aim);
+			// the predictive guide's meeting point replaces the straight-line
+			// one (the same path checks below still apply to it)
+			if (ta.rk_plan_ok)
+				VectorCopy(ta.rk_plan.aim, aim);
 			// offline practice, a target behind a wall: over the cover first,
 			// down onto the target only once the rocket is nearly above it
 			// (until the rocket itself has a clear line down to it)
@@ -3745,6 +3846,27 @@ static void aim_frame(void)
 	}
 	else if (friction > 0 && on_target && !TouchBrk_PullOff(&ta.brk, now))
 		ta.lookscale = 1.0f - friction;
+
+	// A guided rocket being steered (by auto-shoot, or by a finger with fire
+	// held): finer look, eased in and out so there is no step in the turn.
+	{
+		qbool held_fire = (in_attack.state & 1) != 0;
+		qbool dev_in_hand = wep && (wep->flags & TW_GUIDED);
+		float want_gain = 1.0f;
+		if (held_fire && dev_in_hand)
+		{
+			if (ta.guide_press <= 0)
+				ta.guide_press = now;
+		}
+		else if (!held_fire)
+			ta.guide_press = 0;
+		if (dev_in_hand && ((ta.rk_state == RK_FLY && ta.rk_ent) || (held_fire && ta.guide_press > 0 && now - ta.guide_press < ROCKET_MAX_FLIGHT)))
+			want_gain = bound(0.2f, cl_touch_guide_sens.value, 1.0f);
+		ta.guide_gain += (want_gain - ta.guide_gain) * (1.0f - expf(-dt / 0.12f));
+		if (ta.guide_gain <= 0.001f || ta.guide_gain > 1.0f || fabsf(ta.guide_gain - 1.0f) < 0.002f)
+			ta.guide_gain = 1.0f;
+		ta.lookscale *= ta.guide_gain;
+	}
 
 	// Aim at the selected point immediately while the assist is active.
 	if (turn_mag / dt > INPUT_MIN_RATE || cl.cmd.forwardmove != 0 || cl.cmd.sidemove != 0)

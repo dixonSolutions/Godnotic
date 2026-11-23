@@ -30,6 +30,7 @@ applies to both.
 #include "touch_topbar.h"
 #include "touch_cursor.h"
 #include "touch_feel.h"
+#include "touch_vitals.h"
 
 extern cvar_t vid_touchscreen;
 extern cvar_t vid_conwidth;
@@ -872,7 +873,7 @@ static void topbar_sync(void)
 	panel_place("modicons", 0.430f, 0.060f, 0.140f, 0.060f);
 	panel_place("vote", 0.400f, 0.125f, 0.200f, 0.085f);
 	panel_place("radar", 0.280f, 0.004f, 0.140f, 0.200f);
-	panel_place("chat", 0.020f, 0.230f, 0.290f, 0.190f);
+	panel_place("chat", 0.020f, 0.300f, 0.290f, 0.120f); // Touch: under the scaled vitals (touch_vitals.h)
 	// item timers (spectators by default): off the chat feed, on the right
 	// edge under the scores, where a spectator has no weapon strip
 	panel_place("itemstime", 0.925f, fb + 0.095f, 0.065f, 0.230f);
@@ -1674,7 +1675,7 @@ static void look_cfg(touchlook_cfg_t *c)
 {
 	c->sens = cv("touch_sens_base", 3.6f);
 	c->y_mult = cv("touch_sens_y_mult", 0.85f);
-	c->accel = cv("touch_look_accel", 0.8f);
+	c->accel = TouchAim_GuideActive() ? 0.0f : cv("touch_look_accel", 0.8f); // Touch: flat gain while a rocket is steered
 	c->accel_lo = cv("touch_look_accel_lo", 200);
 	c->accel_hi = cv("touch_look_accel_hi", 800);
 	c->filter = (int)cv("touch_look_filter", 1);
@@ -2675,26 +2676,41 @@ static void draw_bar(float lx, float cy, float w, float h, float frac, const flo
 		shape_disc(lx + hy, cy, hy, fill, a * 0.92f);
 }
 
+// Touch: the readout's unit and top-left corner (touch_vitals.h): sized by the
+// screen's physical size, kept inside the safe-area insets.
+static void vitals_geometry(float *hud_u, float *ox, float *oy)
+{
+	float in_l = 0, in_t = 0, in_r = 0, in_b = 0, dens = 0, px2con = vid.mode.width > 0 ? ui_w() / (float)vid.mode.width : 1.0f;
+	float cx, cy, u = TouchVitals_Unit(ui_w(), ui_h(), dp_units(), cv("touch_hud_scale", VITALS_HUD_SCALE_DEF));
+	const char *insets = Cvar_VariableString(&cvars_all, "_touch_safe_insets", ~0);
+	if (insets && insets[0])
+		sscanf(insets, "%f %f %f %f %f", &in_l, &in_t, &in_r, &in_b, &dens);
+	widget_center(cv("touch_hud_x", 0.150f), cv("touch_hud_y", 0.115f), &cx, &cy);
+	*hud_u = u;
+	TouchVitals_Origin(cx, cy, VITALS_WIDTH * u, VITALS_HEIGHT * u, ui_w(), ui_h(),
+		in_l * px2con, in_t * px2con, in_r * px2con, in_b * px2con, VITALS_MARGIN_DP * dp_units(), ox, oy);
+}
+
 static void draw_stat_row(float ox, float oy, float hud_u, const char *icon_name, const char *tag, int value, int maxvalue, float a)
 {
-	float icon = 22 * hud_u, num_slot = 54 * hud_u, bar_w = 122 * hud_u, bar_h = 9 * hud_u, row_h = 30 * hud_u;
+	float icon = VITALS_ICON * hud_u, num_slot = VITALS_NUM * hud_u, bar_w = VITALS_BAR * hud_u, bar_h = 10 * hud_u, row_h = VITALS_ROW_H * hud_u;
 	float mid_y = oy + row_h * 0.5f;
 	float rgb[3];
 	char num[16];
 	num_color(value, maxvalue, rgb);
 	if (!skin_pic_fit(skin_pic(icon_name), ox + icon * 0.5f, mid_y, icon, icon, a * A_INK))
-		shape_label(ox + icon * 0.5f, mid_y, 12 * hud_u, tag, rgb, a * A_INK);
+		shape_label(ox + icon * 0.5f, mid_y, 13 * hud_u, tag, rgb, a * A_INK);
 	dpsnprintf(num, sizeof(num), "%d", value);
-	shape_label_right(ox + icon + 6 * hud_u + num_slot, mid_y, FONT_READOUT * hud_u, num, rgb, a * A_INK);
-	draw_bar(ox + icon + 6 * hud_u + num_slot + 12 * hud_u, mid_y, bar_w, bar_h, maxvalue > 0 ? (float)value / maxvalue : 0, rgb, a);
+	shape_label_right(ox + icon + VITALS_GAP1 * hud_u + num_slot, mid_y, FONT_READOUT * hud_u, num, rgb, a * A_INK);
+	draw_bar(ox + icon + VITALS_GAP1 * hud_u + num_slot + VITALS_GAP2 * hud_u, mid_y, bar_w, bar_h, maxvalue > 0 ? (float)value / maxvalue : 0, rgb, a);
 }
 
 // Touch_Hud_DrawAmmoRow: the held weapon's ammo type icon and reserve, the
 // clip and "/ reserve" for clip weapons, an infinity sign when it uses none.
 static void draw_ammo_row(float ox, float oy, float hud_u, float a)
 {
-	float icon = 22 * hud_u, num_slot = 54 * hud_u, row_h = 30 * hud_u;
-	float mid_y = oy + row_h * 0.5f, num_right = ox + icon + 6 * hud_u + num_slot;
+	float icon = VITALS_ICON * hud_u, num_slot = VITALS_NUM * hud_u, row_h = VITALS_ROW_H * hud_u;
+	float mid_y = oy + row_h * 0.5f, num_right = ox + icon + VITALS_GAP1 * hud_u + num_slot;
 	const float *rgb = C_INK;
 	prvm_prog_t *prog = CLVM_prog;
 	prvm_edict_t *ve = wepent();
@@ -2751,20 +2767,16 @@ static void draw_ammo_row(float ox, float oy, float hud_u, float a)
 
 static void draw_vitals(float a)
 {
-	float hud_u = ui_scale() * max(0.4f, cv("touch_hud_scale", 0.85f));
-	float w = (22 + 6 + 54 + 12 + 122) * hud_u;
-	float h = (30 * 3 + 6 * 2) * hud_u;
-	float cx, cy, ox, oy, pitch = (30 + 6) * hud_u;
+	float hud_u, ox, oy, pitch;
 	int health = max(0, cl.stats[STAT_HEALTH]);
 	int armor = max(0, cl.stats[STAT_ARMOR]);
 	if (!readouts_shown())
 		return;
-	widget_center(cv("touch_hud_x", 0.150f), cv("touch_hud_y", 0.115f), &cx, &cy);
-	ox = cx - w * 0.5f;
-	oy = cy - h * 0.5f;
+	vitals_geometry(&hud_u, &ox, &oy);
+	pitch = (VITALS_ROW_H + VITALS_ROW_GAP) * hud_u;
 	draw_stat_row(ox, oy, hud_u, "health", "HP", health, max(100, (int)cv("touch_hud_maxhealth", 100)), a);
 	draw_stat_row(ox, oy + pitch, hud_u, "armor", "AR", armor, max(100, (int)cv("touch_hud_maxarmor", 100)), armor > 0 ? a : a * 0.7f);
-	draw_ammo_row(ox, oy + pitch * 2, hud_u, a);
+	draw_ammo_row(ox, oy + pitch * 2, hud_u * VITALS_AMMO_SCALE, a);
 }
 
 // ---------------------------------------------------------------------------
@@ -3680,9 +3692,9 @@ void TouchHUD_PrintRects(void)
 		rect_circle("HOOK", "touch_hook_x", 0.765f, "touch_hook_y", 0.615f, "touch_hook_size", 0.100f);
 	if (readouts_shown())
 	{
-		float hud_u = ui_scale() * max(0.4f, cv("touch_hud_scale", 0.85f));
-		widget_center(cv("touch_hud_x", 0.150f), cv("touch_hud_y", 0.115f), &cx, &cy);
-		rect_box("vitals", cx, cy, (22 + 6 + 54 + 12 + 122) * hud_u * 0.5f, (30 * 3 + 6 * 2) * hud_u * 0.5f);
+		float hud_u, vx, vy;
+		vitals_geometry(&hud_u, &vx, &vy);
+		rect_box("vitals", vx + VITALS_WIDTH * hud_u * 0.5f, vy + VITALS_HEIGHT * hud_u * 0.5f, VITALS_WIDTH * hud_u * 0.5f, VITALS_HEIGHT * hud_u * 0.5f);
 	}
 	if (strip_drawn())
 	{

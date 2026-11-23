@@ -588,10 +588,11 @@ void Touch_ApplyChatFeedSettings(void)
 	cvar_set("hud_panel_chat", "1");
 	// Left band between the vitals and the move stick: outside the look zone
 	// (x < 0.32) and above the move zone (y < 0.42), so the feed sits in genuinely
-	// spare screen. It starts at 0.23 because the vitals group now ends at 0.21 —
-	// at 0.15 the first chat line ran through the ammo row.
-	localcmd("seta hud_panel_chat_pos \"0.020 0.230\"\n");
-	localcmd("seta hud_panel_chat_size \"0.290 0.190\"\n");
+	// spare screen. It starts at 0.30 because the vitals group (scaled with the screen,
+	// touch_vitals.h) ends by 0.25 and the log's icons sit above the first line;
+	// it ends at 0.42, above the move zone.
+	localcmd("seta hud_panel_chat_pos \"0.020 0.300\"\n");
+	localcmd("seta hud_panel_chat_size \"0.290 0.120\"\n");
 	localcmd("seta hud_panel_chat_bg 0\n");
 	// 14 console units is 4.7 mm on the 13" target, against the 8-unit default's
 	// 2.7 mm. con_chat (line count) is derived from this by the stock panel.

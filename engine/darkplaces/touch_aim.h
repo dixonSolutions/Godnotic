@@ -45,6 +45,10 @@ qbool TouchAim_AutoFire2(void);
 // Multiplier (0..1] for touch look deltas: aim friction near an enemy.
 float TouchAim_LookScale(void);
 
+// True while the look is eased for steering a guided rocket (touch_hud.c turns
+// the finger-speed gain off then, so the same drag turns the same amount).
+qbool TouchAim_GuideActive(void);
+
 // The engine-drawn HUD reports whether a finger is on the aim control (look
 // drag or FIRE). The port's CSQC reports the same through _cl_touch_hud_state.
 void TouchAim_SetHudAimTouch(qbool touching);
