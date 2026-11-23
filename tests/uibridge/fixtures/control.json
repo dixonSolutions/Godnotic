@@ -1,0 +1,362 @@
+{
+ "name": "control",
+ "description": "Server control on this device's own game (no password): bots, kick, map and limits, cheats.",
+ "generated": "seed",
+ "snapshot": {
+  "uib": 1,
+  "t": "snapshot",
+  "id": 2,
+  "rev": 1,
+  "root": "app",
+  "nodes": [
+   {
+    "id": "app",
+    "type": "app",
+    "props": {
+     "title": "Godnotic",
+     "stack": [
+      "pause"
+     ],
+     "modal": [
+      "ctl"
+     ],
+     "canBack": true,
+     "context": "game"
+    },
+    "children": [
+     "pause",
+     "ctl"
+    ]
+   },
+   {
+    "id": "pause",
+    "type": "screen",
+    "props": {
+     "title": "Paused",
+     "kind": "game",
+     "presentation": "fullscreen"
+    },
+    "children": [
+     "pause/host",
+     "pause/actions"
+    ]
+   },
+   {
+    "id": "pause/host",
+    "type": "card",
+    "props": {
+     "title": "Hosting on your network",
+     "subtitle": "Stormkeep · Deathmatch",
+     "icon": "host",
+     "accent": "ember",
+     "density": "compact",
+     "badges": [
+      {
+       "icon": "lock",
+       "text": "Password set",
+       "tone": "warning"
+      }
+     ],
+     "meta": [
+      {
+       "icon": "wifi",
+       "text": "Wi-Fi 192.168.1.23:26000"
+      },
+      {
+       "icon": "vpn",
+       "text": "VPN 100.64.0.5:26000"
+      }
+     ],
+     "primary": {
+      "id": "host.popup",
+      "label": "Addresses",
+      "icon": "host"
+     },
+     "actions": [
+      {
+       "id": "host.copy",
+       "label": "Copy address",
+       "icon": "copy",
+       "kind": "copy",
+       "text": "192.168.1.23:26000"
+      },
+      {
+       "id": "host.share",
+       "label": "Share",
+       "icon": "share",
+       "kind": "share",
+       "text": "godnotic://join/192.168.1.23:26000"
+      }
+     ]
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions",
+    "type": "grid",
+    "props": {
+     "minItem": 160
+    },
+    "children": [
+     "pause/actions/resume",
+     "pause/actions/settings",
+     "pause/actions/control",
+     "pause/actions/team",
+     "pause/actions/spectate",
+     "pause/actions/disconnect"
+    ]
+   },
+   {
+    "id": "pause/actions/resume",
+    "type": "button",
+    "props": {
+     "label": "Resume",
+     "action": {
+      "id": "resume",
+      "label": "Resume",
+      "icon": "resume",
+      "style": "primary"
+     },
+     "style": "primary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/settings",
+    "type": "button",
+    "props": {
+     "label": "Settings",
+     "action": {
+      "id": "settings",
+      "label": "Settings",
+      "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/control",
+    "type": "button",
+    "props": {
+     "label": "Server control",
+     "action": {
+      "id": "ctl.open",
+      "label": "Server control",
+      "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/team",
+    "type": "button",
+    "props": {
+     "label": "Change team",
+     "action": {
+      "id": "team",
+      "label": "Change team",
+      "icon": "players"
+     },
+     "style": "secondary",
+     "hidden": true
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/spectate",
+    "type": "button",
+    "props": {
+     "label": "Spectate",
+     "action": {
+      "id": "spectate",
+      "label": "Spectate",
+      "icon": "esp"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/disconnect",
+    "type": "button",
+    "props": {
+     "label": "End the game",
+     "action": {
+      "id": "disconnect",
+      "label": "End the game",
+      "icon": "disconnect",
+      "style": "destructive"
+     },
+     "style": "destructive"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl",
+    "type": "screen",
+    "props": {
+     "title": "Server control",
+     "presentation": "dialog",
+     "dismissable": true,
+     "primary": {
+      "id": "ctl.close",
+      "label": "Close",
+      "icon": "check",
+      "style": "primary"
+     }
+    },
+    "children": [
+     "ctl/bots",
+     "ctl/players",
+     "ctl/match",
+     "ctl/cheats"
+    ]
+   },
+   {
+    "id": "ctl/bots",
+    "type": "section",
+    "props": {
+     "title": "Bots"
+    },
+    "children": [
+     "ctl/bots/n",
+     "ctl/bots/apply"
+    ]
+   },
+   {
+    "id": "ctl/bots/n",
+    "type": "stepper",
+    "props": {
+     "label": "Bots",
+     "bind": "vm:ctl.bots",
+     "value": 3,
+     "min": 0,
+     "max": 32,
+     "step": 1
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/bots/apply",
+    "type": "button",
+    "props": {
+     "label": "Apply",
+     "action": {
+      "id": "ctl.bots",
+      "label": "Apply",
+      "icon": "check"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/players",
+    "type": "section",
+    "props": {
+     "title": "Players"
+    },
+    "children": [
+     "ctl/players/kickrow"
+    ]
+   },
+   {
+    "id": "ctl/players/kickrow",
+    "type": "row",
+    "props": {},
+    "children": [
+     "ctl/players/kickrow/who",
+     "ctl/players/kickrow/kick"
+    ]
+   },
+   {
+    "id": "ctl/players/kickrow/who",
+    "type": "field",
+    "props": {
+     "label": "Player number or name",
+     "bind": "vm:ctl.kick",
+     "value": ""
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/players/kickrow/kick",
+    "type": "button",
+    "props": {
+     "label": "Kick",
+     "action": {
+      "id": "ctl.kick",
+      "label": "Kick",
+      "icon": "close"
+     },
+     "style": "destructive"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match",
+    "type": "section",
+    "props": {
+     "title": "Match"
+    },
+    "children": [
+     "ctl/match/restart",
+     "ctl/match/time"
+    ]
+   },
+   {
+    "id": "ctl/match/restart",
+    "type": "button",
+    "props": {
+     "label": "Restart",
+     "action": {
+      "id": "ctl.restart",
+      "label": "Restart",
+      "icon": "resume"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/match/time",
+    "type": "stepper",
+    "props": {
+     "label": "Time limit",
+     "bind": "vm:ctl.timelimit",
+     "value": 20,
+     "min": 0,
+     "max": 120,
+     "step": 5,
+     "unit": "min"
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/cheats",
+    "type": "section",
+    "props": {
+     "title": "Cheats"
+    },
+    "children": [
+     "ctl/cheats/toggle"
+    ]
+   },
+   {
+    "id": "ctl/cheats/toggle",
+    "type": "button",
+    "props": {
+     "label": "Turn cheats on",
+     "action": {
+      "id": "ctl.cheats",
+      "label": "Turn cheats on"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   }
+  ]
+ }
+}
