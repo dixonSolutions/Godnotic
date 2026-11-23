@@ -178,9 +178,9 @@
     },
     "children": [
      "ctl/text",
+     "ctl/hint",
      "ctl/form",
-     "ctl/remember",
-     "ctl/hint"
+     "ctl/remember"
     ]
    },
    {
@@ -188,6 +188,15 @@
     "type": "text",
     "props": {
      "body": "Enter the server's rcon password."
+    },
+    "children": []
+   },
+   {
+    "id": "ctl/hint",
+    "type": "text",
+    "props": {
+     "body": "Wrong password",
+     "style": "warning"
     },
     "children": []
    },
@@ -230,15 +239,6 @@
      "label": "Remember for this server",
      "bind": "vm:ctl.remember",
      "value": true
-    },
-    "children": []
-   },
-   {
-    "id": "ctl/hint",
-    "type": "text",
-    "props": {
-     "body": "Wrong password",
-     "style": "warning"
     },
     "children": []
    }

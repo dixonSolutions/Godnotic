@@ -336,12 +336,13 @@ def control_dialog(unlocked=True, local=True, hint=None):
         extra = [N("ctl/hint", "text", body=lines[hint][0], style=lines[hint][1])] if hint else []
         return N("ctl", "screen", [
             N("ctl/text", "text", body="Enter the server's rcon password."),
+        ] + extra + [
             N("ctl/form", "form", [
                 N("ctl/form/pw", "field", label="Rcon password", bind="vm:ctl.password", value="", kind="password",
                   private=True, hasValue=False, submit=A("ctl.auth", "Unlock")),
             ], submit=A("ctl.auth", "Unlock", "lock", style="primary")),
             N("ctl/remember", "switch", label="Remember for this server", bind="vm:ctl.remember", value=True),
-        ] + extra, title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
+        ], title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
     sec = lambda k, kids, t: N(f"ctl/{k}", "section", kids, title=t)
     return N("ctl", "screen", [
         sec("bots", [N("ctl/bots/n", "stepper", label="Bots", bind="vm:ctl.bots", value=3, min=0, max=32, step=1),

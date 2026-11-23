@@ -1577,6 +1577,13 @@ void UIB_BuildControl()
 		// another's server: the rcon password, once per game
 		uib_j("primary", UIB_AS("ctl.auth", _("Unlock"), "lock", "primary"));
 		UIB_Text("text", _("Enter the server's rcon password."), "");
+		// the verdict sits under the prompt, above the form, so it stays in view when the keyboard shrinks the dialog
+		if (uib_ctl_probing != "")
+			UIB_Text("hint", _("Checking the password..."), "caption");
+		else if (UIB_VM("ctl.denied") == "1")
+			UIB_Text("hint", _("Wrong password"), "warning");
+		else if (UIB_VM("ctl.denied") == "timeout")
+			UIB_Text("hint", _("Server did not answer"), "warning");
 		UIB_Open("form", "form");
 			uib_j("submit", UIB_AS("ctl.auth", _("Unlock"), "lock", "primary"));
 			UIB_Open("pw", "field");
@@ -1589,12 +1596,6 @@ void UIB_BuildControl()
 			UIB_Close();
 		UIB_Close();
 		UIB_Switch("remember", _("Remember for this server"), "vm:ctl.remember", "");
-		if (uib_ctl_probing != "")
-			UIB_Text("hint", _("Checking the password..."), "caption");
-		else if (UIB_VM("ctl.denied") == "1")
-			UIB_Text("hint", _("Wrong password"), "warning");
-		else if (UIB_VM("ctl.denied") == "timeout")
-			UIB_Text("hint", _("Server did not answer"), "warning");
 		UIB_Done();
 		return;
 	}
