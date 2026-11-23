@@ -48,3 +48,5 @@ the console KEYBOARD tab covered the log's close button (panel starts below it).
 - Stock-CSQC public servers: the finger forwarding lives in the port's QuakeC, so a finger cannot yet scroll/tap the log there (mouse and wheel work).
 - Native Kotlin/GTK pause menus have no "Chat log" button (only the QuakeC game menu).
 - Pins: `components.json` was not updated (component-push.sh is the coordinator's); engine/ differs from the pins.
+
+CI: ci/chatev pushed for the Android compile (head commit carries no skip marker).
