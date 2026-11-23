@@ -49,7 +49,7 @@ static void test_insert(void)
 	int c;
 	strcpy(t, "hi @bo there");
 	c = TouchMention_Insert(t, sizeof(t), 3, 6, "Bobby");
-	CHECK(c == 3 + 1 + 5 + 1 && !strcmp(t, "hi @Bobby  there"), "mid-line: '%s' %d", t, c);
+	CHECK(c == 3 + 1 + 5 + 1 && !strcmp(t, "hi @Bobby there"), "mid-line: '%s' %d", t, c);
 	strcpy(t, "@a");
 	c = TouchMention_Insert(t, sizeof(t), 0, 2, "alice");
 	CHECK(c == 7 && !strcmp(t, "@alice "), "at end: '%s'", t);
@@ -96,6 +96,53 @@ static void test_chatname(void)
 	CHECK(!TouchMention_ChatName("^7: nobody", n, sizeof(n)), "empty name");
 }
 
+static void test_complete(void)
+{
+	char t[64];
+	int c;
+	// partial in the middle of a line, text after it: one space, cursor after it
+	strcpy(t, "hey @bo what's up");
+	c = TouchMention_Insert(t, sizeof(t), 4, 7, "Bobby");
+	CHECK(!strcmp(t, "hey @Bobby what's up") && c == 11, "middle: '%s' %d", t, c);
+	CHECK(t[c - 1] == ' ' && t[c] == 'w', "cursor is right after the one space");
+	// at the end: the trailing space is added
+	strcpy(t, "hi @al");
+	c = TouchMention_Insert(t, sizeof(t), 3, 6, "alice");
+	CHECK(!strcmp(t, "hi @alice ") && c == 10, "end: '%s' %d", t, c);
+	// a name with colour codes is inserted plain
+	strcpy(t, "@x");
+	c = TouchMention_Insert(t, sizeof(t), 0, 2, "^1Red^7Guy^x0f0!");
+	CHECK(!strcmp(t, "@RedGuy! ") && c == 9, "colours stripped: '%s' %d", t, c);
+	// no double space when one follows already
+	strcpy(t, "@a there");
+	c = TouchMention_Insert(t, sizeof(t), 0, 2, "ann");
+	CHECK(!strcmp(t, "@ann there") && c == 5, "existing space reused: '%s' %d", t, c);
+	// a bare @ completes too
+	strcpy(t, "@");
+	c = TouchMention_Insert(t, sizeof(t), 0, 1, "zed");
+	CHECK(!strcmp(t, "@zed ") && c == 5, "bare @: '%s' %d", t, c);
+}
+
+static void test_place(void)
+{
+	int below;
+	float y;
+	// room under the input line: below, right under it
+	y = TouchMention_ListY(20, 40, 100, 360, &below);
+	CHECK(below == 1 && y == 40, "below when it fits: %g", y);
+	// no room below (keyboard top at 120), room above: above the input
+	y = TouchMention_ListY(200, 220, 100, 260, &below);
+	CHECK(below == 0 && y == 100, "above when below is covered: %g", y);
+	// exactly touching the limit still counts as below
+	y = TouchMention_ListY(20, 40, 100, 140, &below);
+	CHECK(below == 1 && y == 40, "fits exactly: %g", y);
+	// neither fits: pushed onto the screen, never negative
+	y = TouchMention_ListY(30, 50, 100, 120, &below);
+	CHECK(below == 1 && y == 20, "squeezed: %g", y);
+	y = TouchMention_ListY(30, 50, 100, 80, &below);
+	CHECK(y == 0, "never above the screen: %g", y);
+}
+
 int main(void)
 {
 	test_chatname();
@@ -103,6 +150,8 @@ int main(void)
 	test_token();
 	test_filter();
 	test_insert();
+	test_complete();
+	test_place();
 	test_mentions();
 	test_typing();
 	if (failures) { printf("%d failure(s)\n", failures); return 1; }
