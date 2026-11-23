@@ -21,6 +21,12 @@ object DialogChrome {
     /** The soft fade at the top and bottom of a dialog body that scrolls. */
     const val FADE_DP = 28f
 
+    /** The soft fade under a page's fixed header, so cards scrolling beneath it are not cut with a hard edge. */
+    const val PAGE_FADE_DP = 20f
+
+    /** Space under a page's last item: it scrolls fully clear of the bottom action bar. */
+    const val PAGE_BOTTOM_DP = 56f
+
     /**
      * How tall a dialog's scrolling body may be when its card has [availablePx] and the action row needs [reservePx]:
      * what is left, never under 120 px so a cramped screen still shows something.

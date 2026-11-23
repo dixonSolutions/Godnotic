@@ -764,6 +764,30 @@ float RB_LayoutControl(string id, string t, float x, float y, float w, float reg
 			if (e) strcpy(e.rb_t1, label);
 			sx = x + w - segw;
 		}
+		// the bound cvar need not be an option (skill 2 beside 1/4/7/10): a numeric value takes the nearest one
+		string shownval = val;
+		{
+			bool exact = false;
+			bool numeric = (val != "" && (stof(val) != 0 || val == "0"));
+			float bestd = 1000000;
+			for (int i = 0; i < no; ++i)
+			{
+				string ov = uib_get(id, sprintf("options.%d.value", i));
+				if (ov == val) exact = true;
+				if (ov == "" || (stof(ov) == 0 && ov != "0"))
+					numeric = false;
+			}
+			if (!exact && numeric)
+			{
+				shownval = "";
+				for (int i = 0; i < no; ++i)
+				{
+					string ov = uib_get(id, sprintf("options.%d.value", i));
+					float d = fabs(stof(ov) - stof(val));
+					if (d < bestd) { bestd = d; shownval = ov; }
+				}
+			}
+		}
 		float ow = avail / max(1, no);
 		for (int i = 0; i < no; ++i)
 		{
@@ -771,7 +795,7 @@ float RB_LayoutControl(string id, string t, float x, float y, float w, float reg
 			if (!o) break;
 			strcpy(o.rb_t1, uib_get(id, sprintf("options.%d.label", i)));
 			strcpy(o.rb_val, uib_get(id, sprintf("options.%d.value", i)));
-			o.rb_sel = o.rb_val == val;
+			o.rb_sel = o.rb_val == shownval;
 			o.rb_focus = 1;
 		}
 		if (help != "")

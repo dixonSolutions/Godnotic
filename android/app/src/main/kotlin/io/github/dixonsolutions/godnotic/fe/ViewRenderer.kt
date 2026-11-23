@@ -146,7 +146,8 @@ class ViewRenderer(
         (e.view.parent as? ViewGroup)?.removeView(e.view)
         bindSafe(e) // the back arrow follows app.canBack
         host.showScreen(e.view, screen, transition)
-        restoreScroll(e)
+        // a page opened from another starts at its top; one returned to (back) is where it was left
+        if (transition == "push") { saved.remove(screen); e.scroller?.post { e.scroller?.scrollTo(0, 0) } } else restoreScroll(e)
     }
 
     override fun dialog(id: String?) {
@@ -402,7 +403,7 @@ class ViewRenderer(
         top.visibility = View.GONE
         root.addView(top)
         val body = FitBody(ctx, dp(18f))
-        body.setPadding(pad, dp(8f), pad, dp(28f))
+        body.setPadding(pad, dp(8f), pad, dp(DialogChrome.PAGE_BOTTOM_DP)) // the last item scrolls fully clear of the bar
         val stickyHost = FrameLayout(ctx)
         val sv = PageScroll(ctx)
         sv.isFillViewport = true
@@ -489,8 +490,8 @@ class ViewRenderer(
             // height free (otherwise the row, e.g. Unlock or Close, is pushed out of the card).
             sv.reservePx = if (modal && bottom.visibility == View.VISIBLE) dp(DialogChrome.ACTION_ROW_DP) else 0
             // a scrolled dialog body fades out at its edges instead of cutting a button in half
-            sv.isVerticalFadingEdgeEnabled = modal
-            if (modal) sv.setFadingEdgeLength(dp(DialogChrome.FADE_DP))
+            sv.isVerticalFadingEdgeEnabled = true
+            sv.setFadingEdgeLength(dp(if (modal) DialogChrome.FADE_DP else DialogChrome.PAGE_FADE_DP))
             // a settings search result names its row: bring it under the pinned tabs and
             // mark it for a moment, so the player can walk there next time
             val reveal = p.str("reveal")
@@ -1479,7 +1480,8 @@ class ViewRenderer(
                 col.setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
                 if (title(p).isNotEmpty()) col.addView(Kit.text(ctx, title(p), Theme.SP_BODY, Theme.TEXT, bold = true))
                 val chips = FlowGrid(ctx, 0, dp(8f), wrap = true)
-                for (o in opts) chips.addView(chipView(Icons.label(o.str("icon"), o.str("label", o.str("value"))), o.str("value") == sel) {
+                val shown = ChoiceSelection.selected(opts.map { it.str("value") }, sel)
+                for (o in opts) chips.addView(chipView(Icons.label(o.str("icon"), o.str("label", o.str("value"))), o.str("value") == shown) {
                     events.value(id, o.str("value")); x.props = x.props + ("value" to o.str("value")); bindSafe(x)
                 })
                 col.addView(chips)
