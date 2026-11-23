@@ -57,6 +57,16 @@ static int tcl_panel;            /* open */
 static int tcl_filter;           /* 0 all, 1 chat, 2 events */
 static tcl_scroller_t tcl_sc;    /* the panel's scroll, in console units from the newest end */
 static double tcl_last_frame;
+static double tcl_scroll_at = -100;
+static unsigned tcl_serial, tcl_slot_serial[TCL_CAP];
+static unsigned tcl_anchor_slot, tcl_anchor_serial;
+static float tcl_anchor_acc;
+static int tcl_anchor_valid, tcl_anchor_filter;
+
+static void TCL_Added(void)
+{
+	tcl_slot_serial[(cl_log.head + TCL_CAP - 1) % TCL_CAP] = ++tcl_serial;
+}
 static float tcl_body_h, tcl_content_h, tcl_row_h;
 static int tcl_popup;            /* the actions for a player are open */
 static char tcl_popup_name[TCL_NAME];
@@ -110,11 +120,15 @@ void TouchChatLog_Line(const char *line)
 	if (!touch_chatlog.integer)
 		return;
 	/* the printer prefixes "^7^3"; the text follows */
-	if (TouchChatLog_AddLead(&cl_log, host.realtime, time(NULL), lead, line) && lead == 3)
+	if (TouchChatLog_AddLead(&cl_log, host.realtime, time(NULL), lead, line))
 	{
-		const tcl_entry_t *e = TouchChatLog_Get(&cl_log, cl_log.count - 1);
-		if (e->kind == TCL_JOIN || e->kind == TCL_LEAVE)
-			tcl_event_at = host.realtime;
+		TCL_Added();
+		if (lead == 3)
+		{
+			const tcl_entry_t *e = TouchChatLog_Get(&cl_log, cl_log.count - 1);
+			if (e->kind == TCL_JOIN || e->kind == TCL_LEAVE)
+				tcl_event_at = host.realtime;
+		}
 	}
 }
 
@@ -209,7 +223,10 @@ static void TCL_RenamePoll(void)
 			char plain[TCL_NAME];
 			TouchMention_StripColors(tcl_pend[i].new_, plain, sizeof(plain));
 			if (!TouchChatLog_HasRecent(&cl_log, host.realtime, TCL_RENAME, plain, 3.0))
-				TouchChatLog_AddRename(&cl_log, host.realtime, time(NULL), tcl_pend[i].old_, tcl_pend[i].new_);
+			{
+				if (TouchChatLog_AddRename(&cl_log, host.realtime, time(NULL), tcl_pend[i].old_, tcl_pend[i].new_))
+					TCL_Added();
+			}
 			tcl_pend[i].at = 0;
 		}
 }
@@ -372,9 +389,11 @@ static int TCL_Wrap(const tcl_metrics_t *m, const char *text, float width, int d
 /* the virtual list's measure callback: rows are kept per line, for this width and size */
 static float tcl_measure_w;
 static const tcl_metrics_t *tcl_measure_m;
+static float tcl_cache_w = -1, tcl_cache_fs = -1;
+static int tcl_cache_key;
 static int TCL_Measure(void *ctx, tcl_entry_t *e)
 {
-	int key = (int)(tcl_measure_w * 4.0f) * 131 + (int)(tcl_measure_m->fs * 16.0f);
+	int key = tcl_cache_key;
 	(void)ctx;
 	if (e->rows > 0 && e->rowsw == key)
 		return e->rows;
@@ -408,6 +427,7 @@ static void TCL_Open(int open)
 	if (open == tcl_panel)
 		return;
 	tcl_panel = open;
+	tcl_anchor_valid = 0;
 	if (open)
 		tcl_filter = 0;
 	tcl_popup = 0;
@@ -495,6 +515,7 @@ static void TCL_Clear_f(cmd_state_t *cmd)
 {
 	(void)cmd;
 	TouchChatLog_Clear(&cl_log);
+	tcl_anchor_valid = 0;
 	memset(&tcl_sc, 0, sizeof(tcl_sc));
 	tcl_cleared_at = cl.time;
 	tcl_popup = 0;
@@ -650,7 +671,10 @@ static void TCL_Pointer(int phase, float x, float y)
 	if (phase == 1)
 	{
 		if (TCL_Scrolls(tcl_ptr_id))
-			TouchChatLog_ScrollMove(&tcl_sc, y, now, max(0.0f, tcl_content_h - tcl_body_h), tcl_slop);
+			{
+			if (TouchChatLog_ScrollMove(&tcl_sc, y, now, max(0.0f, tcl_content_h - tcl_body_h), tcl_slop))
+				tcl_scroll_at = now;
+		}
 		return;
 	}
 	/* up */
@@ -686,6 +710,7 @@ static void TCL_PanelScroll(float notches)
 	if (!tcl_panel)
 		TCL_Open(1);
 	TouchChatLog_ScrollWheel(&tcl_sc, notches, step, maxpos);
+	tcl_scroll_at = host.realtime;
 }
 
 static float TCL_PageNotches(void)
@@ -702,6 +727,7 @@ static void TCL_Scroll_f(cmd_state_t *cmd)
 			TCL_Open(1);
 		tcl_sc.pos = tcl_clampf(tcl_sc.pos + rows * (tcl_row_h > 0 ? tcl_row_h : 12), 0, max(0.0f, tcl_content_h - tcl_body_h));
 		tcl_sc.vel = 0;
+		tcl_scroll_at = host.realtime;
 	}
 }
 
@@ -929,8 +955,6 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	 * up to what the screen has; it hangs from the top so nothing below it is covered for nothing */
 	{
 		float want = TouchChatLog_Content(&cl_log, mask, m->rowh, m->pad), maxbody = ph - hdr - footer;
-		if (tcl_content_h > want)
-			want = tcl_content_h;
 		want = max(want + m->rowh * 0.5f, m->rowh * 5);
 		if (want < maxbody)
 			ph = hdr + footer + want;
@@ -987,15 +1011,52 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	tcl_measure_w = textw;
 	tcl_measure_m = m;
 
-	/* the coast, then the window over what is in view; unseen lines count one row until they are */
-	tcl_content_h = TouchChatLog_Content(&cl_log, mask, m->rowh, m->pad);
+	/* Measure each changed entry once; all subsequent layout uses cached heights. */
+	if (tcl_cache_w != textw || tcl_cache_fs != m->fs)
+	{
+		unsigned k;
+		tcl_cache_w = textw; tcl_cache_fs = m->fs;
+		/* Clear keys rather than allowing a generation counter to wrap. */
+		for (k = 0; k < cl_log.count; k++)
+			((tcl_entry_t *)TouchChatLog_Get(&cl_log, k))->rowsw = 0;
+		tcl_cache_key = 1;
+	}
+	{
+		float acc = 0, anchor_acc = 0;
+		unsigned k;
+		int found = 0;
+		for (k = cl_log.count; k-- > 0;)
+		{
+			tcl_entry_t *e = (tcl_entry_t *)TouchChatLog_Get(&cl_log, k);
+			unsigned slot = (unsigned)(e - cl_log.e);
+			if (!(mask & TCL_BIT(e->kind))) continue;
+			if (tcl_anchor_valid && slot == tcl_anchor_slot && tcl_slot_serial[slot] == tcl_anchor_serial)
+			{
+				anchor_acc = acc;
+				found = 1;
+			}
+			e->rows = (short)TCL_Measure(NULL, e);
+			acc += tcl_entry_h(e, m->rowh, m->pad);
+		}
+		if (found && tcl_sc.pos > 0 && tcl_anchor_filter == tcl_filter)
+			tcl_sc.pos += anchor_acc - tcl_anchor_acc;
+		tcl_content_h = acc;
+	}
 	maxpos = max(0.0f, tcl_content_h - bodyh);
 	TouchChatLog_ScrollStep(&tcl_sc, dt, maxpos);
+	if (tcl_sc.down || tcl_sc.vel != 0)
+		tcl_scroll_at = host.realtime;
 	tcl_sc.pos = tcl_clampf(tcl_sc.pos, 0, maxpos);
-	TouchChatLog_Window(&cl_log, mask, TCL_Measure, NULL, m->rowh, m->pad, bodyh, tcl_sc.pos, &win);
-	tcl_content_h = TouchChatLog_Content(&cl_log, mask, m->rowh, m->pad);
-	maxpos = max(0.0f, tcl_content_h - bodyh);
-	tcl_sc.pos = tcl_clampf(tcl_sc.pos, 0, maxpos);
+	TouchChatLog_Window(&cl_log, mask, NULL, NULL, m->rowh, m->pad, bodyh, tcl_sc.pos, &win);
+	tcl_anchor_valid = win.n > 0 && tcl_sc.pos > 0;
+	if (tcl_anchor_valid)
+	{
+		const tcl_entry_t *e = TouchChatLog_Get(&cl_log, win.idx[0]);
+		tcl_anchor_slot = (unsigned)(e - cl_log.e);
+		tcl_anchor_serial = tcl_slot_serial[tcl_anchor_slot];
+		tcl_anchor_acc = bodyh - win.top[0] - win.h[0] + tcl_sc.pos;
+		tcl_anchor_filter = tcl_filter;
+	}
 
 	TCL_AddTarget(pxl, rowtop, pw, bodyh, TG_BODY, 0);
 	DrawQ_SetClipArea(pxl, rowtop + 1, pw, bodyh - 1);
@@ -1006,17 +1067,17 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	DrawQ_ResetClipArea();
 
 	/* the scroll bar, and the way back to the newest line */
-	if (tcl_content_h > bodyh + 1)
+	if (tcl_content_h > bodyh + 1 && host.realtime - tcl_scroll_at < 1.5)
 	{
 		float th = max(m->fs * 2, bodyh * bodyh / tcl_content_h);
 		float ty = rowtop + (bodyh - th) * (1.0f - tcl_sc.pos / max(1.0f, maxpos));
-		DrawQ_Fill(pxl + pw - 4.0f * m->dp, ty, 3.0f * m->dp, th, 0.6f, 0.7f, 0.9f, tcl_sc.down || tcl_sc.vel != 0 ? 0.8f : 0.4f, 0);
+		DrawQ_Fill(pxl + pw - 3.0f * m->dp, ty, 2.0f * m->dp, th, 0.85f, 0.9f, 1, 0.7f * tcl_clampf((float)(1.5 - (host.realtime - tcl_scroll_at)) / 0.7f, 0, 1), 0);
 	}
-	if (tcl_sc.pos > m->rowh * 2)
+	if (tcl_sc.pos > bodyh)
 	{
 		float bs = tcl_min_target * 0.8f;
 		float bx = pxl + pw - bs - m->fs * 1.2f, by = rowtop + bodyh - bs - m->fs;
-		DrawQ_Fill(bx, by, bs, bs, 0.15f, 0.3f, 0.6f, 0.95f, 0);
+		TouchHUD_GlassPanel(bx, by, bs, bs, bs * 0.3f, 1);
 		TCL_Icon(m, TCL_I_LATEST, bx + bs * 0.18f, by + bs * 0.18f, bs * 0.64f, 1, 1, 1, 1);
 		TCL_AddTarget(bx, by, bs, bs, TG_LATEST, 0);
 	}

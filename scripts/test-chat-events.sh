@@ -210,6 +210,24 @@ sleep 2
 TA "touch_chatlog_state"
 p1=$(field "$d/t" pos)
 if awk -v a="$p0" -v b="$p1" 'BEGIN{exit !(b > a + 20)}'; then ok "scroll: the mouse wheel scrolls back ($p0 -> $p1)"; else bad "scroll: wheel did not scroll: $p0 -> $p1"; fi
+# A deep position stays anchored when new lines arrive; the latest button is a one-tap escape.
+T "touch_chatlog_scroll 100"
+sleep 1
+TA "touch_chatlog_state"
+p_before=$(field "$d/t" pos)
+if grep -aq '^CHATLOG-TARGET latest ' "$d/t.ask"; then ok "scroll: latest button appears when far back"; else bad "scroll: latest button missing"; fi
+T "touch_chatlog_inject 1 Anchor^7: a newly arrived line"
+sleep 1
+TA "touch_chatlog_state"
+p_after=$(field "$d/t" pos)
+if awk -v a="$p_before" -v b="$p_after" 'BEGIN{exit !(b > a)}'; then ok "scroll: new line preserves the view ($p_before -> $p_after)"; else bad "scroll: new line moved the view ($p_before -> $p_after)"; fi
+read -r latest_x latest_y < <(grep -a '^CHATLOG-TARGET latest ' "$d/t.ask" | head -1 | awk '{print $4, $5}')
+if [ -n "${latest_x:-}" ]; then
+	T "touch_chatlog_ptr down $latest_x $latest_y" "touch_chatlog_ptr up $latest_x $latest_y"
+	sleep 1
+	TA "touch_chatlog_state"
+	if [ "$(field "$d/t" pos)" = "0.0" ] && ! grep -aq '^CHATLOG-TARGET latest ' "$d/t.ask"; then ok "scroll: latest button returns to newest and disappears"; else bad "scroll: latest button did not return to newest"; fi
+fi
 T "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN"
 sleep 2
 TA "touch_chatlog_state"
