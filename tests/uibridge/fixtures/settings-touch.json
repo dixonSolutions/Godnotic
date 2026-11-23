@@ -496,6 +496,7 @@
      "settings/split/touch/tabs/feel/buttons/opacity",
      "settings/split/touch/tabs/feel/buttons/fire",
      "settings/split/touch/tabs/feel/buttons/dodge",
+     "settings/split/touch/tabs/feel/buttons/dashboost",
      "settings/split/touch/tabs/feel/buttons/firedrag",
      "settings/split/touch/tabs/feel/buttons/buttondrag",
      "settings/split/touch/tabs/feel/buttons/hop",
@@ -558,6 +559,17 @@
      "label": "Dodge button",
      "bind": "cvar:touch_dodge_visible",
      "value": false
+    },
+    "children": []
+   },
+   {
+    "id": "settings/split/touch/tabs/feel/buttons/dashboost",
+    "type": "switch",
+    "props": {
+     "label": "Weapon boost on DASH",
+     "bind": "cvar:cl_touch_dash_boost",
+     "help": "DASH can fire a rocket or blaster at the floor or a wall to launch you up or forward, when that gets you where you are going better than a dodge. Hold DASH to pick the weapon and direction",
+     "value": true
     },
     "children": []
    },

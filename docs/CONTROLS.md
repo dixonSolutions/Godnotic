@@ -546,7 +546,7 @@ keeps its physical size across aspect ratios — `mm = _size × 183.2` on the
 | Zoom | `touch_zoom_` | `touch_zoom_visible` 0 never / 1 always / 2 contextual | contextual (`2`) |
 | Hook | `touch_hook_` | `touch_hook_visible` 0 never / 1 always / 2 while a hook is to hand | contextual (`2`) |
 | Turn | `touch_turn_` | `touch_turn_angle` (90–360, 180), `touch_turn_time` (0–0.5 s, 0.12; 0 = at once) | yes |
-| Dash | `touch_dodge_` | — | no |
+| Dash | `touch_dodge_` | see [Smart DASH](#smart-dash-dodge-or-weapon-boost-engine-both-huds) | no |
 | Reload | `touch_reload_` | — | no |
 
 Shipped values live in `touch/profiles/standard.cfg` and are registered as
@@ -1778,6 +1778,98 @@ dodge, no change). The row, cooking, the release throw, the safety (thrown at
 | Hold fire + drag | Fire while steering (`touch_fire_drag_look`) | On by default |
 | Tap KEEP | Keep bunny-hopping until KEEP is tapped again | On by default (`touch_hop_mode 3`); hold-to-latch HOP is `touch_hop_mode 1` |
 | Double-tap move stick dir | Dash | Competitive (`touch_dodge_mode 1`) |
+
+### Smart DASH: dodge or weapon boost (engine, both HUDs)
+
+DASH (`touch_dodge_visible`, off by default) does the smart thing in one tap
+(`engine/darkplaces/touch_dash.c`; decisions in `touch_dashplan.h`, a pure header
+checked by `scripts/test-touch-dash.sh`). The engine HUD's DASH button sends the
+tap through it, and so does the port's CSQC HUD (`touch_dash` console command);
+`touch_dash [up|forward|auto] [weapon]` is the same tap for a bind or a test.
+
+- **A plain dash is still a dodge.** Where the server has dodging, a tap that has
+  nothing to reach (no gap to cross, no ledge to get onto) sends `+dodge` as before,
+  and so does one where a dodge or a jump already gets the player there.
+- **A weapon boost when it gets there better, or dodging is off.** A boost is a
+  shot at the floor, a wall, or behind the player that launches them. It is chosen
+  when a gap ahead or a ledge within reach is only reached by one (a dodge, or a
+  dodge plus the blast, is counted too: with dodging the blast adds to the dodge's
+  push), when the player forces a direction, or when the server has no dodging and
+  an open launch is the only dash there is.
+- **Forward or up, worked out.** The way the player heads is the move stick, else
+  their velocity, else the view. A gap ahead (ground breaks off and resumes at about
+  the same height within `cl_touch_dash_range`) is a forward goal; a wall ahead with
+  ground on top within reach (up to 400 units, ceiling permitting) is an up goal; the
+  nearer one wins, a ledge when the stick is idle. With neither, the stick decides
+  (pushed: forward; idle, or looking up past 25 degrees: up). Long-press can force
+  either.
+- **Prediction.** Every candidate (weapon x aim x with or without a dodge) is run
+  forward: the shot flies to where the view ray meets the world, the player moves
+  meanwhile (a switch costs `cl_touch_dash_switch` seconds, a rocket takes its
+  flight time), then the blast pushes by the server's own rule
+  (`damage = core*f + edge*(1-f)`, `f = 1 - gap/radius`, push along
+  centre-minus-blast scaled by `g_player_damageforcescale`, and reduced by the
+  player's speed along it: `explosion_calcpush`), and the arc under gravity is
+  traced with the player's box to where they come down. The best landing wins; one
+  in a death volume, the void, or short of the goal never does. The weapon in hand is
+  preferred (no switch, no delay).
+- **What it reads.** The weapons held and their ammo (`TouchHUD_*`), health and armor,
+  the move stick and view, the map (client traces), whether the server has dodging
+  (the CSQC's `active_mutators`; when that is unreadable a dash that moves the player
+  twice, or not at all twice, decides), the armor share (the CSQC's
+  `armorblockpercent`, which the server sends every client), gravity, jump and run
+  speed (`cl.movevars_*`). Where the server is this machine (a local game, a hosted
+  LAN game) the boost weapons' damage, edge damage, radius, force and speed, and
+  `g_balance_selfdamagepercent`, `g_player_damageforcescale`, `g_weaponforcefactor`,
+  `g_balance_damagepush_speedfactor` and the dodging numbers are read from the
+  server's own cvars. A remote server does not send them, so the stock numbers are
+  used and each weapon's push is scaled by what the boosts really gave
+  (`cl_touch_dash_learn`: after every boost the push measured is compared with the
+  one predicted); three boosts in a row that pushed nothing are taken to mean
+  weapon jumps are off there, and boosting stops for that server.
+- **Safety.** Self damage is the blast's damage times the self-damage share, armor
+  taking its share first. A boost is never fired when it would leave the player
+  under `cl_touch_dash_minhealth` (25) or cost more than `cl_touch_dash_maxself`
+  (70), when a menu, the console or the chat sheet is open, when dead or spectating,
+  or when the server pushes no one (instagib-like). Nothing is fired with no safe
+  candidate; the tap then dodges (if the server has dodging) or does nothing.
+- **The boost.** Switch to the weapon if it is not in hand (waiting until it is up),
+  turn the view to the aim (`cl_touch_dash_turn` degrees per second; once the weapon
+  is up the plan is made again from the real position and velocity, and the aim
+  corrected until it matches), fire for 0.1 s, then turn the view back, and take the
+  previous weapon back. Auto-shoot and auto-switch stand down meanwhile
+  (`TouchHook_InUse`). A look drag during the boost is not kept.
+- **See and pick.** With the weapon part on, a small capsule under DASH says what a
+  tap would do now: `BLA UP`, `DEV FWD`, `DODGE`, or `-` (nothing safe). Hold DASH for
+  `cl_touch_dash_longpress` (0.35 s) and chips open above it: AUTO / UP / FORWARD for
+  the direction, AUTO and the boost weapons you hold (DEV, BLA, ELE, HAG) for the
+  weapon; slide onto one and let go. The choice is kept in `cl_touch_dash_dir` and
+  `cl_touch_dash_weapon`. A tap then acts when the finger lifts, so there is no
+  accidental dash while holding; `cl_touch_dash_longpress 0` acts on the press as
+  before and has no picker. The port's CSQC HUD has no capsule or picker: its DASH
+  sends the same tap with the same choices.
+- **Setting.** Settings > Controls > Touch controls > Buttons (and the stock Settings
+  > Mobile > Touch menu): **Weapon boost on DASH**, default on. Off: DASH is exactly
+  the old `+dodge`.
+
+| Cvar | Default | Meaning |
+|------|---------|---------|
+| `cl_touch_dash_boost` | `1` | The weapon part of DASH (archived; Settings > Controls) |
+| `cl_touch_dash_dir` | `0` | 0 auto, 1 up, 2 forward (long-press picker) |
+| `cl_touch_dash_weapon` | `""` | `devastator`, `blaster`, `electro`, `hagar`, or empty for the best one held |
+| `cl_touch_dash_minhealth` | `25` | Never fire when the blast would leave less health |
+| `cl_touch_dash_maxself` | `70` | The most health one boost may cost |
+| `cl_touch_dash_switch` | `0.35` | Seconds a weapon switch takes, counted against the time to impact |
+| `cl_touch_dash_margin` | `48` | A boost must land this many units nearer the goal than a dodge to replace it |
+| `cl_touch_dash_range` | `900` | How far ahead a gap or ledge is looked for |
+| `cl_touch_dash_longpress` | `0.35` | Seconds to hold for the picker; 0 acts on the press |
+| `cl_touch_dash_turn` | `1500` | View turn rate to the aim and back, degrees per second |
+| `cl_touch_dash_learn` | `1` | Scale each weapon's push by what boosts really gave |
+| `cl_touch_dash_centerh` | `28` | Height above the origin the server pushes the shooter from |
+| `cl_touch_dash_debug` | `0` | 1 prints each decision, boost, measured push and landing; `touch_dash_status` prints what it knows |
+
+`touch_boost.h` (the first, straight-up-only decision, tested by
+`scripts/test-touch-boost.sh`) is kept but not used by the engine.
 
 ### Multitouch (CSQC contract)
 

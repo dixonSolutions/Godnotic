@@ -1061,8 +1061,7 @@ void Touch_Frame(void)
 			localcmd("weapon_reload\n");
 		else if (role == TOUCH_ROLE_DODGE && touch_finger_first[i])
 		{
-			localcmd("+dodge\n");
-			localcmd("-dodge\n");
+			localcmd("touch_dash\n"); // Touch: the smart DASH (engine, touch_dash.c): a dodge or a weapon boost
 		}
 
 		touch_finger_first[i] = false;

@@ -195,6 +195,9 @@ void XonoticMobileControlsTab_fill(entity me)
 			_("Tap FIRE to start firing and tap again to stop")));
 		me.TD(me, 1, 2.4, e = makeXonoticCheckBox_T(0, "touch_dodge_visible", _("Dodge button"),
 			_("Show a dodge button next to the move stick")));
+	me.TR(me);
+		me.TD(me, 1, 6, e = makeXonoticCheckBox_T(0, "cl_touch_dash_boost", _("Weapon boost on DASH"),
+			_("DASH can fire a rocket or blaster at the floor or a wall to launch you up or forward, when that gets you where you are going better than a dodge. Hold DASH to pick the weapon and direction")));
 	// Bunny-hopping needs jump held. The default keeps HOP a plain button and
 	// puts the hold on its own KEEP switch, apart from it, so a jump never
 	// turns into hopping by accident.
