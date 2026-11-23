@@ -949,3 +949,34 @@ Measured and reasoned in the 1289 net hand-over note; what the code does now:
 - **`net_connect_retry`** 0.4: the first repeats of a lost `getchallenge` come
   after 0.4 s and 0.8 s instead of 1 s each.
 - Android keeps the Wi-Fi low-latency lock while connected, in front too.
+
+### 1289 joinload3: the signon message is read while it arrives
+
+A stock server writes its whole signon (the `curl --pak` lines, then 300-1000 precache
+names) as one reliable message and sends it one fragment per round trip. DarkPlaces parses a
+reliable message only once it is complete, so on a 250-330 ms link nothing happened for 8-14 s
+after `Connection established`: the pack URLs, the map name and the downloads all waited for the
+last fragment (measured, "Quake 1 Nostalgia Trip!": connect 1.5 s, signon 1 at 9.95 s, downloads
+start 9.95 s). The `curl` lines are at the head of the message (`SV_SendServerinfo` writes them
+before the precache lists), so they are in the first fragment.
+
+- `touch_joinname.c` `TouchJoinName_PeekSignon` (hook: one `// Touch:` line in `netconn.c` after
+  a fragment is appended): reads the `curl --pak` lines from the part of the message that has
+  arrived. Gives the join its map (`--for maps/<map>.bsp`) and that pack's URL one round trip after
+  the connect, and counts the bytes received (`sig_bytes` on the connect topic: the card shows
+  "24 KB received" in the wait).
+- `touch_early_downloads` (default 1): the same lines are run at that moment (without
+  `--forthismap`; the server's own lines run later, find the files already there or already being
+  fetched, and count them as usual). The downloads therefore overlap the wait instead of following it.
+  They are held back for the map picture's own requests (at most 2.5 s, `release_held`).
+- The map picture (`touch_curlshot.h`): range reads of the pack (the last 64 KB with a suffix range,
+  which also gives the size, the directory if it is not in that tail, then the member with its local
+  header: two requests). A server that ignores `Range` (a plain static file server answers 200; the
+  Quake 1 server's `python -m http.server` does) is read whole when the pack is under 12 MB, and the
+  pack is kept as `dlcache/<name>`, so it is the download as well. A pack already in `dlcache/` is read
+  from disk. Picture search in the pack: `maps/<map>.jpg|png`, `levelshots/<map>.jpg|png`; none, but
+  `maps/<map>.bsp` of a Quake 1 map (BSP version 29): a picture rendered from it (`touch_bspshot.h`,
+  an oblique top-down view of the world's faces, sky and trigger brushes left out, 1024x576 PNG).
+  Kept as `maps/<map>.png` for the next visit (`touch_joinshot_early 0` = off).
+- Connect topic: `dl_file`, `dl_files_done`, `dl_files_total`, `dl_all_bytes`, `dl_all_total`,
+  `sig_bytes` (docs/FRONTEND_BRIDGE.md).

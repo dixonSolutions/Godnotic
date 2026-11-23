@@ -162,6 +162,87 @@ internal object JoinFlow {
         return (base + (1 - base) * l).coerceAtLeast(0.01)
     }
 
+    /**
+     * The padding that keeps the docked card clear of the system: the larger of the system bars
+     * and the cutout on each side, and at the bottom also the gesture area. [l,t,r,b] in pixels.
+     */
+    fun cardInsets(l: Int, t: Int, r: Int, b: Int, cutout: IntArray, gestureBottom: Int): IntArray =
+        intArrayOf(maxOf(l, cutout[0]), maxOf(t, cutout[1]), maxOf(r, cutout[2]), maxOf(b, cutout[3], gestureBottom))
+
+    /** The stage the card describes: a running or queued download is a download, whatever stage the engine reports. */
+    fun shownStage(stage: String, downloadsBusy: Boolean): String =
+        if (downloadsBusy && stage in setOf("preview", "loading", "signon", "downloading")) "downloading" else stage
+
+    /** What the engine's connect topic says about a join, in the numbers the card needs (docs/FRONTEND_BRIDGE.md). */
+    data class Snap(
+        val stage: String = "", val waitS: Int = -1, val sigBytes: Double = 0.0,
+        val dlFile: String = "", val filesDone: Int = 0, val filesTotal: Int = 0,
+        val dlBytes: Double = 0.0, val dlTotal: Double = 0.0, val speed: Double = 0.0,
+        val running: Int = 0, val queued: Int = 0,
+        val loadStage: String = "", val loadN: Int = 0, val loadM: Int = 0,
+        val precache: String = "", val precacheN: Int = 0, val precacheTotal: Int = 0,
+        val load: String = "", val map: String = "", val status: String = "",
+    )
+
+    /** The card's two lines: what it is doing (head) and the numbers (detail). */
+    data class Lines(val head: String, val detail: String)
+
+    /** "0:19 left"; empty when the speed or the total is unknown. */
+    fun eta(bytes: Double, total: Double, speed: Double): String {
+        if (speed <= 1024.0 || total <= bytes) return ""
+        val left = ((total - bytes) / speed).toInt()
+        return if (left >= 3600) String.format(java.util.Locale.US, "%d:%02d:%02d left", left / 3600, left / 60 % 60, left % 60)
+        else String.format(java.util.Locale.US, "%d:%02d left", left / 60, left % 60)
+    }
+
+    /** "Map textures 120 / 218", "Models 40 / 332", "Sounds": the precache step the engine reports (load_stage, load_n, load_m). */
+    fun precacheStep(stage: String, n: Int, m: Int): String {
+        val label = when (stage) {
+            "models" -> "Models"
+            "world" -> "Map textures"
+            "worldsetup" -> "Setting up the world"
+            "sounds" -> "Sounds"
+            else -> return ""
+        }
+        return if (m > 0 && n >= 0 && stage != "worldsetup") "$label $n / $m" else label
+    }
+
+    private fun clip(name: String, max: Int = 36): String = if (name.length > max) name.take(max - 1) + "…" else name
+
+    /**
+     * The whole card text for a join: a headline and one line of numbers, in every phase.
+     * Downloading names the file, "File 2 of 5", MB received of the total (all files of the join,
+     * finished ones included), speed and time left. After the downloads the precache step.
+     */
+    fun describe(s: Snap): Lines {
+        if (s.waitS >= 0) {
+            val parts = ArrayList<String>()
+            if (s.sigBytes >= 1024) parts.add(size(s.sigBytes) + " received")
+            if (s.waitS >= 2) parts.add("${s.waitS} s")
+            return Lines("Receiving game data from the server", parts.joinToString("  ·  "))
+        }
+        return when (s.stage) {
+            "connecting" -> Lines(if (s.status.isNotEmpty() && s.status.startsWith("Connect")) s.status else "Connecting to the server", "")
+            "downloading" -> {
+                val parts = ArrayList<String>()
+                val files = maxOf(s.filesTotal, s.running + s.queued)
+                if (files > 1) parts.add("File ${minOf(s.filesDone + 1, files)} of $files")
+                if (s.dlTotal > 0) parts.add(sizes(s.dlBytes, s.dlTotal).replace("/", " of ")) else if (s.dlBytes > 0) parts.add(size(s.dlBytes) + " received")
+                rate(s.speed).let { if (it.isNotEmpty()) parts.add(it) }
+                eta(s.dlBytes, s.dlTotal, s.speed).let { if (it.isNotEmpty()) parts.add(it) }
+                val name = clip(s.dlFile.substringAfterLast('/'))
+                Lines(if (name.isNotEmpty()) "Downloading $name" else "Downloading game data", parts.joinToString("  ·  "))
+            }
+            "signon" -> Lines("Entering the game", "")
+            else -> {
+                val step = precacheStep(s.loadStage, s.loadN, s.loadM)
+                    .ifEmpty { if (s.precache.isNotEmpty() && s.precacheTotal > 0) precacheStep(s.precache, s.precacheN, s.precacheTotal) else "" }
+                val head = if (s.map.isNotEmpty()) "Loading map ${s.map}" else if (phase(s.load)) s.load.replaceFirstChar { it.uppercase() } else "Loading the map"
+                Lines(head, step)
+            }
+        }
+    }
+
     /** The server's own signon data (serverinfo, precache lists) is arriving: nothing loads or downloads yet. */
     fun waiting(seconds: Int): String =
         "Receiving game data from the server" + if (seconds >= 2) "  ·  $seconds s" else ""
