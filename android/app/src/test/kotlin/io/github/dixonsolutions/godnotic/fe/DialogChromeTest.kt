@@ -31,4 +31,11 @@ class DialogChromeTest {
         assertEquals("timeout", RconCommands.parseVerdict("timeout:h:1")!!.kind)
         assertNull(RconCommands.parseVerdict("")); assertNull(RconCommands.parseVerdict("ok:")); assertNull(RconCommands.parseVerdict("maybe:h:1"))
     }
+
+    @Test fun a_tall_dialog_body_leaves_room_for_the_action_row() {
+        // a card with 700 px (1200 px less the keyboard's room) and an 88 dp row at 1.5x: the body gets the rest
+        val row = (DialogChrome.ACTION_ROW_DP * 1.5f).toInt()
+        assertEquals(700 - row, DialogChrome.bodyBudget(700, row))
+        assertEquals("a cramped screen still shows a body", 120, DialogChrome.bodyBudget(150, row))
+    }
 }

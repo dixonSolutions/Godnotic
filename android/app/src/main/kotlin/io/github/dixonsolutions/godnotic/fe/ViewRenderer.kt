@@ -484,6 +484,10 @@ class ViewRenderer(
             if (prim.isNotEmpty()) bottom.addView(actionButton(id, prim, true).apply { tag = "primary" })
             bottom.visibility = if (bottom.childCount == 0) View.GONE else View.VISIBLE
             top.visibility = if (top.childCount == 0) View.GONE else View.VISIBLE
+            // A tall dialog scrolls inside the card with its action row still in view: the card cannot be
+            // taller than the room it has (the screen, less the keyboard), so the scroller leaves the row's
+            // height free (otherwise the row, e.g. Unlock or Close, is pushed out of the card).
+            sv.reservePx = if (modal && bottom.visibility == View.VISIBLE) dp(DialogChrome.ACTION_ROW_DP) else 0
             // a settings search result names its row: bring it under the pinned tabs and
             // mark it for a moment, so the player can walk there next time
             val reveal = p.str("reveal")
@@ -1610,6 +1614,11 @@ class ViewRenderer(
         host.showDialog(dialogFrame(sv, true))
     }
 
+    /** A password the server refused: the field is emptied (it keeps no copy, so what shows is what was typed), ready for the next try. */
+    fun clearSecret(id: String) {
+        (nodes[id]?.view?.tag as? android.widget.EditText)?.setText("")
+    }
+
     private fun field(id: String, props: Map<String, Any?>): Entry {
         val secret = props.str("kind") == "password" || props.bool("private")
         val col = Kit.column(ctx, 6f)
@@ -2235,13 +2244,20 @@ class PageScroll(ctx: Context) : ScrollView(ctx) {
     /** The pinned section title's height: a list stops under it. */
     var topInset = 0
 
+    /** Height kept free below the body for a dialog's action row (0: none), so a tall body scrolls instead of pushing the row out of the card. */
+    var reservePx = 0
+
     /**
      * Home's fitted body is given the viewport's own height, whatever the scroller's
      * fill-viewport pass did: measured here, after the scroller knows its size, so the
      * cards can never end up under the bottom bar.
      */
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        var hs = heightMeasureSpec
+        if (reservePx > 0 && MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.AT_MOST) {
+            hs = MeasureSpec.makeMeasureSpec(DialogChrome.bodyBudget(MeasureSpec.getSize(heightMeasureSpec), reservePx), MeasureSpec.AT_MOST)
+        }
+        super.onMeasure(widthMeasureSpec, hs)
         val c = getChildAt(0) as? FitBody ?: return
         if (!c.fit || MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) return
         val h = measuredHeight - paddingTop - paddingBottom

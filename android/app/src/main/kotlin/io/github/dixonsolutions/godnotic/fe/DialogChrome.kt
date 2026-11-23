@@ -14,4 +14,13 @@ object DialogChrome {
 
     /** The fill behind a screen's bottom action row. */
     fun actionBarFill(presentation: String): Int = if (isModal(presentation)) TRANSPARENT else PAGE_ACTION_BAR
+
+    /** The height an action row needs under a dialog's body (padding and a 56 dp button, with air). */
+    const val ACTION_ROW_DP = 88f
+
+    /**
+     * How tall a dialog's scrolling body may be when its card has [availablePx] and the action row needs [reservePx]:
+     * what is left, never under 120 px so a cramped screen still shows something.
+     */
+    fun bodyBudget(availablePx: Int, reservePx: Int): Int = maxOf(120, availablePx - reservePx)
 }

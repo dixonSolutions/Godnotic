@@ -959,6 +959,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             "ok" -> if (ctlRemember && ctlPending.isNotEmpty() && ctlPendingServer == v.server) rconVault.save(v.server, ctlPending)
             "denied" -> if (v.server.isNotEmpty()) rconVault.forget(v.server)
         }
+        if (v.kind != "ok") renderer?.clearSecret("ctl/form/pw") // refused or unanswered: type it again
         ctlPending = ""
     }
 
