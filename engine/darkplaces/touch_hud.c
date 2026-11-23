@@ -1552,11 +1552,11 @@ static void draw_weapon_strip(float a)
 		int rs = TouchHook_RowState();
 		float y = st.top + st.n * h + h * 0.5f, left = st.cx - w * 0.5f + pad;
 		float icon_left = left + num_slot + pad, icon_right = st.cx + w * 0.5f - pad;
+		int wi;
+		const wepdef_t *hw = NULL;
 		float ia = rs == TOUCH_HOOKROW_EMPTY ? A_INK * 0.25f : (rs == TOUCH_HOOKROW_HELD ? A_INK : A_INK * 0.55f);
 		if (rs == TOUCH_HOOKROW_HELD || role_owned(ROLE_HOOK))
 			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * 0.72f);
-		int wi;
-		const wepdef_t *hw = NULL;
 		for (wi = 0; wi < num_weapons; wi++)
 			if (!strcmp(weapons[wi].name, "hook"))
 				hw = &weapons[wi];
@@ -3133,7 +3133,7 @@ static int spec_action_role(int action)
 static int assign_spec_role(float px, float py)
 {
 	int state = TouchUI_SpectatorState(), part, role = pill_at(px, py);
-	float cx, cy, hx, hy, r;
+	float cx, cy, r;
 	if (role != ROLE_NONE)
 		return role;
 	if (in_edge_deadzone(px, py))

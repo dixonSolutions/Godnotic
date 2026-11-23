@@ -1332,7 +1332,6 @@ float DrawQ_String_Scale(float startx, float starty, const char *text, size_t ma
 				//prevmap = map;
 				prevch = ch;
 			}
-out:
 			if (shadow)
 			{
 				x -= 1.0/pix_x * r_textshadow.value;

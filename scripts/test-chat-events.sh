@@ -287,6 +287,7 @@ sleep 1
 TA "touch_chatlog_state"
 p_before=$(field "$d/t" pos)
 if grep -aq '^CHATLOG-TARGET latest ' "$d/t.ask"; then ok "scroll: latest button appears when far back"; else bad "scroll: latest button missing"; fi
+if awk '$1 == "CHATLOG-TARGET" && $2 == "latest" { x=$4; y=$5; found=1 } $1 == "CHATLOG-TARGET" && $2 == "body" { l=$4-$6/2; r=$4+$6/2; t=$5-$7/2; b=$5+$7/2; body=1 } END { exit !(found && body && x > l && x < r && y > t && y < b) }' "$d/t.ask"; then ok "scroll: latest button is inside the log body"; else bad "scroll: latest button outside the log body"; fi
 T "touch_chatlog_inject 1 Anchor^7: a newly arrived line"
 sleep 1
 TA "touch_chatlog_state"
@@ -298,6 +299,7 @@ if [ -n "${latest_x:-}" ]; then
 	sleep 1
 	TA "touch_chatlog_state"
 	if [ "$(field "$d/t" pos)" = "0.0" ] && ! grep -aq '^CHATLOG-TARGET latest ' "$d/t.ask"; then ok "scroll: latest button returns to newest and disappears"; else bad "scroll: latest button did not return to newest"; fi
+	if awk '$1 == "CHATLOG-LAYOUT" { for (i=2; i<=NF; i++) { split($i, v, "="); a[v[1]]=v[2] } found=1 } END { exit !(found && a["newest_top"] >= 0 && a["newest_bottom"] <= a["body"] + 0.01 && a["bottom_pad"] > 0) }' "$d/t.ask"; then ok "scroll: newest row fits above the bottom padding"; else bad "scroll: newest row is clipped or lacks bottom padding"; fi
 fi
 T "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN" "uib_input key MWHEELDOWN"
 sleep 2

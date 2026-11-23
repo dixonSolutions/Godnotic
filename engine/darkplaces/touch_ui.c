@@ -13,6 +13,7 @@
 #include "touch_spectate.h"
 #include "csprogs.h"
 #include "touch_ui.h"
+#include "touch_hud.h"
 #include "touch_shellbtn.h"
 #include "draw.h"
 #include "ft2.h"
@@ -1689,6 +1690,10 @@ void TouchUI_DrawGlassItem(const touchui_item_t *it, float pressed, float opacit
 				TOUCHUI_ACCENT_R * 0.55f, TOUCHUI_ACCENT_G * 0.65f, TOUCHUI_ACCENT_B * 0.85f, 1.0f, 0);
 		else
 			DrawQ_Fill(it->x + 1, it->y + 1, it->w - 2, it->h - 2, 0.16f, 0.20f, 0.27f, 1.0f, 0);
+	}
+	else if (it->style == TOUCHUI_STYLE_GLASS && (!strcmp(it->label, "KEYBOARD") || !strcmp(it->label, "HIDE KEYS")))
+	{
+		TouchHUD_GlassControl(it->x + it->w * 0.5f, it->y + it->h * 0.5f, it->w * 0.5f, it->h * 0.5f, pressed > 0, false, a);
 	}
 	else if (it->style != TOUCHUI_STYLE_TEXT)
 	{

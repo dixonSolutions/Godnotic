@@ -95,7 +95,7 @@ static void TCL_Added(void)
 {
 	tcl_slot_serial[(cl_log.head + TCL_CAP - 1) % TCL_CAP] = ++tcl_serial;
 }
-static float tcl_body_h, tcl_content_h, tcl_row_h;
+static float tcl_body_h, tcl_content_h, tcl_row_h, tcl_newest_top, tcl_newest_bottom, tcl_bottom_pad;
 static int tcl_popup;            /* the actions for a player are open */
 static char tcl_popup_name[TCL_NAME];
 static unsigned tcl_popup_entry;
@@ -133,14 +133,14 @@ static unsigned tcl_sound_count;
 
 static void TCL_EventSound(void)
 {
-	float volume = bound(0, touch_chatlog_sound_volume.value, 1);
+	float sound_volume = bound(0, touch_chatlog_sound_volume.value, 1);
 	if (!tcl_was_connected || cls.state != ca_connected || cls.signon != SIGNONS ||
 	    cls.demoplayback || host.realtime - tcl_conn_at <= 3 ||
-	    host.realtime - tcl_sound_at < 2 || volume <= 0 || !touch_chatlog_sound_file.string[0])
+	    host.realtime - tcl_sound_at < 2 || sound_volume <= 0 || !touch_chatlog_sound_file.string[0])
 		return;
 	tcl_sound_at = host.realtime;
 	tcl_sound_count++; /* attempts, including when sound output is disabled */
-	S_LocalSoundEx(touch_chatlog_sound_file.string, 0, volume);
+	S_LocalSoundEx(touch_chatlog_sound_file.string, 0, sound_volume);
 }
 
 static void TCL_Toast(const char *s)
@@ -959,10 +959,11 @@ static float TCL_TextW(const char *s, float fs)
 /* a labelled text button (a filter chip) with a drawn size and its 44 dp target */
 static float TCL_Chip(const tcl_metrics_t *m, float x, float y, float h, const char *label, int on, int arg)
 {
-	float fs = min(m->fs, 12.0f * m->dp);
+	float fs = min(m->fs, 12.0f * m->dp) * 0.6f;
 	float w = max(tcl_min_target, TCL_TextW(label, fs) + 16.0f * m->dp);
-	DrawQ_RoundedBox(x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, h * 0.5f, 0, 0.18f, 0.25f, 0.32f, on ? 0.48f : 0.22f, 0);
-	DrawQ_RoundedBox(x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, h * 0.5f, m->dp, 0.75f, 0.85f, 1, on ? 0.5f : 0.25f, 0);
+	float drawnw = max(TCL_TextW(label, fs) + 10.0f * m->dp, w * 0.6f);
+	DrawQ_RoundedBox(x + w * 0.5f, y + h * 0.5f, drawnw * 0.5f, h * 0.5f, h * 0.5f, 0, 0.18f, 0.25f, 0.32f, on ? 0.48f : 0.22f, 0);
+	DrawQ_RoundedBox(x + w * 0.5f, y + h * 0.5f, drawnw * 0.5f, h * 0.5f, h * 0.5f, m->dp, 0.75f, 0.85f, 1, on ? 0.5f : 0.25f, 0);
 	DrawQ_String(x + (w - TCL_TextW(label, fs)) * 0.5f, y + (h - fs) * 0.5f, label, 0, fs, fs, 0.9f, 0.94f, 1, 0.9f, 0, NULL, true, FONT_CHAT);
 	TCL_AddTarget(x, y + (h - tcl_min_target) * 0.5f, w, tcl_min_target, TG_CHIP, arg);
 	return w;
@@ -971,7 +972,7 @@ static float TCL_Chip(const tcl_metrics_t *m, float x, float y, float h, const c
 /* an icon button: the picture at its drawn size, centred in its 44 dp target */
 static void TCL_IconButton(const tcl_metrics_t *m, int icon, float cx, float cy, float size, int id, float alpha)
 {
-	float r = 15.0f * m->dp;
+	float r = 9.0f * m->dp;
 	DrawQ_RoundedBox(cx, cy, r, r, r, 0, 0.25f, 0.32f, 0.4f, 0.2f * alpha, 0);
 	DrawQ_RoundedBox(cx, cy, r, r, r, m->dp, 0.8f, 0.9f, 1, 0.28f * alpha, 0);
 	TCL_Icon(m, icon, cx - size * 0.5f, cy - size * 0.5f, size, 0.85f, 0.91f, 1, 0.75f * alpha);
@@ -1044,7 +1045,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	float W = vid_conwidth.value, H = vid_conheight.value;
 	float inl = 0, int_ = 0, inr = 0, inb = 0, dens = 0;
 	float pxl, pyt, pw, ph, hdr, footer = 0, rowtop, bodyh, x;
-	float tw, iconw, textx, textw, title_h, maxpos, iconsz = 20.0f * m->dp, edge;
+	float tw, iconw, textx, textw, title_h, maxpos, iconsz = 12.0f * m->dp, edge;
 	int wide = W >= 560.0f * m->dp, i;
 	tcl_window_t win;
 	unsigned mask = tcl_filter == 1 ? TCL_BIT(TCL_CHAT) : tcl_filter == 2 ? (TCL_EVENTS | TCL_BIT(TCL_NOTE)) : TCL_ALL;
@@ -1088,7 +1089,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 			ph = hdr + footer + want;
 	}
 	rowtop = pyt + hdr;
-	bodyh = ph - hdr - footer;
+	bodyh = ph - hdr - footer - 6.0f * m->dp;
 	if (bodyh < m->rowh * 2)
 		return;
 
@@ -1098,7 +1099,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	{
 		float r = 14.0f * m->dp, cx = pxl + pw * 0.5f, cy = pyt + ph * 0.5f;
 		DrawQ_RoundedBox(cx, cy + 3 * m->dp, pw * 0.5f + 3 * m->dp, ph * 0.5f + 3 * m->dp, r, 0, 0, 0, 0, 0.16f, 0);
-		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, 0, 0.025f, 0.04f, 0.065f, 0.70f, 0);
+		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, 0, 0.025f, 0.04f, 0.065f, 0.98f, 0);
 		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, m->dp, 0.8f, 0.9f, 1, 0.32f, 0);
 	}
 
@@ -1107,7 +1108,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		float cx = pxl + pw - tcl_min_target * 0.5f, cy = pyt + title_h * 0.5f;
 		static const int ic[5] = {TCL_I_CLOSE, TCL_I_SHARE, TCL_I_DOWNLOAD, TCL_I_COPY, TCL_I_CLEAR};
 		static const int id[5] = {TG_CLOSE, TG_SHARE, TG_DOWNLOAD, TG_COPY, TG_CLEAR};
-		float chiph = 30.0f * m->dp, left, chipx, chipy;
+		float chiph = 18.0f * m->dp, left, chipx, chipy;
 		static const char *const chip[3] = {"All", "Chat", "Events"};
 		unsigned total = 0, k;
 		for (i = 0; i < 5; i++)
@@ -1202,6 +1203,9 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		tcl_scroll_at = host.realtime;
 	tcl_sc.pos = tcl_clampf(tcl_sc.pos, 0, maxpos);
 	TouchChatLog_Window(&cl_log, mask, NULL, NULL, m->rowh, m->pad, bodyh, tcl_sc.pos, &win);
+	tcl_newest_top = win.n ? win.top[0] : 0;
+	tcl_newest_bottom = win.n ? win.top[0] + win.h[0] : 0;
+	tcl_bottom_pad = 6.0f * m->dp;
 	tcl_anchor_valid = win.n > 0 && tcl_sc.pos > 0;
 	if (tcl_anchor_valid)
 	{
@@ -1236,17 +1240,17 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		float ty = rowtop + (bodyh - th) * (1.0f - tcl_sc.pos / max(1.0f, maxpos));
 		DrawQ_Fill(pxl + pw - 3.0f * m->dp, ty, 2.0f * m->dp, th, 0.85f, 0.9f, 1, 0.7f * tcl_clampf((float)(1.5 - (host.realtime - tcl_scroll_at)) / 0.7f, 0, 1), 0);
 	}
-	if (tcl_sc.pos > bodyh)
+	if (tcl_sc.pos > 1.0f)
 	{
-		float bs = tcl_min_target * 0.8f;
+		float bs = tcl_min_target * 0.6f;
 		float bx = pxl + pw - bs - m->fs * 1.2f, by = rowtop + bodyh - bs - m->fs;
 		TouchHUD_GlassPanel(bx, by, bs, bs, bs * 0.3f, 1);
 		TCL_Icon(m, TCL_I_LATEST, bx + bs * 0.18f, by + bs * 0.18f, bs * 0.64f, 1, 1, 1, 1);
-		TCL_AddTarget(bx, by, bs, bs, TG_LATEST, 0);
+		TCL_AddTarget(bx + bs * 0.5f - tcl_min_target * 0.5f, by + bs * 0.5f - tcl_min_target * 0.5f, tcl_min_target, tcl_min_target, TG_LATEST, 0);
 	}
 	if (footer > 0)
 	{
-		Con_DrawChatInputAt(pxl + m->fs, rowtop + bodyh + (footer - m->fs) * 0.5f, m->fs);
+		Con_DrawChatInputAt(pxl + m->fs, rowtop + bodyh + 6.0f * m->dp + (footer - m->fs) * 0.5f, m->fs);
 	}
 	TCL_DrawToast(m, pxl + pw * 0.5f, rowtop + m->fs);
 	if (tcl_popup)
@@ -1450,6 +1454,7 @@ static void TCL_State_f(cmd_state_t *cmd)
 		Con_Printf("CHATLOG-TARGET %s %d %.4f %.4f %.4f %.4f\n", tn[tcl_tg[i].id], tcl_tg[i].arg,
 			(tcl_tg[i].x + tcl_tg[i].w * 0.5f) / vid_conwidth.value, (tcl_tg[i].y + tcl_tg[i].h * 0.5f) / vid_conheight.value,
 			tcl_tg[i].w / vid_conwidth.value, tcl_tg[i].h / vid_conheight.value);
+	Con_Printf("CHATLOG-LAYOUT newest_top=%.2f newest_bottom=%.2f body=%.2f bottom_pad=%.2f\n", tcl_newest_top, tcl_newest_bottom, tcl_body_h, tcl_bottom_pad);
 	Con_Printf("CHATLOG-STATE conh=%.0f panel=%d filter=%d pos=%.1f vel=%.1f content=%.1f body=%.1f popup=%d popup_name=%s lines=%u dest=%d selected=%u\n",
 		vid_conheight.value, tcl_panel, tcl_filter, tcl_sc.pos, tcl_sc.vel, tcl_content_h, tcl_body_h, tcl_popup, tcl_popup ? tcl_popup_name : "-", cl_log.count, (int)key_dest, TCL_SelectedCount());
 }
