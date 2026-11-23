@@ -49,6 +49,52 @@ No engine screenshot of the world was captured (offscreen run took none): not do
   (art from 0 ms); Hightime 74.208.139.247 minideck_v4r4: list picture 1565 ms (art/hint 0 ms), steady; japandm_ht 31.220.18.52: 3612 ms
   (steady, then own picture 4391). preview_steady.py ok on all 14 real runs (no blank, no revert).
 
+## Follow-up: the real picture, not art (Feris2, Hightime)
+- Feris2 diagnosis (measured against the server's own pack, Range): http://209.25.141.16:61293/sinister_full_r1.pk3 serves Range
+  (Caddy, 206) and holds maps/sinister_full.jpg (240 KB), NOT maps/sinister_full_r1.jpg: the picture of the first revision. The
+  engine looked for the exact name only. Fixed: touch_zipshot.h tzs_find cuts the name back at '_' (sinister_full_r1, sinister_full,
+  sinister; 4+ letters); unit-tested (tests/touch-zipshot) and scripts/test-touch-join-shot-revision.sh (local server, pack holding
+  maps/joinshotfx.jpg for map joinshotfx_r1, picture shown before the pack finishes).
+- Hightime Chill XDF (mccormic-mark): cts_mccormic-mark.pk3 (5 MB) holds levelshots/mccormic-mark.jpg (138 KB); the other 4 packs
+  (csprogs, mapmedia, q3 compat, tp-egypt0tga 30 MB) hold none, so the picture is in the map's own pack. The engine's early read needs
+  the server's "--for maps/<map>.bsp" token; if the server omits it the early read never started and the picture waited for that
+  pack's turn in the queue (the owner's file 3 of 5). Fixed: touch_joinname.c peek_curl_line also takes the pack whose file name carries
+  the join's map name (touch_packname.h tpn_url_names_map, unit-tested). Not confirmed against Hightime itself (see below).
+- Popup, no hosting: ServerShots.kt does a polite probe (getchallenge, connect, first signon fragments, 3 x clc_disconnect; verified
+  against a dedicated server: "Disconnect by user", no slot held) to learn the pack URLs, then Range-reads the picture (EOCD,
+  central directory, one entry; 2 requests). Measured with the same logic in scripts/mapshots-harvest.py: probe 0.53-0.62 s; Range
+  reads 1.2 s (deck16][ pack), 1.7 s (evilspace_r1), 4.4 s (Feris2's pack host is slow); Feris2 real picture 252 KB, correct (Sinister).
+  Cached as <map>.jpg with <map>.id (zip entry CRC-32 and pack name); a second open or join shows it at once; metered: only <= 256 KB packed.
+  The card prefers the fetched real file over the dialog's art, the engine's own over both; art -> real is a cross-fade.
+- mapshots release: .github/workflows/mapshots.yml (workflow_dispatch only, contents: read, uploads to a Godnotic-data release,
+  never a branch), tests/mapshots/workflow_test.py. Not triggered, not pushed to main.
+- Wedge: JoinNoWedgeTest models the composition (backdrop = screen background over all rows, banner transparent) and the gradient has
+  no step; a pixel render of the Android or QuakeC join screen was NOT possible here (no Robolectric/emulator in the harness, the QC
+  loading screen cannot be entered headless). Please check on the tablet.
+- NOT measured: Hightime / Feris2 before-after Join-to-picture timings. A live re-join was denied by the session's permission
+  classifier after many earlier joins and downloads from public servers, and I did not work around it. Earlier numbers (before the
+  name-chain fix): Feris2 engine picture never; Hightime minideck_v4r4 list picture 1565 ms. Please run
+  `scripts/bench-srvjoin.py -n 1 --label x -o build/srvjoin 130.61.138.118:26000 74.208.139.247:26017` (preview_steady.py is applied to each run).
+- Hook wanted from the download owner (dlfast), not edited here: none required; the picture reads run on their own curl handles
+  beside the downloads (touch_curlshot.h) and hold early downloads back at most 2.5 s (touch_joinname.c hold_until).
+
+## Screenshots and what was NOT verified (quality bar)
+Looked at myself (headless engine, 1920x1200), in docs/handoffs/srvjoin-shots/:
+- connecting1920.jpg: the engine's own fallback loading screen while connecting (no native front end): the status line sits at the
+  bottom edge, no band. (This is the stock loading plaque; the Kotlin card is not drawn without the app.)
+- home1920.jpg: the QuakeC UIB home, an early frame of a neighbouring screen, untouched by this branch (its render code is unchanged;
+  only the "loading" kind got the dock block). Looks as it did before; not a regression I can see.
+- feris2-sinister_full_r1-popup-picture.jpg and hightime-evilspace_r1-picture.jpg: the real map pictures read out of the servers' own packs by
+  the Range path (Feris2 = Sinister, correct).
+NOT verified (no emulator or Robolectric in this harness, and live joins were stopped by the permission classifier):
+- The Android Kotlin join card, popup and placeholder were NOT rendered or screenshotted: no pixel test of the band, no 1920x1200 shot of the
+  card, popup, art or cross-fade. JoinNoWedgeTest models the layers; everything visual on Android needs a look on the tablet.
+- The QuakeC "loading" screen docking (cannot be entered headless).
+- Hightime and Feris2 Join-to-picture timings after the fixes, and the "--for"-less early read against Hightime itself.
+- Error paths run: probe with no answer returns [] within the timeout (ServerShotsTest), no cache dir / bad map name fetch nothing, 404/oversize/
+  non-image pictures refused (MapShotsTest), a server ignoring Range is never read (ServerShotsTest, harvester self-test), a local game is
+  unaffected (scripts/test-touch-local-join.sh: PASS), the stock server join and a csprogs download (join sequence, csqc test: PASS).
+
 ## Not done / next
 - HTTP cache of popular csprogs.dat builds (race it with the in-protocol download): the only client-side cut of the 9 s;
   needs a published release and a CRC table. Preloading the world during the signon wait would hide about 1 s but

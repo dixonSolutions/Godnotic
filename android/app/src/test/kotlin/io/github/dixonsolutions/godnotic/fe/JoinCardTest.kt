@@ -272,3 +272,29 @@ class JoinFirstFrameTest {
         assertTrue(JoinFlow.BACKDROP_TOP != JoinFlow.BACKDROP_BOTTOM)
     }
 }
+
+/** No wedge: rows under the card are the same backdrop as above it (a model of the composition; the render itself is checked on a device). */
+class JoinNoWedgeTest {
+    @org.junit.Test fun everyRowIsTheBackdropAndNothingElsePaintsBehindTheCard() {
+        for (h in listOf(1280, 2000, 2400)) for (cardTop in listOf(h * 69 / 100, h * 80 / 100, h - 300)) {
+            val ls = JoinFlow.layers(h, cardTop, h - 16)
+            val painters = ls.filter { it.paints }
+            val back = painters.first { it.name == "backdrop" }
+            assertEquals(0, back.top); assertEquals(h, back.bottom)
+            // behind/below the card the only background painter is the backdrop
+            for (y in cardTop until h) assertTrue(painters.count { it.name != "card" && y >= it.top && y < it.bottom } == 1)
+            assertTrue(ls.first { it.name == "banner" }.paints.not())
+        }
+    }
+
+    @org.junit.Test fun theGradientHasNoStepAnywhereSoNoBandShowsAtTheCard() {
+        val h = 2000
+        var worst = 0
+        for (y in 1 until h) {
+            val a = JoinFlow.backdropColorAt(y - 1, h); val b = JoinFlow.backdropColorAt(y, h)
+            for (s in intArrayOf(16, 8, 0)) worst = maxOf(worst, kotlin.math.abs(((a shr s) and 255) - ((b shr s) and 255)))
+        }
+        assertTrue("a step of $worst between neighbouring rows", worst <= 1)
+        assertEquals(JoinFlow.BACKDROP_TOP, JoinFlow.backdropColorAt(0, h))
+    }
+}

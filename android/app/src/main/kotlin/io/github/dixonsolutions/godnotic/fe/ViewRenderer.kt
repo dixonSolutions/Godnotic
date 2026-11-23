@@ -1778,8 +1778,12 @@ class ViewRenderer(
                 img.onMissing = { img.set(art) }
                 val have = MapShots.cached(map)?.let { Images.now(it.path, CARD_PX) }
                 img.set(have ?: art)
-                if (have == null) MapShots.fetchAsync(map) { f ->
-                    Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                if (have == null) {
+                    // the real picture, with no host of ours: the picture host, else the server's own map pack by Range requests
+                    val host = address.substringBeforeLast(':').trim('[', ']'); val port = address.substringAfterLast(':').toIntOrNull() ?: 26000
+                    MapShots.fetchAllAsync(map, host, port, JoinFlow.metered(Net.kind(ctx))) { f ->
+                        Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                    }
                 }
             }
         }

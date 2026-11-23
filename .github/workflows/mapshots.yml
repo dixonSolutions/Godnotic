@@ -1,0 +1,44 @@
+name: Map pictures
+
+# Builds the `mapshots` release of Godnotic-data that the app's MapShots.sources reads
+# (android .../fe/MapShots.kt): <map>.jpg, at most 400 KB, one per map the public servers are playing and the
+# stock data does not have. scripts/mapshots-harvest.py asks the masters, does the first three round trips of a
+# join with each server (leaving at once, as the engine does) to learn the HTTP address of its map pack, and reads
+# the picture out of that pack with Range requests: a few hundred KB per map, never a pack.
+#
+# By hand only (workflow_dispatch): it is not on a schedule and a push to any branch does not run it. The pictures
+# go to a release of the Godnotic-data repository, never to a branch, and nothing here touches main.
+on:
+  workflow_dispatch:
+    inputs:
+      max_maps:
+        description: "Most maps to try (servers are asked one by one, a second apart)"
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  harvest:
+    name: Read the pictures out of the servers' own packs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Self-test (no network)
+        run: python3 scripts/mapshots-harvest.py --self-test
+      - name: Pillow (converts a PNG or TGA picture to a small JPEG)
+        run: python3 -m pip install --quiet pillow
+      - name: Harvest
+        run: |
+          python3 scripts/mapshots-harvest.py -o mapshots-out --max "${{ inputs.max_maps }}" --skip-file scripts/mapshots-stock.txt
+          ls -l mapshots-out | tail -n 80
+      - name: Attach to the Godnotic-data mapshots release
+        env:
+          GH_TOKEN: ${{ secrets.GODNOTIC_SYNC_TOKEN }}
+        run: |
+          if ! ls mapshots-out/*.jpg > /dev/null 2>&1; then echo "No pictures this time."; exit 0; fi
+          gh release view mapshots --repo dixonSolutions/Godnotic-data > /dev/null 2>&1 \
+            || gh release create mapshots --repo dixonSolutions/Godnotic-data --title "Map pictures" \
+                 --notes "Pictures of custom maps, read from the servers' own packs by scripts/mapshots-harvest.py (Godnotic workflow mapshots). Fetched by the app one map at a time."
+          gh release upload mapshots mapshots-out/*.jpg --repo dixonSolutions/Godnotic-data --clobber

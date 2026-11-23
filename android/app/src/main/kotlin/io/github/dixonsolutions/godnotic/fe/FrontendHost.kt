@@ -419,7 +419,9 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         if (!worldNow) worldSince = 0L else if (worldSince == 0L) worldSince = tNow
         lastWorld = JoinFlow.worldShows(worldNow, worldSince, tNow)
         // a picture from the first frame of the join: the engine's, the dialog's, else a fetched one or art made from the name
-        val shot = JoinFlow.firstShot(c.str("levelshot"), hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.cached(it)?.path ?: MapShots.fallbackPath(it, "") })
+        // a fetched real picture (popup finished after Join, or an earlier visit) beats the dialog's art; the engine's own beats both
+        val realLocal = joinMapName.takeIf { it.isNotEmpty() }?.let { MapShots.cached(it)?.path }
+        val shot = JoinFlow.firstShot(c.str("levelshot"), realLocal ?: hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.fallbackPath(it, "") })
         val showShot = JoinFlow.showShot(curShot.path.ifEmpty { shot }, lastWorld)
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
         val kind = if (c.str("levelshot").isNotEmpty()) c.str("levelshot_kind") else MapShots.kindOf(shot)
