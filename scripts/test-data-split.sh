@@ -60,7 +60,6 @@ def raw(path, info):
         return f.read(info.compress_size)
 src, seen = {}, set()
 for r in sorted(pm["packs"], key=lambda r: r["install_as"]):  # mount order: a later name shadows
-    if "nexcompat" in r["install_as"]: continue
     p = os.path.join(phone, r["file"])
     for i in zipfile.ZipFile(p).infolist():
         if i.is_dir(): continue
@@ -158,7 +157,6 @@ import json, os, sys
 d, out = sys.argv[1:3]
 os.makedirs(out, exist_ok=True)
 for r in json.load(open(os.path.join(d, "phone-manifest.json")))["packs"]:
-    if "nexcompat" in r["install_as"]: continue
     l = os.path.join(out, r["install_as"])
     if not os.path.islink(l): os.symlink(os.path.realpath(os.path.join(d, r["file"])), l)
     print(l)
@@ -187,6 +185,7 @@ pk3("xonotic-20261107-maps-phone.pk3", {
     "dds/textures/shared.ktx": b"S" * 400, "dds/textures/own1.ktx": b"o" * 400, "dds/textures/target.ktx": b"T" * 50,
     "dds/textures/nobody.ktx": b"n" * 400, "sound/map_two/x.ogg": b"x" * 100},
     links=[("dds/textures/link.ktx", "target.ktx")])
+pk3("xonotic-20261107-nexcompat-phone.pk3", {"textures/legacy/wall.tga": b"legacy" * 50, "scripts/legacy.shader": b"shader"})
 pk3("xonotic-20261107-music-phone.pk3", {"sound/cdtracks/a.ogg": b"music" * 50})
 recs = [{"file": f, "install_as": f.replace("-phone", "")} for f in sorted(os.listdir(t + "/phone"))]
 json.dump({"format": 1, "packs": recs}, open(t + "/phone/phone-manifest.json", "w"))
@@ -213,7 +212,7 @@ exp = {"models/a.md3": "core", "models/player/x_lod1.iqm": "detail", "gfx/menu.j
        "maps/two.mapinfo": "core", "scripts/one.shader": "core", "dds/textures/own1.ktx": "map-one",
        "dds/textures/nobody.ktx": "extras", "sound/map_two/x.ogg": "map-two",
        "dds/textures/link.ktx": "map-two", "dds/textures/target.ktx": "map-two",
-       "sound/cdtracks/a.ogg": "music",
+       "sound/cdtracks/a.ogg": "music", "textures/legacy/wall.tga": "extras", "scripts/legacy.shader": "core",
        # hud.qc draws gfx/hud/default/progressbar by that path: core even where the skin has its own
        "gfx/hud/default/progressbar.jpg": "core", "gfx/hud/default/ammo.tga": "extras", "gfx/hud/luma/ammo.tga": "core"}
 bad = {k: (w.get(k), v) for k, v in exp.items() if w.get(k) != v}

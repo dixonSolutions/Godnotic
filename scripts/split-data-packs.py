@@ -16,7 +16,7 @@ Every entry of every input pack lands in exactly one output pack:
   core    what the menu and any match open: the data pack's entries that a
           match on any map opened (all but a few are opened by every match:
           the QuakeC precaches every registered model and sound), the menu's
-          files, every map's mapinfo, level shot and shader script (so the
+          files, compatibility shader scripts, every map's mapinfo, level shot and shader script (so the
           menu can list every map, installed or not), fonts, xoncompat.
   map-<m> the files only map <m> opened (or that only it can use: entries
           under maps/<m>/, sound/map_<m>/, ...): bsp, lightmaps, waypoints,
@@ -313,8 +313,6 @@ def main():
     owner, shadowed = {}, []
     for rec in sorted(phone["packs"], key=lambda r: r["install_as"]):
         role = role_of(rec["install_as"])
-        if role == "nexcompat":
-            continue
         date = max(date, date_of(rec["install_as"]))
         path = os.path.join(args.phonedir, rec["file"])
         z = zipfile.ZipFile(path)
@@ -354,6 +352,8 @@ def main():
         if role == "music":
             where[k] = "music"
         elif role in ("xoncompat",) or role.startswith("font-"):
+            where[k] = "core"
+        elif role == "nexcompat" and name.startswith("scripts/"):
             where[k] = "core"
         elif role == "data":
             if any(re.match(p, name) for p in DETAIL) and "menu" not in users:
