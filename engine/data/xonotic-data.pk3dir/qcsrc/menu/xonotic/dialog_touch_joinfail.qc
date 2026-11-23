@@ -68,7 +68,7 @@ void GodnoticJoinFailedDialog_fill(entity me)
 		me.TD(me, 1.4, me.columns / 2, e = makeGodnoticButton(_("Retry"), '0.55 1 0.55'));
 			e.onClick = TouchJoinFailed_Retry;
 			e.onClickEntity = me;
-		me.TD(me, 1.4, me.columns / 2, e = makeGodnoticButton(_("Close"), '0 0 0'));
+		me.TD(me, 1.4, me.columns / 2, e = makeGodnoticButton(_("Back"), '0 0 0'));
 			e.onClick = TouchJoinFailed_Close;
 			e.onClickEntity = me;
 }
