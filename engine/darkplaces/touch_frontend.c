@@ -1202,8 +1202,11 @@ static void fe_host(cmd_state_t *cmd)
 	Cbuf_AddText(cmd_local, va(line, sizeof(line), "map %s\n", map));
 }
 
-// A local bot match (Singleplayer / quick play): one slot for the player and
-// one per bot, no LAN listing.
+// A local bot match (Singleplayer / quick play): no LAN listing. maxplayers cannot change
+// while a match runs, so the slots are not sized to the bots asked for at the start: Server
+// control adds bots later and a game started with 1 bot (2 slots) refused every one after it.
+// Touch: room for the player and the 32 bots Server control allows
+#define FE_LOCAL_SLOTS 33
 static void fe_play(cmd_state_t *cmd)
 {
 	const char *type = arg(cmd, 2), *map = arg(cmd, 3);
@@ -1222,7 +1225,7 @@ static void fe_play(cmd_state_t *cmd)
 	Cbuf_AddText(cmd_local, (cvar_int("vid_touchscreen") || cvar_int("vid_touchscreen_detected") || cvar_int("touch_join_dialog_auto") >= 2)
 		? "sv_spectate 1\n" : "sv_spectate 0\n");
 	fe_set_cvar("_menu_welcome_dialog_available", "0");
-	Cbuf_AddText(cmd_local, va(line, sizeof(line), "maxplayers %d\nsv_public 0\nbot_number %d\n", max(bots + 1, 2), bots));
+	Cbuf_AddText(cmd_local, va(line, sizeof(line), "maxplayers %d\nsv_public 0\nbot_number %d\n", FE_LOCAL_SLOTS, bots));
 	if (*sk)
 		Cbuf_AddText(cmd_local, va(line, sizeof(line), "skill %d\n", bound(0, atoi(sk), 10)));
 	if (*tl)
