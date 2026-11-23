@@ -192,4 +192,14 @@ public class LiveApplyTest {
         assertTrue(LiveApply.refused("java_abi 2 != running 3").contains("java_abi 2 != running 3"));
         assertTrue(LiveApply.refused(null).contains("Restart now"));
     }
+
+    @Test
+    public void engineUpIgnoresTheScreenStage() {
+        // In the menu after the launcher icon passed the boot screen: still swappable.
+        assertTrue(LiveApply.engineUp(true, true, true));
+        assertFalse(LiveApply.engineUp(false, true, true));
+        assertFalse(LiveApply.engineUp(true, false, true));
+        // The package is being replaced (ReplaceGuard cleared the engine flag): no swap.
+        assertFalse(LiveApply.engineUp(true, true, false));
+    }
 }
