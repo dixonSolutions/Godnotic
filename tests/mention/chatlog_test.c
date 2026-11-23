@@ -494,6 +494,40 @@ static void test_icons(void)
 	}
 }
 
+/* the toolbar strip never lies on the lines, whether the box is at the top or the bottom of the screen */
+static void test_strip(void)
+{
+	float tops[] = {0, 3, 10, 25, 40, 80, 300, 500};
+	int i;
+	for (i = 0; i < (int)(sizeof(tops) / sizeof(tops[0])); i++)
+	{
+		tcl_strip_t st;
+		float fs = 14, rowh = 15.7f, isz = 21, areah = 4 * rowh, bottom = tops[i] + areah;
+		TouchChatLog_Strip(bottom, areah, isz, fs, rowh, &st);
+		CHECK(st.tb_y >= 0, "top %g: strip on screen (%g)", tops[i], st.tb_y);
+		CHECK(st.tb_y + st.tb_h <= st.lines_top + 0.001f, "top %g: strip [%g, %g] ends above the lines at %g", tops[i], st.tb_y, st.tb_y + st.tb_h, st.lines_top);
+		CHECK(st.lines_top + st.lines_h <= bottom + 0.001f && st.lines_h >= rowh - 0.001f, "top %g: a row of lines is left (%g)", tops[i], st.lines_h);
+		CHECK(st.lines_top >= tops[i] - 0.001f, "top %g: lines stay inside the box", tops[i]);
+	}
+	/* the hit targets of the strip's icons are where they are drawn: the icon centres */
+	{
+		tcl_target_t t[TCL_ICONS];
+		int k;
+		float tbx = 10, isz = 21, pitch = 40, tby = 50;
+		for (k = 0; k < TCL_ICONS; k++)
+		{
+			float cx = tbx + isz * 0.5f + (float)(TCL_ICONS - 1 - k) * pitch, cy = tby + isz * 0.5f;
+			t[k].x = cx - 22; t[k].y = cy - 22; t[k].w = t[k].h = 44; t[k].id = 100 + k; t[k].arg = k;
+		}
+		for (k = 0; k < TCL_ICONS; k++)
+		{
+			float cx = tbx + isz * 0.5f + (float)(TCL_ICONS - 1 - k) * pitch, cy = tby + isz * 0.5f;
+			CHECK(TouchChatLog_HitTarget(t, TCL_ICONS, cx, cy, 44, 44) == k, "icon %d is hit at its drawn centre", k);
+			CHECK(TouchChatLog_HitTarget(t, TCL_ICONS, cx + 10, cy - 10, 44, 44) == k, "icon %d is hit 10 units off its centre", k);
+		}
+	}
+}
+
 int main(void)
 {
 	test_ring();
@@ -508,6 +542,7 @@ int main(void)
 	test_window();
 	test_hit();
 	test_icons();
+	test_strip();
 	if (failures) { printf("%d failure(s)\n", failures); return 1; }
 	printf("chatlog: ok\n");
 	return 0;
