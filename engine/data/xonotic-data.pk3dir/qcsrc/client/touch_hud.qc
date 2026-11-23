@@ -505,7 +505,7 @@ void Touch_Hud_DrawNadeRow(vector at, vector row_half, float u, float r, int sta
 	float icon_right = at.x + row_half.x - pad;
 	Touch_Hud_DrawSkinPicFit(eX * ((icon_left + icon_right) * 0.5) + eY * at.y,
 		eX * (icon_right - icon_left) + eY * (row_half.y * 2 - pad * 2), "nade_normal", alpha * ink);
-	Touch_Weapons_SetNade(at - row_half, row_half * 2, (state == 1 || state == 2) && !touch_key_hook,
+	Touch_Weapons_SetNade(at - row_half, row_half * 2, (state == 1 || state == 2) && !Touch_HookHeld(),
 		TOUCH_HUD_WEP_GAP * u);
 }
 
@@ -519,13 +519,15 @@ void Touch_Hud_DrawHookRow(vector at, vector row_half, float u, float r, int sta
 	float num_slot = Touch_Shape_LabelWidth(num, "9");
 	float left = at.x - row_half.x + pad;
 	float ink = (state == 3) ? TOUCH_A_INK * 0.25 : ((state == 2) ? TOUCH_A_INK : TOUCH_A_INK * 0.55);
-	if (state == 2 || touch_key_hook)
+	if (state == 2 || Touch_HookHeld())
 		Touch_Shape_RRect(at, row_half, r, TOUCH_C_ACCENT, alpha * TOUCH_A_SURFACE_LATCH);
 	Touch_Shape_LabelAligned(eX * (left + num_slot) + eY * at.y, num, "H", 1, TOUCH_C_INK, alpha * ink * 0.7);
 	float icon_left = left + num_slot + pad;
 	float icon_right = at.x + row_half.x - pad;
-	Touch_Shape_Label(eX * ((icon_left + icon_right) * 0.5) + eY * at.y, num, "HOOK", TOUCH_C_INK, alpha * ink);
-	Touch_Weapons_SetHook(at - row_half, row_half * 2, (state == 1 || state == 2) && !touch_key_nade);
+	// the Hook weapon's own icon, as its row would draw it
+	Touch_Hud_DrawSkinPicFit(eX * ((icon_left + icon_right) * 0.5) + eY * at.y,
+		eX * (icon_right - icon_left) + eY * (row_half.y * 2 - pad * 2), WEP_HOOK.model2, alpha * ink);
+	Touch_Weapons_SetHook(at - row_half, row_half * 2, (state == 1 || state == 2) && !Touch_NadeHeld());
 }
 
 void Touch_Hud_DrawWeapons(float alpha)

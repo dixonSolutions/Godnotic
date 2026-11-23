@@ -656,6 +656,8 @@ static void TouchHUD_TestFinger_f(cmd_state_t *cmd)
 	}
 }
 
+static void TouchHUD_TestStrip_f(cmd_state_t *cmd);
+
 static void TouchHUD_TestView_f(cmd_state_t *cmd)
 {
 	Con_Printf("TESTVIEW yaw=%.2f pitch=%.2f\n", cl.viewangles[YAW], cl.viewangles[PITCH]);
@@ -675,6 +677,7 @@ void TouchHUD_Init(void)
 	Cmd_AddCommand(CF_CLIENT, "touch_move", TouchMove_f, "the touch stick's analog move from the CSQC HUD: touch_move <x right> <y down>, length 0..1");
 	Cmd_AddCommand(CF_CLIENT, "_touch_cancel_join", TouchHUD_CancelJoin_f, "stop a connect attempt (CANCEL on the loading screen)");
 	Cmd_AddCommand(CF_CLIENT, "_touch_test_finger", TouchHUD_TestFinger_f, "test hook: _touch_test_finger <slot> <0|1> [x y] puts a finger down or up");
+	Cmd_AddCommand(CF_CLIENT, "_touch_test_strip", TouchHUD_TestStrip_f, "test hook: print where the weapon strip's HOOK and NADE bands are (0..1)");
 	Cmd_AddCommand(CF_CLIENT, "_touch_test_view", TouchHUD_TestView_f, "test hook: print the view angles");
 	Cmd_AddCommand(CF_CLIENT, "_touch_restore_viewmodel", TouchHUD_RestoreViewmodel_f, "turn r_drawviewmodel back on once for installs that archived the old forced 0 (queued by Host_Init)");
 }
@@ -1416,6 +1419,51 @@ static int strip_hit(float px, float py)
 	return weapons[st.index[row]].impulse;
 }
 
+// Test hook for the finger tests (scripts/test-touch-strip-live.sh):
+//   _touch_test_strip                         print where the strip's bands are (0..1 of the screen)
+//   _touch_test_strip <slot> <band> <frac>    put finger <slot> down in a band, <frac> 0..1 down it:
+//                                             hook, nade, gap (between the list and NADE), weapon<N>
+// The finger goes through the real finger table (assign_role), like a touch.
+static void TouchHUD_TestStrip_f(cmd_state_t *cmd)
+{
+	strip_t st;
+	float w = ui_w(), h = ui_h(), y0 = 0, y1 = 0;
+	if (!strip_drawn() || strip_layout(&st) <= 0)
+	{
+		Con_Print("STRIP none\n");
+		return;
+	}
+	if (Cmd_Argc(cmd) < 4)
+	{
+		Con_Printf("STRIP x=%.4f w0y=%.4f hooktop=%.4f hookbot=%.4f nadetop=%.4f nadebot=%.4f gripy=%.4f rowh=%.4f n=%d hook=%d nade=%d\n",
+			st.cx / w, (st.top + st.row_h * 0.5f) / h,
+			st.hook ? (st.top + st.n * st.row_h) / h : -1.0f, st.hook ? (st.top + (st.n + 1) * st.row_h) / h : -1.0f,
+			st.nade ? st.nade_top / h : -1.0f, st.nade ? (st.nade_top + st.act_h) / h : -1.0f,
+			st.grip_top / h, st.row_h / h, st.n, st.hook, st.nade);
+		return;
+	}
+	{
+		int slot = atoi(Cmd_Argv(cmd, 1));
+		const char *band = Cmd_Argv(cmd, 2);
+		float frac = bound(0.0f, (float)atof(Cmd_Argv(cmd, 3)), 0.999f);
+		if (slot < 0 || slot >= TOUCHHUD_ENGINE_FINGERS - 1)
+			return;
+		if (!strcmp(band, "hook"))
+			y0 = st.top + st.n * st.row_h, y1 = y0 + st.row_h;
+		else if (!strcmp(band, "nade"))
+			y0 = st.nade_top, y1 = st.nade_top + st.act_h;
+		else if (!strcmp(band, "gap"))
+			y0 = st.top + (st.n + st.hook) * st.row_h, y1 = st.nade_top;
+		else if (!strncmp(band, "weapon", 6))
+			y0 = st.top + atoi(band + 6) * st.row_h, y1 = y0 + st.row_h;
+		else
+			return;
+		multitouch[slot][0] = slot + 1;
+		multitouch[slot][1] = st.cx / w;
+		multitouch[slot][2] = (y0 + (y1 - y0) * frac) / h;
+	}
+}
+
 static void draw_rrect(float cx, float cy, float hx, float hy, const float *rgb, float a)
 {
 	// Rounded plate: a capsule end at each side reads the same at these sizes,
@@ -1470,8 +1518,15 @@ static void draw_weapon_strip(float a)
 		float ia = rs == TOUCH_HOOKROW_EMPTY ? A_INK * 0.25f : (rs == TOUCH_HOOKROW_HELD ? A_INK : A_INK * 0.55f);
 		if (rs == TOUCH_HOOKROW_HELD || role_owned(ROLE_HOOK))
 			draw_rrect(st.cx, y, w * 0.5f, h * 0.5f, C_ACCENT, a * A_SURFACE_LATCH);
+		int wi;
+		const wepdef_t *hw = NULL;
+		for (wi = 0; wi < num_weapons; wi++)
+			if (!strcmp(weapons[wi].name, "hook"))
+				hw = &weapons[wi];
 		shape_label_right(left + num_slot, y, num_fs, "H", C_INK, a * ia * 0.7f);
-		shape_label((icon_left + icon_right) * 0.5f, y, num_fs, "HOOK", C_INK, a * ia);
+		// the Hook weapon's own icon, with the word beside it where there is room
+		if (!hw || !skin_pic_fit(skin_pic(hw->pic), (icon_left + icon_right) * 0.5f, y, icon_right - icon_left, h - pad * 2, a * ia))
+			shape_label((icon_left + icon_right) * 0.5f, y, num_fs, "HOOK", C_INK, a * ia);
 	}
 	// The NADE row: the grenade icon and its bonus count; while it cooks, the
 	// fuse spent fills it from the left, turning red near the end; while the

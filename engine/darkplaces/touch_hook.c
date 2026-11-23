@@ -384,7 +384,9 @@ static int hook_row_state(const char *blocked)
 {
 	cvar_t *mode = Cvar_FindVar(&cvars_all, "touch_hook_visible", ~0);
 	qbool has;
-	if (blocked || !vid_touchscreen.integer || vid_touchscreen_mouselook.integer)
+	// not tied to a mouse being present: the strip keeps its rows whatever the
+	// input (the NADE row is the same); the hold itself stands down in block_reason().
+	if (blocked || !vid_touchscreen.integer)
 		return TOUCH_HOOKROW_HIDDEN;
 	if (mode && mode->integer == 0)
 		return TOUCH_HOOKROW_HIDDEN;
