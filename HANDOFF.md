@@ -70,8 +70,39 @@ real-hookinsta-tapdown.png, real-hookinsta-tapup.png, real-hookctf-strip.png (lo
 Times (this machine, loaded, headless): connect to playing about 20 s on the stock server (4 MB csprogs download included);
 list load from the masters about 10 s.
 
+## Update 2026-11-24: stuck-hook path, polish, Android
+
+- **"Hook held 0.8 s after lift" explained: it was my test, not the engine.** finj's `fup` needs x y; `fup 1` was silently dropped
+  so the finger never lifted. Scripts fixed (real-server-probe.sh, test-touch-strip-live.sh).
+- While checking the release path I did find two real ways to leave a finger stuck and fixed both (engine):
+  a second finger-down for an id already in the table took a second slot that no up cleared (`vid_sdl.c`, `VID_TouchFingerKnown`,
+  one `// Touch:` hook line); and the app going to the background ran TouchHUD_ReleaseAll but left the table's contacts, so the next
+  frame re-claimed them as new fingers (held hook/grenade/FIRE stuck on): `TouchHUD_DropContacts` from touch_android.c.
+  Tests (test-touch-strip-live.sh, now 15 checks, 15 ok): a repeated down + one up releases the hook; the app leaving with a finger on
+  HOOK lets go and does not re-claim (_touch_test_away). Not run against the old engine, so "fails before the fix" is by reading
+  the code, not by a red run.
+- **Weapon strip polish (owner bug report on v1.2.323), both HUD copies**: visible plate (0.66 alpha, thin rim) instead of the
+  near-invisible glass; numbers 25% larger and brighter, right-aligned in one column, icons centred; selected row a solid accent
+  pill; the handle is one pill (was two loose lines); the strip may no longer rise above 19% of the height (clears the score
+  mini-list) and is capped at 77% so the handle never leaves the screen with many weapons. Before: build/before-polish/ (the
+  owner's tablet shot owner-v1.2.323.jpg and the pre-polish desktop frames); after: build/touch-strip-*.png (the same names).
+- Test geometry updated (HOOK entry centre now 0.8594 with 17 weapons); test-touch-strip.sh 254 checks ok; live 15/15.
+
+## Android emulator (real APK, real engine, adb input): partial
+Debug APK built locally (heavy-run.sh gradle assembleDebug x86_64, libmain.so with these changes; assets/res copied from chatev).
+Frames (<=1600 px): build/emu-0055/emu-*.jpg (last run) and build/emu-2304 was removed. What I saw:
+- the app boots, takes my pushed game data, connects to REAL public servers and plays (real hook server 159.195.48.75 "#T7
+  INSTAHOOK", map atelier: joined, then killed at once by the insta rules: emu-b1-joined.jpg, portrait that run).
+- The stock server I picked (207.180.238.214) did not answer that run ("The server did not answer": emu-a1-joined.jpg), an earlier
+  run on 147.135.209.141 likewise, so no real-tap weapon switch on Android was captured. The nades-vs-hook sequence (local g_nades match,
+  throw, tap the waiting NADE row) was not captured on Android either (the join/respawn taps did not reach a living player in time).
+- Earlier runs lost time to: the app's self-update loop ("Install unknown apps": fixed by emu-shot.sh noupdate), the "Download the music"
+  prompt (push the music pk3), the full-screen confirmation, the uid2name dialog, and 1-hour queues for emulator slots. The headless
+  desktop client covers the same engine HUD code with real SDL touch events (see Real public servers above).
+- NOT verified on Android: weapon row first tap, HOOK hold/release, nade vs hook; they are verified on the desktop client.
+
 ## NOT verified
-- Android emulator / device screenshots: NOT done. The local debug APK build fails in this tree (the SDL Java glue org.libsdl.app
+- Android: see "Android emulator" above (partial). Older note:  The local debug APK build fails in this tree (the SDL Java glue org.libsdl.app
   is staged by scripts/android-build.sh, and the gradle step waited about an hour in the heavy.lock queue per attempt); I used
   the headless desktop client with real SDL touch events instead (engine HUD code is the same on Android).  Tablet touch by real fingers; thumb comfort of the row size
   (34 units action row, 26 units list rows at the tablet scale, about 1.9x px) is by geometry only.
