@@ -77,6 +77,40 @@ int main(void)
 		CHECK_INT(0, TouchVote_SafeToken("restart;quit"), "command injection rejected");
 	}
 
+	// What each vote command takes, so the touch UI offers a list and never a text box
+	CHECK_INT(TOUCHVOTE_ARG_NONE, TouchVote_ArgKind("restart"), "restart takes nothing");
+	CHECK_INT(TOUCHVOTE_ARG_NONE, TouchVote_ArgKind("shuffleteams"), "shuffleteams takes nothing");
+	CHECK_INT(TOUCHVOTE_ARG_MAP, TouchVote_ArgKind("gotomap"), "gotomap takes a map");
+	CHECK_INT(TOUCHVOTE_ARG_MAP, TouchVote_ArgKind("chmap"), "chmap takes a map");
+	CHECK_INT(TOUCHVOTE_ARG_MAP, TouchVote_ArgKind("nextmap"), "nextmap takes a map");
+	CHECK_INT(TOUCHVOTE_ARG_PLAYER, TouchVote_ArgKind("kick"), "kick takes a player");
+	CHECK_INT(TOUCHVOTE_ARG_PLAYER, TouchVote_ArgKind("kickban"), "kickban takes a player");
+	CHECK_INT(TOUCHVOTE_ARG_PLAYER, TouchVote_ArgKind("movetospec"), "movetospec takes a player");
+	CHECK_INT(TOUCHVOTE_ARG_NUMBER, TouchVote_ArgKind("timelimit"), "timelimit takes a number");
+	CHECK_INT(TOUCHVOTE_ARG_NUMBER, TouchVote_ArgKind("fraglimit"), "fraglimit takes a number");
+	CHECK_INT(TOUCHVOTE_ARG_OTHER, TouchVote_ArgKind("g_custom_thing"), "a custom command is described as other");
+	CHECK_INT(TOUCHVOTE_ARG_OTHER, TouchVote_ArgKind(""), "an empty command is other");
+	{
+		static touchvote_list_t list;
+		char out[1024];
+		TouchVote_ParseList("You can call a vote for or execute these commands: ^3restart fraglimit gotomap map chmap nextmap kick bots foo^7 and maybe further ^3arguments^7", &list, 0);
+		TouchVote_FormatCommands(&list, out, sizeof(out));
+		CHECK_STR("restart\tnone\nfraglimit\tnumber\ngotomap\tmap\nnextmap\tmap\nkick\tplayer\nbots\tnone\nfoo\tother\n", out, "command list for the menu, map aliases merged");
+		TouchVote_FormatCommands(&list, out, 20);
+		CHECK_STR("restart\tnone\n", out, "command list stops at whole lines when the buffer is small");
+		TouchVote_ParseList("^7Maps available (2): ^3dance ^2*stormkeep", &list, 1);
+		TouchVote_FormatMaps(&list, out, sizeof(out));
+		CHECK_STR("dance\nstormkeep\n", out, "map list for the menu");
+		CHECK_INT(1, TouchVote_FormatPlayer(2, "^1Em^xF80bryo", 0, 0, out, sizeof(out)), "player row");
+		CHECK_STR("3\tp\t\tEmbryo\n", out, "player row: entity number is slot + 1");
+		CHECK_INT(1, TouchVote_FormatPlayer(0, "Me", 1, 1, out, sizeof(out)), "own spectator row");
+		CHECK_STR("1\ts\tm\tMe\n", out, "spectator and own flags");
+		CHECK_INT(1, TouchVote_FormatPlayer(4, "a\tb\nc", 0, 0, out, sizeof(out)), "name with control characters");
+		CHECK_STR("5\tp\t\tabc\n", out, "tabs and newlines cannot split a row");
+		CHECK_INT(0, TouchVote_FormatPlayer(1, "", 0, 0, out, sizeof(out)), "empty slot has no row");
+		CHECK_INT(0, TouchVote_FormatPlayer(1, "^1^2", 0, 0, out, sizeof(out)), "a name of colour codes only has no row");
+	}
+
 	// The active flag is independent of vote_highlighted, including the caller's
 	// automatically recorded yes. Map/gametype state cannot set this flag.
 	CHECK_INT(1, TouchVote_CalledVisible(1, 1, 0, 0), "own already-cast vote visible");

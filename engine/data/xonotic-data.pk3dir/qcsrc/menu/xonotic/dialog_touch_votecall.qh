@@ -1,15 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
-// Call a vote from a touchscreen: finger-sized buttons for the votes players
-// call most (restart, end the match, more time, skip to the next map), a map
-// name for "change map", and a list of everything else the server offers
-// (vote help, printed to the console). Opened from the game menu.
+// Call a vote from a touchscreen, picking every argument and typing none: the
+// commands the server allows (one tap for those with no argument), then a list
+// of its maps, the players on the scoreboard, or common numbers. Opened from
+// the game menu; the touch UI's own "Call a vote" screen (touch_uib_screens.qc)
+// takes its data from the same place.
 #include "rootdialog.qh"
+#include "listbox.qh"
 bool TouchVoteCall_ValidMap(string map);
+string TouchVoteCall_Commands();
+string TouchVoteCall_KindOf(string cmd);
+string TouchVoteCall_Label(string cmd);
+string TouchVoteCall_Values(string cmd);
+string TouchVoteCall_Line(string cmd, string arg);
+bool TouchVoteCall_CommandsKnown();
+void TouchVoteCall_Send(string cmd, string arg);
+void TouchVoteCall_AskCommands();
+void TouchVoteCall_AskMaps();
 void TouchVoteCall_ConfigureDialogs(entity mainwindow);
+CLASS(GodnoticVoteList, XonoticListBox)
+	METHOD(GodnoticVoteList, draw, void(entity));
+	METHOD(GodnoticVoteList, drawListBoxItem, void(entity, int, vector, bool, bool));
+	METHOD(GodnoticVoteList, resizeNotify, void(entity, vector, vector, vector, vector));
+	METHOD(GodnoticVoteList, clickListBoxItem, void(entity, float, vector));
+	METHOD(GodnoticVoteList, fillRows, void(entity));
+	ATTRIB(GodnoticVoteList, rowbuf, int, 0);
+	ATTRIB(GodnoticVoteList, vkey, string, string_null);
+	ATTRIB(GodnoticVoteList, realFontSize, vector, '0 0 0');
+	ATTRIB(GodnoticVoteList, realUpperMargin, float, 0);
+	ATTRIB(GodnoticVoteList, allowFocusSound, bool, false);
+ENDCLASS(GodnoticVoteList)
+entity makeGodnoticVoteList();
+
 CLASS(GodnoticVoteCallDialog, XonoticRootDialog)
 	METHOD(GodnoticVoteCallDialog, fill, void(entity));
+	METHOD(GodnoticVoteCallDialog, showNotify, void(entity));
 	METHOD(GodnoticVoteCallDialog, configureDialog, void(entity));
 	ATTRIB(GodnoticVoteCallDialog, title, string, _("Call a vote"));
 	ATTRIB(GodnoticVoteCallDialog, color, vector, SKINCOLOR_DIALOG_QUIT);

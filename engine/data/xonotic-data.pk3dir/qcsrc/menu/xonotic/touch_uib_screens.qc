@@ -1595,27 +1595,265 @@ void UIB_BuildControl()
 	UIB_Done();
 }
 
+// ---------------------------------------------------------------- call a vote
+// Every argument is picked, never typed: a command from what the server allows,
+// then its map from the server's map list, its player from the scoreboard, its
+// number from common values. One tap for a command with no argument. The data
+// is TouchVoteCall_* (dialog_touch_votecall.qc), published by the engine.
+
+string uib_vote_key;          // what the screen was last built from
+string uib_vote_cmds[48];
+string uib_vote_lines[64];
+string uib_vote_vals[12];
+int uib_vote_ncmds;
+
+void UIB_VoteSplit()
+{
+	for (int i = 0; i < uib_vote_ncmds; ++i)
+		strfree(uib_vote_cmds[i]);
+	uib_vote_ncmds = 0;
+	int n = tokenizebyseparator(TouchVoteCall_Commands(), "\n");
+	for (int i = 0; i < n && uib_vote_ncmds < 48; ++i)
+		if (argv(i) != "")
+			uib_vote_cmds[uib_vote_ncmds++] = strzone(argv(i));
+}
+
+// what the open vote screen depends on: a change rebuilds it
+string UIB_VoteKey()
+{
+	return strcat(cvar_string("_touch_vote_cmds"), "|", ftos(strlen(cvar_string("_touch_vote_maps"))), "|", cvar_string("_touch_vote_players"));
+}
+
+string UIB_VoteWord(string line, int field)
+{
+	tokenizebyseparator(line, "\t");
+	return argv(field);
+}
+
+void UIB_VoteCommandButton(string cmd, string kind)
+{
+	string label = TouchVoteCall_Label(cmd);
+	if (kind == "none")
+		UIB_Button(cmd, label, UIB_A(strcat("vote.do.", cmd), label, ""), "secondary");
+	else
+		UIB_Button(cmd, label, UIB_A(strcat("vote.pick.", cmd), label, ""), "secondary");
+}
+
 void UIB_BuildVoteCall()
 {
 	if (!UIB_Screen("vote.call", _("Call a vote")))
 		return;
-	UIB_Text("note", _("Available votes depend on the server."), "");
-	UIB_Open("votes", "grid");
-		UIB_Button("restart", _("Restart match"), UIB_A("vote.restart", _("Restart match"), ""), "secondary");
-		UIB_Button("endmatch", _("End match"), UIB_A("vote.endmatch", _("End match"), ""), "secondary");
-		UIB_Button("extend", _("More time"), UIB_A("vote.extend", _("More time"), ""), "secondary");
-		UIB_Button("nextmap", _("Next map"), UIB_A("vote.nextmap", _("Next map"), ""), "secondary");
-	UIB_Close();
-	UIB_Open("form", "form");
-		UIB_Open("map", "field");
-			uib_s("label", _("Map name"));
-			uib_s("bind", "vm:vote.map");
-			uib_j("submit", UIB_A("vote.map", _("Vote for this map"), ""));
+	UIB_Text("note", (TouchVoteCall_CommandsKnown() ? _("What this server lets players vote on. Tap one, then pick from the list.") : _("Asking the server what it allows...")), "");
+	UIB_VoteSplit();
+	// one tap: commands without an argument
+	bool any = false;
+	for (int i = 0; i < uib_vote_ncmds; ++i)
+		if (UIB_VoteWord(uib_vote_cmds[i], 1) == "none")
+			any = true;
+	if (any)
+	{
+		UIB_Section("quick", _("One tap"), false);
+			UIB_Open("quickbtns", "grid");
+				uib_f("minItem", 160);
+				for (int i = 0; i < uib_vote_ncmds; ++i)
+					if (UIB_VoteWord(uib_vote_cmds[i], 1) == "none")
+						UIB_VoteCommandButton(UIB_VoteWord(uib_vote_cmds[i], 0), "none");
+			UIB_Close();
 		UIB_Close();
-		UIB_Button("mapvote", _("Vote for this map"), UIB_A("vote.map", _("Vote for this map"), ""), "primary");
-	UIB_Close();
-	UIB_Button("help", _("List all vote commands"), UIB_A("vote.help", _("List all vote commands"), ""), "secondary");
+	}
+	// then pick: a map, a player or a number
+	any = false;
+	for (int i = 0; i < uib_vote_ncmds; ++i)
+		if (UIB_VoteWord(uib_vote_cmds[i], 1) != "none")
+			any = true;
+	if (any)
+	{
+		UIB_Section("pick", _("Pick from a list"), false);
+			UIB_Open("pickbtns", "grid");
+				uib_f("minItem", 160);
+				for (int i = 0; i < uib_vote_ncmds; ++i)
+					if (UIB_VoteWord(uib_vote_cmds[i], 1) != "none")
+						UIB_VoteCommandButton(UIB_VoteWord(uib_vote_cmds[i], 0), UIB_VoteWord(uib_vote_cmds[i], 1));
+			UIB_Close();
+		UIB_Close();
+	}
+	UIB_Button("help", _("Show the server's own vote help"), UIB_A("vote.help", _("Show the server's own vote help"), ""), "link");
+	strcpy(uib_vote_key, UIB_VoteKey());
 	UIB_Done();
+}
+
+// The maps a vote can name: the server's own list when it has sent one, else
+// the maps this device has for the current mode.
+void UIB_VoteMapRows()
+{
+	uib_rows_begin("vote.maps");
+	string server = cvar_string("_touch_vote_maps");
+	if (server != "")
+	{
+		int n = tokenizebyseparator(server, "\n");
+		for (int i = 0; i < n; ++i)
+		{
+			string m = argv(i);
+			if (m != "")
+				uib_row(m, sprintf("{\"name\":%s,\"title\":%s}", uib_qv(m), uib_q(m)), strcat("pk3:maps/", m));
+		}
+	}
+	else
+	{
+		Gametype gt = MapInfo_CurrentGametype();
+		float n = UIB_FilterMaps(gt);
+		for (int i = 0; i < n; ++i)
+		{
+			string m = MapInfo_BSPName_ByID(i);
+			if (m != "")
+				uib_row(m, sprintf("{\"name\":%s,\"title\":%s}", uib_qv(m), uib_q(m)), strcat("pk3:maps/", m));
+		}
+	}
+	uib_rows_end();
+}
+
+// Who can be voted on: the scoreboard, as the engine publishes it. The row key
+// is the "#N" the server's vote command takes.
+void UIB_VotePlayerRows(string cmd)
+{
+	uib_rows_begin("vote.players");
+	int n = tokenizebyseparator(cvar_string("_touch_vote_players"), "\n");
+	int count = 0;
+	for (int i = 0; i < n && count < 64; ++i)
+		if (argv(i) != "")
+			uib_vote_lines[count++] = argv(i);
+	for (int i = 0; i < count; ++i)
+	{
+		string no = UIB_VoteWord(uib_vote_lines[i], 0), ps = UIB_VoteWord(uib_vote_lines[i], 1), me = UIB_VoteWord(uib_vote_lines[i], 2), name = UIB_VoteWord(uib_vote_lines[i], 3);
+		// a vote to kick yourself is not one anyone wants
+		if (me == "m" && (cmd == "kick" || cmd == "kickban"))
+			continue;
+		string role = (ps == "s") ? _("Spectator") : _("Player");
+		if (me == "m")
+			role = strcat(role, ", ", _("you"));
+		uib_row(strcat("#", no), sprintf("{\"name\":%s,\"role\":%s}", uib_q(name), uib_q(role)), "");
+	}
+	uib_rows_end();
+}
+
+void UIB_BuildVotePick()
+{
+	string cmd = UIB_VM("vote.cmd");
+	if (!UIB_Screen("vote.pick", TouchVoteCall_Label(cmd)))
+		return;
+	string kind = TouchVoteCall_KindOf(cmd);
+	if (kind == "map")
+	{
+		UIB_Section("maps", _("Maps"), true);
+			uib_s("subtitle", (cvar_string("_touch_vote_maps") != "") ? _("The server's maps. Tap one to call the vote.") : _("Asking the server for its maps..."));
+			UIB_VoteMapRows();
+			UIB_Open("list", "list");
+				uib_s("source", "vote.maps");
+				uib_s("display", "cards");
+				uib_s("rowHeight", "card");
+				uib_f("minItem", 160);
+				uib_s("aspectItem", "16:9");
+				uib_s("state", "ready");
+				uib_b("searchable", 1);
+				uib_push("columns", UIB_Col("title", "text", _("Map"), "fill", 1, true, false));
+				uib_j("rowPrimary", UIB_AS("vote.row", _("Vote"), "check", "primary"));
+				uib_j("empty", sprintf("{\"title\":%s,\"icon\":\"map\"}", uib_q(_("No maps yet"))));
+			UIB_Close();
+		UIB_Close();
+	}
+	else if (kind == "player")
+	{
+		UIB_Section("players", _("Players"), true);
+			uib_s("subtitle", _("Tap a player to call the vote."));
+			UIB_VotePlayerRows(cmd);
+			UIB_Open("list", "list");
+				uib_s("source", "vote.players");
+				uib_s("display", "rows");
+				uib_s("rowHeight", "comfortable");
+				uib_s("state", "ready");
+				uib_push("columns", UIB_Col("name", "text", _("Player"), "fill", 1, false, false));
+				uib_push("columns", UIB_Col("role", "text", _("Role"), "m", 2, false, false));
+				uib_j("rowPrimary", UIB_AS("vote.row", _("Vote"), "check", "primary"));
+				uib_j("empty", sprintf("{\"title\":%s,\"icon\":\"player\"}", uib_q(_("Nobody to vote on"))));
+			UIB_Close();
+		UIB_Close();
+	}
+	else if (kind == "number")
+	{
+		UIB_Section("values", TouchVoteCall_Label(cmd), false);
+			UIB_Open("valuebtns", "grid");
+				uib_f("minItem", 96);
+				int n = tokenize_console(TouchVoteCall_Values(cmd));
+				int k = 0;
+				for (int i = 0; i < n && k < 12; ++i)
+					uib_vote_vals[k++] = argv(i);
+				for (int i = 0; i < k; ++i)
+					UIB_Button(uib_vote_vals[i], uib_vote_vals[i], UIB_A(strcat("vote.num.", uib_vote_vals[i]), uib_vote_vals[i], ""), "secondary");
+				UIB_Button("none", _("No limit"), UIB_A("vote.num.0", _("No limit"), ""), "secondary");
+			UIB_Close();
+		UIB_Close();
+	}
+	else
+	{
+		// a command the game cannot describe: call it as it is, or add words to it
+		UIB_Text("note", _("The game cannot tell what this vote takes. Call it as it is, or add to it below."), "");
+		UIB_Button("go", _("Call this vote"), UIB_A(strcat("vote.do.", cmd), _("Call this vote"), ""), "primary");
+		UIB_Section("other", _("Other..."), false);
+			UIB_Open("form", "form");
+				uib_j("submit", UIB_A("vote.other", _("Call with this"), ""));
+				UIB_Open("extra", "field");
+					uib_s("label", _("Added to the command"));
+					uib_s("bind", "vm:vote.extra");
+					uib_j("submit", UIB_A("vote.other", _("Call with this"), ""));
+				UIB_Close();
+				UIB_Button("goextra", _("Call with this"), UIB_A("vote.other", _("Call with this"), ""), "secondary");
+			UIB_Close();
+		UIB_Close();
+	}
+	strcpy(uib_vote_key, UIB_VoteKey());
+	UIB_Done();
+}
+
+// While a vote screen is up: the server's answers (what it allows, its maps, who
+// is there) rebuild it.
+void UIB_VoteTick()
+{
+	string top = UIB_TopScreen();
+	if (top != "vote.call" && top != "vote.pick")
+		return;
+	if (UIB_VoteKey() != uib_vote_key)
+		UIB_Build(top);
+}
+
+void UIB_VoteOpen()
+{
+	uib_vote_key = "";
+	// ask again each time: the server's list may have changed
+	TouchVoteCall_AskCommands();
+	UIB_Push("vote.call");
+}
+
+void UIB_VotePick(string cmd)
+{
+	UIB_VMSet("vote.cmd", cmd);
+	UIB_VMSet("vote.extra", "");
+	string kind = TouchVoteCall_KindOf(cmd);
+	if (kind == "map" && cvar_string("_touch_vote_maps") == "")
+		TouchVoteCall_AskMaps();
+	UIB_Push("vote.pick");
+}
+
+void UIB_VoteDo(string cmd, string arg)
+{
+	string line = TouchVoteCall_Line(cmd, arg);
+	if (line == "")
+	{
+		uib_toast(_("That vote cannot be sent"), "warning", "warning", 3);
+		return;
+	}
+	TouchVoteCall_Send(cmd, arg);
+	uib_toast(_("Vote sent"), "info", "info", 2);
+	m_hide();
 }
 
 // The popup a LAN host gets when the game starts, and again from the pause
@@ -1999,6 +2237,7 @@ void UIB_Build(string id)
 		case "welcome": UIB_BuildWelcome(); return;
 		case "pause": UIB_BuildPause(); return;
 		case "vote.call": UIB_BuildVoteCall(); return;
+		case "vote.pick": UIB_BuildVotePick(); return;
 		case "ctl": UIB_BuildControl(); return;
 		case "loading": UIB_BuildLoading(); return;
 		case "setup": UIB_BuildSetup(); return;
@@ -2152,6 +2391,7 @@ void UIB_Tick()
 		uib_toast(dbg, "success", "check", 4);
 	}
 	UIB_LanPopupTick();
+	UIB_VoteTick();
 	UIB_CtlTick();
 	UIB_JoinFailTick();
 	UIB_JoinTick();
@@ -2199,6 +2439,21 @@ void UIB_Action(string node, string a, string payload)
 	{
 		UIB_SetMode(substring(a, 5, -1));
 		UIB_RebuildAll();
+		return;
+	}
+	if (substring(a, 0, 8) == "vote.do.")
+	{
+		UIB_VoteDo(substring(a, 8, -1), "");
+		return;
+	}
+	if (substring(a, 0, 10) == "vote.pick.")
+	{
+		UIB_VotePick(substring(a, 10, -1));
+		return;
+	}
+	if (substring(a, 0, 9) == "vote.num.")
+	{
+		UIB_VoteDo(UIB_VM("vote.cmd"), substring(a, 9, -1));
 		return;
 	}
 	if (UIB_SettingsAction(node, a, payload))
@@ -2336,17 +2591,12 @@ void UIB_Action(string node, string a, string payload)
 		case "ctl.god": if (UIB_CtlAllowed() && UIB_CtlCheats()) localcmd("\ncmd god\n"); return;
 		case "ctl.noclip": if (UIB_CtlAllowed() && UIB_CtlCheats()) localcmd("\ncmd noclip\n"); return;
 		case "ctl.give": if (UIB_CtlAllowed() && UIB_CtlCheats()) localcmd("\ncmd give all\n"); return;
-		case "vote.open": UIB_Push("vote.call"); return;
-		case "vote.restart": localcmd("cmd vote call restart\n"); m_hide(); return;
-		case "vote.endmatch": localcmd("cmd vote call endmatch\n"); m_hide(); return;
-		case "vote.extend": localcmd("cmd vote call extendmatchtime\n"); m_hide(); return;
-		case "vote.nextmap": localcmd("cmd vote call nextmap\n"); m_hide(); return;
-		case "vote.map":
+		case "vote.open": UIB_VoteOpen(); return;
+		case "vote.row": return; // a list's rowPrimary delivered as an action: the row event sent the vote
+		case "vote.other":
 		{
-			string map = UIB_VM("vote.map");
-			if (!TouchVoteCall_ValidMap(map))
-				uib_toast(_("Enter a valid map name"), "warning", "warning", 3);
-			else { localcmd("cmd vote call gotomap ", map, "\n"); m_hide(); }
+			string extra = UIB_VM("vote.extra");
+			UIB_VoteDo(UIB_VM("vote.cmd"), extra);
 			return;
 		}
 		case "vote.help": localcmd("cmd vote help\ntoggleconsole\n"); m_hide(); return;
@@ -2392,6 +2642,10 @@ void UIB_RowEvent(string node, string row, string json)
 			UIB_RebuildAll();
 			return;
 		}
+		case "vote.pick/maps/list":
+		case "vote.pick/players/list":
+			UIB_VoteDo(UIB_VM("vote.cmd"), row);
+			return;
 		case "campaign/levels/list":
 		{
 			int lvl = stof(row);

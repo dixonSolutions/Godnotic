@@ -458,6 +458,22 @@ shoots without moving).
 
 ---
 
+**Calling a vote** (pause menu, **Call a vote**; also the info card's **+**): every
+argument is picked from a list, none is typed. The commands are the ones this
+server allows (the reply to `vote help`, published as `_touch_vote_cmds`;
+the stock set while the server has not answered). A command with no argument
+(restart, end match, more time, shuffle teams, ...) is one tap. A map vote
+(`gotomap`, `nextmap`) lists the server's own maps (`lsmaps`, `_touch_vote_maps`;
+the maps this device has when the server sent none), searchable, with the
+levelshot where the device has it. A player vote (`kick`, `kickban`, `moveto*`)
+lists the scoreboard (`_touch_vote_players`) and sends the player's entity
+number as `#N`, the form the server's vote command takes, so no name is typed or
+mistyped; spectators can be picked, you cannot pick yourself for a kick.
+`timelimit` and `fraglimit` offer common values. A command the game cannot
+describe (a custom server command) is called as it is, with an "Other..." field
+for added words as the only free text. `touch_vote_parse.h` classifies the
+commands (`TouchVote_ArgKind`), `tests/touch-vote` checks it.
+
 ## Config layering
 
 Applied at launch (bottom → top; later wins):

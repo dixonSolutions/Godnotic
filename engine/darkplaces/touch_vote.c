@@ -25,6 +25,15 @@ extern cvar_t vid_conheight;
 static cvar_t cl_touch_vote_noglobals = {CF_CLIENT, "_cl_touch_vote_noglobals", "0",
 	"testing: 1 = follow votes from the server's prints only, as on a server whose CSQC vote state cannot be read"};
 
+// What the menu reads to offer a vote's arguments as lists (see
+// touch_vote_parse.h); empty until the server has answered "vote help" / "lsmaps".
+static cvar_t touch_vote_cmds = {CF_CLIENT, "_touch_vote_cmds", "",
+	"the vote commands this server allows, \"command<TAB>none|map|player|number|other\" per line"};
+static cvar_t touch_vote_maps = {CF_CLIENT, "_touch_vote_maps", "",
+	"the server's map names for a map vote, one per line (from lsmaps)"};
+static cvar_t touch_vote_players = {CF_CLIENT, "_touch_vote_players", "",
+	"who can be voted on: \"N<TAB>p|s<TAB>m|<TAB>name\" per line, N the entity number a vote command takes as #N, s a spectator, m this player"};
+
 // Theme (touch_theme.qh, as touch_hud.c)
 static const float C_SURFACE[3]      = {0.07f, 0.08f, 0.10f};
 static const float C_INK[3]          = {1, 1, 1};
@@ -115,6 +124,40 @@ static void bind_globals(void)
 // What the server's prints said (always kept, whatever the CSQC)
 // ---------------------------------------------------------------------------
 static touchvote_list_t vote_commands, vote_maps;
+static void publish_cvar(cvar_t *c, const char *value)
+{
+	if (strcmp(c->string, value))
+		Cvar_SetQuick(c, value);
+}
+static void publish_lists(void)
+{
+	static char buf[TOUCHVOTE_LIST_MAX * (TOUCHVOTE_ITEM_LEN + 16)];
+	TouchVote_FormatCommands(&vote_commands, buf, sizeof(buf));
+	publish_cvar(&touch_vote_cmds, buf);
+	TouchVote_FormatMaps(&vote_maps, buf, sizeof(buf));
+	publish_cvar(&touch_vote_maps, buf);
+}
+// The scoreboard as the vote's player list, each time it changes.
+static void publish_players(void)
+{
+	char buf[8192], line[TOUCHVOTE_NAME_LEN + 16];
+	size_t n = 0;
+	int i, me = cl.realplayerentity - 1;
+	buf[0] = 0;
+	if (cls.state == ca_connected && cl.scores)
+		for (i = 0; i < cl.maxclients; ++i)
+		{
+			size_t l;
+			if (!TouchVote_FormatPlayer(i, cl.scores[i].name, cl.scores[i].frags == -666, i == me, line, sizeof(line)))
+				continue;
+			l = strlen(line);
+			if (n + l >= sizeof(buf))
+				break;
+			memcpy(buf + n, line, l + 1);
+			n += l;
+		}
+	publish_cvar(&touch_vote_players, buf);
+}
 static qbool commands_received, maps_received;
 
 static struct
@@ -201,11 +244,13 @@ void TouchVote_ServerPrint(const char *msg, size_t len)
 			if (TouchVote_ParseList(line, &vote_commands, 0))
 			{
 				commands_received = true;
+				publish_lists();
 				Con_DPrintf("Touch vote: %d available commands\n", vote_commands.count);
 			}
 			else if (TouchVote_ParseList(line, &vote_maps, 1))
 			{
 				maps_received = true;
+				publish_lists();
 				Con_DPrintf("Touch vote: %d available maps\n", vote_maps.count);
 			}
 			if (TouchVote_ParseLine(line, &m) != TOUCHVOTE_MSG_NONE)
@@ -375,6 +420,8 @@ static void reset_all(void)
 	memset(&pr, 0, sizeof(pr));
 	commands_received = maps_received = false;
 	vote_commands.count = vote_maps.count = 0;
+	publish_lists();
+	publish_cvar(&touch_vote_players, "");
 	call_was = false;
 	call_unseen = false;
 	call.active = false;
@@ -849,6 +896,7 @@ static void draw_quick(void)
 void TouchVote_Draw(void)
 {
 	update_state();
+	publish_players();
 	chip.drawn = false;
 	quick.drawn = false;
 	// Over every mode, even where the chip is not shown (the match-end screens)
@@ -1117,5 +1165,8 @@ static void TouchVote_State_f(cmd_state_t *cmd)
 void TouchVote_Init(void)
 {
 	Cvar_RegisterVariable(&cl_touch_vote_noglobals);
+	Cvar_RegisterVariable(&touch_vote_cmds);
+	Cvar_RegisterVariable(&touch_vote_maps);
+	Cvar_RegisterVariable(&touch_vote_players);
 	Cmd_AddCommand(CF_CLIENT, "touch_vote_state", TouchVote_State_f, "show touch vote panel state for diagnostics");
 }

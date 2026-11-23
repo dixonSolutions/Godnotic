@@ -156,6 +156,150 @@ static int TouchVote_ParseList(const char *raw, touchvote_list_t *out, int maps)
 	return 1;
 }
 
+// What a vote command takes after its name, so the touch UI offers a list to
+// pick from and never a text box: a map from the server's map list, a player
+// from the scoreboard, a number from common values, nothing (one tap), or
+// something the engine cannot describe (a custom server command).
+enum
+{
+	TOUCHVOTE_ARG_NONE,
+	TOUCHVOTE_ARG_MAP,
+	TOUCHVOTE_ARG_PLAYER,
+	TOUCHVOTE_ARG_NUMBER,
+	TOUCHVOTE_ARG_OTHER
+};
+
+static int TouchVote_ArgKind(const char *cmd)
+{
+	static const char *const none[] = {"restart", "endmatch", "reducematchtime", "extendmatchtime", "allready", "resetmatch",
+		"cointoss", "shuffleteams", "balanceteams", "bots", "nobots", "timein", "timeout", NULL};
+	static const char *const maps[] = {"gotomap", "map", "chmap", "nextmap", NULL};
+	static const char *const players[] = {"kick", "kickban", "movetoauto", "movetored", "movetoblue", "movetoyellow", "movetopink", "movetospec", NULL};
+	static const char *const numbers[] = {"fraglimit", "timelimit", NULL};
+	int i;
+	for (i = 0; none[i]; ++i)
+		if (!strcmp(cmd, none[i])) return TOUCHVOTE_ARG_NONE;
+	for (i = 0; maps[i]; ++i)
+		if (!strcmp(cmd, maps[i])) return TOUCHVOTE_ARG_MAP;
+	for (i = 0; players[i]; ++i)
+		if (!strcmp(cmd, players[i])) return TOUCHVOTE_ARG_PLAYER;
+	for (i = 0; numbers[i]; ++i)
+		if (!strcmp(cmd, numbers[i])) return TOUCHVOTE_ARG_NUMBER;
+	return TOUCHVOTE_ARG_OTHER;
+}
+
+static const char *TouchVote_ArgKindName(int kind)
+{
+	switch (kind)
+	{
+	case TOUCHVOTE_ARG_NONE: return "none";
+	case TOUCHVOTE_ARG_MAP: return "map";
+	case TOUCHVOTE_ARG_PLAYER: return "player";
+	case TOUCHVOTE_ARG_NUMBER: return "number";
+	}
+	return "other";
+}
+
+// Append src to out at *n; false (and out cut at *n) when it does not fit whole.
+// (The engine forbids snprintf, and this file is also built by the plain-C test.)
+static int touchvote_put(char *out, size_t outsize, size_t *n, const char *src)
+{
+	size_t l = strlen(src);
+	if (*n + l >= outsize)
+	{
+		out[*n] = 0;
+		return 0;
+	}
+	memcpy(out + *n, src, l + 1);
+	*n += l;
+	return 1;
+}
+
+// The allowed commands as the menu reads them (cvar _touch_vote_cmds):
+// "command<TAB>kind" per line, the server's order. "map" and "chmap" are the
+// server's own aliases of gotomap, so only the first of them is kept.
+static void TouchVote_FormatCommands(const touchvote_list_t *l, char *out, size_t outsize)
+{
+	size_t n = 0;
+	int i, goto_seen = 0;
+	if (!outsize)
+		return;
+	out[0] = 0;
+	for (i = 0; i < l->count; ++i)
+	{
+		const char *c = l->item[i];
+		int kind = TouchVote_ArgKind(c);
+		size_t start = n;
+		// gotomap, map and chmap are one vote for the server
+		if (kind == TOUCHVOTE_ARG_MAP && strcmp(c, "nextmap"))
+		{
+			if (goto_seen)
+				continue;
+			goto_seen = 1;
+		}
+		if (!touchvote_put(out, outsize, &n, c) || !touchvote_put(out, outsize, &n, "\t")
+			|| !touchvote_put(out, outsize, &n, TouchVote_ArgKindName(kind)) || !touchvote_put(out, outsize, &n, "\n"))
+		{
+			out[start] = 0; // the cut line is dropped
+			break;
+		}
+	}
+}
+
+// The server's map names, one per line (cvar _touch_vote_maps).
+static void TouchVote_FormatMaps(const touchvote_list_t *l, char *out, size_t outsize)
+{
+	size_t n = 0;
+	int i;
+	if (!outsize)
+		return;
+	out[0] = 0;
+	for (i = 0; i < l->count; ++i)
+	{
+		size_t start = n;
+		if (!touchvote_put(out, outsize, &n, l->item[i]) || !touchvote_put(out, outsize, &n, "\n"))
+		{
+			out[start] = 0;
+			break;
+		}
+	}
+}
+
+// One scoreboard row for the vote's player list: "N<TAB>p|s<TAB>m|<TAB>name".
+// The "#N" the server's vote command takes is the entity number, slot + 1.
+// Spectators (-666 frags) can be voted on too; m marks this player. Returns 0
+// for an empty slot.
+static int TouchVote_FormatPlayer(int slot, const char *rawname, int spectator, int me, char *out, size_t outsize)
+{
+	char plain[TOUCHVOTE_NAME_LEN], num[16], *p;
+	size_t n = 0;
+	int v = slot + 1, d = 0;
+	TouchVote_StripColors(rawname, plain, sizeof(plain));
+	// tabs and newlines would break the line format (StripColors already drops them)
+	for (p = plain; *p; ++p)
+		if (*p == '\t' || *p == '\n' || *p == '\r')
+			*p = ' ';
+	if (!plain[0] || !outsize)
+		return 0;
+	if (v < 1)
+		return 0;
+	{
+		char rev[16];
+		int r = 0;
+		while (v > 0 && r < 15)
+		{
+			rev[r++] = (char)('0' + v % 10);
+			v /= 10;
+		}
+		while (r > 0)
+			num[d++] = rev[--r];
+		num[d] = 0;
+	}
+	out[0] = 0;
+	return touchvote_put(out, outsize, &n, num) && touchvote_put(out, outsize, &n, spectator ? "\ts\t" : "\tp\t")
+		&& touchvote_put(out, outsize, &n, me ? "m\t" : "\t") && touchvote_put(out, outsize, &n, plain) && touchvote_put(out, outsize, &n, "\n");
+}
+
 // A called vote remains visible regardless of the player's own choice. Match-end
 // map and gametype voting have no input here and cannot create a called vote.
 static int TouchVote_CalledVisible(int globals_available, int called, int printed, double print_age)
