@@ -1010,7 +1010,7 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	/* the toolbar sits above the feed, left aligned with the text */
 	tby = max(2.0f, top - isz - m->fs * 0.5f);
 	tbx = x + pad;
-	for (j = 0; j < TCL_ICONS; j++)
+	for (j = 0; j < TCL_ICONS && cl_log.count > 0; j++) /* nothing to act on in an empty log */
 	{
 		static const int ic[TCL_ICONS] = {TCL_I_SHARE, TCL_I_DOWNLOAD, TCL_I_COPY, TCL_I_CLEAR, TCL_I_LOG};
 		static const int id[TCL_ICONS] = {TG_SHARE, TG_DOWNLOAD, TG_COPY, TG_CLEAR, TG_LOG};
