@@ -877,13 +877,48 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
 
     // ---------------------------------------------------------------- UiEvents (from the views)
 
+    // Server control's rcon password: typed here, kept (encrypted, per server) when "Remember" is on.
+    // Held in memory only between the typing and the Unlock; never logged.
+    private val rconVault by lazy { RconVault.create(activity) }
+    private var ctlPassword = ""
+    private var ctlRemember = true
+
+    private fun ctlServer() = app.str("server")
+
+    private fun ctlRememberTyped() {
+        val server = ctlServer()
+        if (ctlRemember && server.isNotEmpty() && RconCommands.rememberable(ctlPassword)) rconVault.save(server, ctlPassword)
+        ctlPassword = ""
+    }
+
+    /** Opening Server control on a server whose password is kept: hand it to the engine first, so the popup opens unlocked. */
+    private fun ctlUnlockFromVault() {
+        val server = ctlServer()
+        val pw = if (!RconCommands.rememberable(server)) null else rconVault.load(server)
+        if (pw == null || !RconCommands.rememberable(pw)) return
+        NativeBridge.enqueue(RconCommands.setPassword(pw))
+        NativeBridge.enqueue(RconCommands.setSaved(server))
+    }
+
     override fun action(node: String, action: Map<String, Any?>) {
         Log.i(tag, "Native UI: action $node / ${action.str("id")}")
+        when (action.str("id")) {
+            "ctl.open" -> ctlUnlockFromVault()
+            "ctl.auth" -> ctlRememberTyped()
+            "ctl.forget" -> { ctlServer().takeIf { it.isNotEmpty() }?.let { rconVault.forget(it) }; ctlPassword = "" }
+        }
         if (stopgap?.action(node, action) == true) return
         client?.event("action", mapOf("node" to node, "action" to action.str("id")))
     }
-    override fun value(node: String, value: Any?) { client?.event("value", mapOf("node" to node, "value" to value)) }
-    override fun submit(node: String, value: Any?) { client?.event("submit", mapOf("node" to node, "value" to value)) }
+    override fun value(node: String, value: Any?) {
+        if (node == "ctl/form/pw") ctlPassword = value?.toString() ?: ""
+        else if (node == "ctl/remember") ctlRemember = value == true || value == 1.0 || value == "1"
+        client?.event("value", mapOf("node" to node, "value" to value))
+    }
+    override fun submit(node: String, value: Any?) {
+        if (node == "ctl/form/pw") { ctlPassword = value?.toString() ?: ctlPassword; ctlRememberTyped() }
+        client?.event("submit", mapOf("node" to node, "value" to value))
+    }
     override fun visible(list: String, offset: Int, limit: Int, touching: Boolean?) {
         if (testRows) return
         client?.event("visible", linkedMapOf<String, Any?>("node" to list, "offset" to offset, "limit" to limit).apply { if (touching != null) put("touching", touching) })

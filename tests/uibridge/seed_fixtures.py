@@ -327,6 +327,31 @@ def password_dialog(server="Godnotic LAN 1"):
     ], title="Password", presentation="dialog", dismissable=True, primary=A("password.join", "Join", "play", style="primary"))
 
 
+def control_dialog(unlocked=True, local=True):
+    """Server control: the rcon password form on another's server until unlocked; the controls on one's own or after."""
+    if not unlocked:
+        return N("ctl", "screen", [
+            N("ctl/text", "text", body="Enter the server's rcon password."),
+            N("ctl/form", "form", [
+                N("ctl/form/pw", "field", label="Rcon password", bind="vm:ctl.password", value="", kind="password",
+                  private=True, hasValue=False, submit=A("ctl.auth", "Unlock")),
+            ], submit=A("ctl.auth", "Unlock", "lock", style="primary")),
+            N("ctl/remember", "switch", label="Remember for this server", bind="vm:ctl.remember", value=True),
+        ], title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
+    sec = lambda k, kids, t: N(f"ctl/{k}", "section", kids, title=t)
+    return N("ctl", "screen", [
+        sec("bots", [N("ctl/bots/n", "stepper", label="Bots", bind="vm:ctl.bots", value=3, min=0, max=32, step=1),
+                     N("ctl/bots/apply", "button", label="Apply", action=A("ctl.bots", "Apply", "check"), style="secondary")], "Bots"),
+        sec("players", [N("ctl/players/kickrow", "row", [
+            N("ctl/players/kickrow/who", "field", label="Player number or name", bind="vm:ctl.kick", value=""),
+            N("ctl/players/kickrow/kick", "button", label="Kick", action=A("ctl.kick", "Kick", "close"), style="destructive")])], "Players"),
+        sec("match", [N("ctl/match/restart", "button", label="Restart", action=A("ctl.restart", "Restart", "resume"), style="secondary"),
+                      N("ctl/match/time", "stepper", label="Time limit", bind="vm:ctl.timelimit", value=20, min=0, max=120, step=5, unit="min")], "Match"),
+        sec("cheats", [N("ctl/cheats/toggle", "button", label="Turn cheats on", action=A("ctl.cheats", "Turn cheats on"), style="secondary")], "Cheats"),
+    ] + ([] if local else [N("ctl/forget", "button", label="Forget password", action=A("ctl.forget", "Forget password", "lock"), style="secondary")]),
+        title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.close", "Close", "check", style="primary"))
+
+
 def settings_root():
     cats = [("video", "Video", "video", "Quality, field of view, frame rate"),
             ("audio", "Audio", "audio", "Volume, music, voice"),
@@ -426,6 +451,7 @@ def pause_screen(hosting=False):
         N("pause/actions", "grid", [
             N("pause/actions/resume", "button", label="Resume", action=A("resume", "Resume", "resume", style="primary"), style="primary"),
             N("pause/actions/settings", "button", label="Settings", action=A("settings", "Settings", "settings"), style="secondary"),
+            N("pause/actions/control", "button", label="Server control", action=A("ctl.open", "Server control", "settings"), style="secondary"),
             N("pause/actions/team", "button", label="Change team", action=A("team", "Change team", "players"), style="secondary", hidden=True),
             N("pause/actions/spectate", "button", label="Spectate", action=A("spectate", "Spectate", "esp"), style="secondary"),
             N("pause/actions/disconnect", "button", label=("End the game" if hosting else "Leave match"),
@@ -594,6 +620,10 @@ def main():
                                    app([pause_screen(hosting=True)], context="game")))
     write("lan-popup", fixture("lan-popup", "The host's LAN popup over the pause menu: addresses with a small copy button, one status line with Share, Close when someone joins, Close.",
                                app([pause_screen(hosting=True)], modal=[lan_popup()], context="game")))
+    write("control-locked", fixture("control-locked", "Server control on another's server before the rcon password: only the password form.",
+                                    app([pause_screen()], modal=[control_dialog(unlocked=False)], context="game")))
+    write("control", fixture("control", "Server control on this device's own game (no password): bots, kick, map and limits, cheats.",
+                             app([pause_screen(hosting=True)], modal=[control_dialog()], context="game")))
     write("credits", fixture("credits", "Credits and licence.", app([h, credits_screen()])))
 
     # --- sequences

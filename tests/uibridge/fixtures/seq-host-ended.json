@@ -66,6 +66,7 @@
     "children": [
      "pause/actions/resume",
      "pause/actions/settings",
+     "pause/actions/control",
      "pause/actions/team",
      "pause/actions/spectate",
      "pause/actions/disconnect"
@@ -94,6 +95,20 @@
      "action": {
       "id": "settings",
       "label": "Settings",
+      "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/control",
+    "type": "button",
+    "props": {
+     "label": "Server control",
+     "action": {
+      "id": "ctl.open",
+      "label": "Server control",
       "icon": "settings"
      },
      "style": "secondary"
@@ -357,6 +372,7 @@
      "pause/actions",
      "pause/actions/resume",
      "pause/actions/settings",
+     "pause/actions/control",
      "pause/actions/team",
      "pause/actions/spectate",
      "pause/actions/disconnect"
