@@ -369,6 +369,26 @@ static float glass_body(qbool pressed)
 	return pressed ? max(body, 0.45f) : body;
 }
 
+// Overlay panels need a readable backing even when the HUD glass is hollow.
+void TouchHUD_GlassPanel(float x, float y, float w, float h, float radius, float alpha)
+{
+	float cx = x + w * 0.5f, cy = y + h * 0.5f;
+	float hx = w * 0.5f, hy = h * 0.5f;
+	float r = min(radius, min(hx, hy));
+	DrawQ_RoundedBox(cx, cy + r * 0.15f, hx + r * 0.12f, hy + r * 0.12f, r, 0, C_SHADOW[0], C_SHADOW[1], C_SHADOW[2], alpha * A_SHADOW * glass_body(false), 0);
+	DrawQ_RoundedBox(cx, cy, hx, hy, r, 0, C_SURFACE[0], C_SURFACE[1], C_SURFACE[2], alpha * (0.88f + 0.1f * glass_body(false)), 0);
+	DrawQ_RoundedBox(cx, cy, hx, hy, r, max(1.0f, r * W_RING_THIN), C_RIM[0], C_RIM[1], C_RIM[2], alpha * A_RIM * 0.6f, 0);
+}
+
+void TouchHUD_GlassControl(float cx, float cy, float hx, float hy, qbool pressed, qbool selected, float alpha)
+{
+	qbool active = pressed || selected;
+	const float *color = active ? C_ACCENT : C_SURFACE;
+	shape_capsule_shadow(cx, cy + elevation(hy), hx, hy, alpha * A_SHADOW * glass_body(false));
+	shape_capsule(cx, cy, hx, hy, color, alpha * (pressed ? A_SURFACE_ACTIVE : selected ? A_SURFACE_LATCH : A_SURFACE) * glass_body(active));
+	widget_capsule_rim(cx, cy, hx, hy, active ? C_ACCENT_LIGHT : C_RIM, alpha * (active ? A_RIM_ACTIVE : A_RIM));
+}
+
 static void widget_button(float cx, float cy, float r, const char *label, qbool pressed, float alpha, const float *accent)
 {
 	const float *surface = pressed ? accent : C_SURFACE;

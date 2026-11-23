@@ -35,6 +35,7 @@
 #include "touch_mention.h"
 #include "touch_clipboard.h"
 #include "touch_ui.h"
+#include "touch_hud.h"
 #define TCL_SNPRINTF dpsnprintf
 #include "touch_chatlog_logic.h"
 
@@ -811,16 +812,17 @@ static float TCL_TextW(const char *s, float fs)
 /* a labelled text button (a filter chip) with a drawn size and its 44 dp target */
 static float TCL_Chip(const tcl_metrics_t *m, float x, float y, float h, const char *label, int on, int arg)
 {
-	float w = TCL_TextW(label, m->fs) + m->fs * 1.6f;
-	DrawQ_Fill(TCL_SnapX(m, x), TCL_SnapY(m, y), w, h, on ? 0.25f : 0.12f, on ? 0.45f : 0.16f, on ? 0.75f : 0.2f, on ? 0.95f : 0.8f, 0);
-	DrawQ_String(x + m->fs * 0.8f, y + (h - m->fs) * 0.5f, label, 0, m->fs, m->fs, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
-	TCL_AddTarget(x, y, w, h, TG_CHIP, arg);
+	float w = max(tcl_min_target, TCL_TextW(label, m->fs) + m->fs * 1.6f);
+	TouchHUD_GlassControl(x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, tcl_ptr_down && tcl_ptr_id == TG_CHIP && tcl_ptr_arg == arg, on, 1);
+	DrawQ_String(x + (w - TCL_TextW(label, m->fs)) * 0.5f, y + (h - m->fs) * 0.5f, label, 0, m->fs, m->fs, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
+	TCL_AddTarget(x, y + (h - tcl_min_target) * 0.5f, w, tcl_min_target, TG_CHIP, arg);
 	return w;
 }
 
 /* an icon button: the picture at its drawn size, centred in its 44 dp target */
 static void TCL_IconButton(const tcl_metrics_t *m, int icon, float cx, float cy, float size, int id, float alpha)
 {
+	TouchHUD_GlassControl(cx, cy, tcl_min_target * 0.36f, tcl_min_target * 0.36f, tcl_ptr_down && tcl_ptr_id == id, false, alpha);
 	TCL_Icon(m, icon, cx - size * 0.5f, cy - size * 0.5f, size, 1, 1, 1, alpha);
 	TCL_AddTarget(cx - tcl_min_target * 0.5f, cy - tcl_min_target * 0.5f, tcl_min_target, tcl_min_target, id, 0);
 }
@@ -840,14 +842,13 @@ static void TCL_DrawPopup(const tcl_metrics_t *m)
 	x = bound(m->fs, tcl_popup_x - w * 0.5f, max(m->fs, W - w - m->fs));
 	y = bound(m->fs, tcl_popup_y - itemh * 0.5f, max(m->fs, H - itemh * 4 - m->fs));
 	DrawQ_Fill(0, 0, W, H, 0, 0, 0, 0.35f, 0);
-	DrawQ_Fill(x - 1, y - 1, w + 2, itemh * 4 + 2, 0.4f, 0.5f, 0.7f, 0.9f, 0);
-	DrawQ_Fill(x, y, w, itemh * 4, 0.07f, 0.09f, 0.14f, 0.98f, 0);
+	TouchHUD_GlassPanel(x, y, w, itemh * 4, m->dp * 14, 1);
 	TCL_Icon(m, TCL_I_CHAT, x + m->fs * 0.6f, y + (itemh - m->fs * 1.2f) * 0.5f, m->fs * 1.2f, 0.7f, 0.8f, 1, 1);
 	DrawQ_String(x + m->fs * 2.2f, y + (itemh - m->fs) * 0.5f, title, 0, m->fs, m->fs, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
 	for (i = 0; i < 3; i++)
 	{
 		float iy = y + itemh * (float)(i + 1);
-		DrawQ_Fill(x, iy, w, 1.0f / m->sy, 0.3f, 0.35f, 0.45f, 0.8f, 0);
+		TouchHUD_GlassControl(x + w * 0.5f, iy + itemh * 0.5f, w * 0.46f, itemh * 0.36f, tcl_ptr_down && tcl_ptr_id == TG_POP && tcl_ptr_arg == i, false, 1);
 		DrawQ_String(x + m->fs * 1.2f, iy + (itemh - m->fs) * 0.5f, label[i], 0, m->fs, m->fs, 1, 1, 1, 1, 0, NULL, true, FONT_CHAT);
 		TCL_AddTarget(x, iy, w, itemh, TG_POP, i);
 	}
@@ -860,7 +861,7 @@ static void TCL_DrawToast(const tcl_metrics_t *m, float cx, float y)
 		return;
 	a = age > 1.2f ? (1.8f - age) / 0.6f : 1.0f;
 	tw = TCL_TextW(tcl_toast, m->fs);
-	DrawQ_Fill(cx - tw * 0.5f - m->fs, y, tw + m->fs * 2, m->fs * 1.9f, 0.1f, 0.35f, 0.15f, 0.92f * a, 0);
+	TouchHUD_GlassPanel(cx - tw * 0.5f - m->fs, y, tw + m->fs * 2, m->fs * 1.9f, m->fs * 0.8f, a);
 	DrawQ_String(cx - tw * 0.5f, y + m->fs * 0.45f, tcl_toast, 0, m->fs, m->fs, 1, 1, 1, a, 0, NULL, true, FONT_CHAT);
 }
 
@@ -943,9 +944,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	tcl_panel_rect[0] = pxl; tcl_panel_rect[1] = pyt; tcl_panel_rect[2] = pw; tcl_panel_rect[3] = ph;
 
 	DrawQ_Fill(0, 0, W, H, 0, 0, 0, 0.55f, 0);
-	DrawQ_Fill(pxl, pyt, pw, ph, 0.035f, 0.05f, 0.09f, 0.96f, 0);
-	DrawQ_Fill(pxl, pyt, pw, hdr, 0.07f, 0.1f, 0.17f, 1, 0);
-	DrawQ_Fill(pxl, pyt + hdr, pw, max(1.0f, 1.0f / m->sy), 0.3f, 0.4f, 0.55f, 1, 0);
+	TouchHUD_GlassPanel(pxl, pyt, pw, ph, 14.0f * m->dp, 1);
 
 	/* header: filter chips, count, actions (no title: the chips and the lines say what it is) */
 	{
@@ -965,7 +964,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		chipy = pyt + (wide ? 0 : title_h) + (title_h - chiph) * 0.5f;
 		for (i = 0; i < 3; i++)
 		{
-			if (wide && chipx + TCL_TextW(chip[i], m->fs) + m->fs * 1.6f > left)
+			if (wide && chipx + max(tcl_min_target, TCL_TextW(chip[i], m->fs) + m->fs * 1.6f) > left)
 				break;
 			chipx += TCL_Chip(m, chipx, chipy, chiph, chip[i], tcl_filter == i, i) + m->fs * 0.5f;
 		}
@@ -1023,7 +1022,6 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	}
 	if (footer > 0)
 	{
-		DrawQ_Fill(pxl, rowtop + bodyh, pw, footer, 0.07f, 0.1f, 0.17f, 1, 0);
 		Con_DrawChatInputAt(pxl + m->fs, rowtop + bodyh + (footer - m->fs) * 0.5f, m->fs);
 	}
 	TCL_DrawToast(m, pxl + pw * 0.5f, rowtop + m->fs);

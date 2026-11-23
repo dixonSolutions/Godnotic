@@ -19,6 +19,10 @@ qbool TouchHUD_HideCursorPic(const char *picname);
 struct prvm_prog_s;
 qbool TouchHUD_HideStockKeyPanel(struct prvm_prog_s *prog);
 
+// Shared glass surfaces for engine overlays, in console coordinates.
+void TouchHUD_GlassPanel(float x, float y, float w, float h, float radius, float alpha);
+void TouchHUD_GlassControl(float cx, float cy, float hx, float hy, qbool pressed, qbool selected, float alpha);
+
 // Cvars and commands (CL_InitInput).
 void TouchHUD_Init(void);
 
