@@ -49,8 +49,6 @@ static float tcl_vel;       /* momentum, screen units per second */
 static double tcl_last_frame;
 static float tcl_line_h = 12;
 static int tcl_icon_px;     /* side of the icon art as last made, in device pixels */
-static double tcl_icon_made;
-static cachepic_t *tcl_icon_pic[TCL_ICONS];
 static double tcl_scroll_time;
 static int tcl_box_lines = 2;
 static float tcl_ix[TCL_ICONS], tcl_iy, tcl_isz; /* slot 0 share, 1 download, 2 copy, 3 clear */
@@ -282,27 +280,48 @@ void TouchChatLog_Init(void)
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_copy", TCL_Copy_f, "put the chat log text on the clipboard");
 }
 
-/* The icon art at the screen's real pixel size (see TouchChatLog_IconRaster): redone when the size
- * changes, and now and then in case the renderer dropped the textures. */
+/* The icon art at the screen's real pixel size (see TouchChatLog_IconRaster), kept as pixels and
+ * redone only when the size changes. It is drawn as runs of equal pixels (DrawQ_Fill on the device
+ * pixel grid), so it is crisp whatever the renderer does with textures and costs a few dozen quads. */
+static unsigned char tcl_icon_pix[TCL_ICONS][128 * 128 * 4];
+
 static void TCL_MakeIcons(int px)
 {
-	static unsigned char pix[128 * 128 * 4];
 	int k;
 	if (px > 128)
 		px = 128;
 	if (px < 8)
 		px = 8;
-	if (px == tcl_icon_px && host.realtime - tcl_icon_made < 3)
+	if (px == tcl_icon_px)
 		return;
 	for (k = 0; k < TCL_ICONS; k++)
-	{
-		char name[48];
-		TouchChatLog_IconRaster(k, px, pix);
-		dpsnprintf(name, sizeof(name), "touch_chatlog_icon_%d", k);
-		tcl_icon_pic[k] = Draw_NewPic(name, px, px, pix, TEXTYPE_BGRA, TEXF_ALPHA | TEXF_CLAMP | TEXF_FORCELINEAR);
-	}
+		TouchChatLog_IconRaster(k, px, tcl_icon_pix[k]);
 	tcl_icon_px = px;
-	tcl_icon_made = host.realtime;
+}
+
+static void TCL_DrawIcon(int k, float x, float y, float pxs, float alpha)
+{
+	int px = tcl_icon_px, row, col;
+	const unsigned char *p = tcl_icon_pix[k];
+	for (row = 0; row < px; row++)
+	{
+		col = 0;
+		while (col < px)
+		{
+			const unsigned char *c = p + ((size_t)row * px + col) * 4;
+			int run = 1;
+			if (c[3] == 0)
+			{
+				col++;
+				continue;
+			}
+			while (col + run < px && !memcmp(c, c + (size_t)run * 4, 4))
+				run++;
+			DrawQ_Fill(x + (float)col / pxs, y + (float)row / pxs, (float)run / pxs, 1.0f / pxs,
+				c[2] / 255.0f, c[1] / 255.0f, c[0] / 255.0f, c[3] / 255.0f * alpha, 0);
+			col += run;
+		}
+	}
 }
 
 void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
@@ -348,8 +367,7 @@ void TouchChatLog_Draw(float x, float y, float w, float size, int stock_lines)
 			tcl_ix[i] = floorf(TouchChatLog_IconX(x, w, sz, i) * pxs + 0.5f) / pxs;
 		tcl_iy = floorf(max(0.0f, y - sz - 1) * pxs + 0.5f) / pxs;
 		for (i = 0; i < TCL_ICONS; i++)
-			if (tcl_icon_pic[i])
-				DrawQ_Pic(tcl_ix[i], tcl_iy, tcl_icon_pic[i], sz, sz, 1, 1, 1, a, 0);
+			TCL_DrawIcon(i, tcl_ix[i], tcl_iy, pxs, a);
 		if (host.realtime - tcl_copied_at < 1.5)
 			DrawQ_String(tcl_ix[2] - sz * 0.4f, tcl_iy - size - 2, "Copied", 0, size, size, 0.6f, 1, 0.6f, 1, 0, NULL, false, FONT_CHAT);
 	}
