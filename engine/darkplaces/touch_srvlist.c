@@ -266,12 +266,20 @@ static void recs_merge(void)
 {
 	unsigned i;
 	long long now = (long long)time(NULL);
+	qbool anyanswer = false;
 	if (!recs)
 		return;
+	// A refresh nobody answered (the network was off, a hotspot dropped) says nothing about the
+	// servers: counting it as a failure for all of them left the saved list empty at the next start.
+	for (i = 0; i < serverlist_cachecount && i < nside; i++)
+		if (side[i].flags & SF_ANSWER)
+			anyanswer = true;
 	for (i = 0; i < serverlist_cachecount && i < nside; i++)
 	{
 		const serverlist_info_t *in = &serverlist_cache[i].info;
 		touchsl_record_t *r = rec_find(in->cname);
+		if (!anyanswer && !(side[i].flags & SF_ANSWER))
+			continue;
 		if (side[i].flags & SF_ANSWER)
 		{
 			if (!r)
@@ -872,7 +880,10 @@ qbool TouchSrvList_QueryFrame(void)
 					if (now >= s->lastsend + finalwait)
 					{
 						s->flags |= SF_DONE;
-						if (e->info.ping)
+						// Nothing answered this whole refresh: the network is down (airplane mode, the
+						// Wi-Fi off), not every server gone. The last good list stays up, stale, until
+						// something answers again; the menu says the masters are unreachable.
+						if (e->info.ping && (sl.answers > 0 || sl.rows_at_open == 0))
 						{
 							// it was listed and no longer answers
 							TouchSrvList_ViewRemove(e);

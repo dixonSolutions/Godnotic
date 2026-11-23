@@ -250,10 +250,29 @@ static const char *server_net(const char *cname)
 	return "internet";
 }
 
+// The server view's saved settings (shared by Home's Multiplayer card and the server list,
+// on every platform: both read the same source through these). The text search is never saved.
+static cvar_t touch_srv_sort = {CF_CLIENT | CF_ARCHIVE, "touch_srv_sort", "players", "Godnotic: the server list's order: players, ping, name, map or mode (Home's Multiplayer card follows it)"};
+static cvar_t touch_srv_desc = {CF_CLIENT | CF_ARCHIVE, "touch_srv_desc", "1", "Godnotic: 1 lists the highest value first (most players), 0 the lowest first"};
+static cvar_t touch_srv_maxping = {CF_CLIENT | CF_ARCHIVE, "touch_srv_maxping", "0", "Godnotic: hide servers slower than this many ms (0: any)"};
+static cvar_t touch_srv_minplayers = {CF_CLIENT | CF_ARCHIVE, "touch_srv_minplayers", "0", "Godnotic: hide servers with fewer players than this (0: any)"};
+static cvar_t touch_srv_maxplayers = {CF_CLIENT | CF_ARCHIVE, "touch_srv_maxplayers", "0", "Godnotic: hide servers with more players than this (0: any)"};
+
+// The view's cvars as one number, so a change rebuilds the rows.
+static unsigned view_sig(void)
+{
+	unsigned h = 2166136261u;
+	h = (h ^ (unsigned)touch_srv_maxping.integer) * 16777619u;
+	h = (h ^ (unsigned)touch_srv_minplayers.integer) * 16777619u;
+	h = (h ^ (unsigned)touch_srv_maxplayers.integer) * 16777619u;
+	return h;
+}
+
 #ifdef CONFIG_MENU
 static unsigned server_sig(void)
 {
 	unsigned h = 2166136261u ^ serverlist_cachecount;
+	h = (h ^ view_sig()) * 16777619u;
 	h = (h ^ TouchSrvList_Serial()) * 16777619u;  // rows added, answered, gone stale or removed
 	for (unsigned i = 0; i < serverlist_cachecount; i++)
 	{
@@ -389,6 +408,10 @@ static void build_servers(source_t *s)
 	int showfull = all || atoi(param(s, "full", "1"));
 	int showlaggy = all || atoi(param(s, "laggy", "1"));
 	int laggyms = atoi(param(s, "laggyms", "150"));
+	// the saved numeric filters (0: off); a lookup by address ("servers.all") has none
+	int maxping = all ? 0 : touch_srv_maxping.integer;
+	int minplayers = all ? 0 : touch_srv_minplayers.integer;
+	int maxplayers = all ? 0 : touch_srv_maxplayers.integer;
 	for (unsigned i = 0; i < serverlist_cachecount; i++)
 	{
 		const serverlist_entry_t *e = &serverlist_cache[i];
@@ -405,6 +428,12 @@ static void build_servers(source_t *s)
 		if (!showfull && in->freeslots <= 0 && in->maxplayers > 0)
 			continue;
 		if (!showlaggy && in->ping >= laggyms)
+			continue;
+		if (maxping > 0 && in->ping > maxping)
+			continue;
+		if (minplayers > 0 && in->numplayers < minplayers)
+			continue;
+		if (maxplayers > 0 && in->numplayers > maxplayers)
 			continue;
 		// no row image: the server list is text, dense (no map previews)
 		uibrow_t *r = addrow(s, in->cname, NULL);
@@ -689,6 +718,17 @@ static int cmp_rows(const void *a, const void *b)
 	}
 	if (sortdesc)
 		r = -r;
+	if (!r && sortsrc->kind == 1)
+	{
+		// one order everywhere (the card, the list on every renderer): then the lower ping, then the address
+		const cell_t *pa = getcell(ra, "ping"), *pb = getcell(rb, "ping");
+		double x = pa ? pa->n : 0, y = pb ? pb->n : 0;
+		if ((x <= 0) != (y <= 0))
+			return (x <= 0) - (y <= 0);
+		if (x != y)
+			return x < y ? -1 : 1;
+		r = strcmp(ra->key, rb->key);
+	}
 	if (!r)
 		r = *(const int *)a - *(const int *)b;  // stable
 	return r;
@@ -823,6 +863,26 @@ static void row_json(uibbuf_t *b, const uibrow_t *r)
 	UIBB_Puts(b, "}}");
 }
 
+// A renderer's header tap arrives as a window asking for another sort than the one before it:
+// that choice is saved (touch_srv_sort, touch_srv_desc) so it survives a restart and shapes Home's
+// card too. A window repeating the previous request's sort (a late reply, a fresh renderer
+// following the saved view) changes nothing.
+static void view_note_sort(source_t *s, const char *sort, int desc)
+{
+	static char last[64];
+	static int lastdesc = -1;
+	if (!sort || !*sort || strcmp(s->name, "servers"))
+		return;
+	desc = !!desc;
+	if (lastdesc >= 0 && (strcmp(last, sort) || lastdesc != desc))
+	{
+		Cvar_SetQuick(&touch_srv_sort, sort);
+		Cvar_SetQuick(&touch_srv_desc, desc ? "1" : "0");
+	}
+	dp_strlcpy(last, sort, sizeof(last));
+	lastdesc = desc;
+}
+
 void UIBSrc_Window(uibbuf_t *b, int msgid, int64_t re, const char *source, int offset, int limit,
                    const char *sort, int desc, const char *filter, int hasfilter)
 {
@@ -841,7 +901,10 @@ void UIBSrc_Window(uibbuf_t *b, int msgid, int64_t re, const char *source, int o
 	if (limit < 1) limit = 1;
 	if (limit > UIB_MAX_WINDOW) limit = UIB_MAX_WINDOW;
 	int count;
-	int *idx = order(s, sort, desc, filter, 1, &count);
+	// a server list is always ordered afresh by the saved view: the same top servers first as on Home's card
+	if (s->kind == 1)
+		view_note_sort(s, sort, desc);
+	int *idx = order(s, sort, desc, filter, 0, &count);
 	UIBB_Printf(b, "{\"uib\":1,\"t\":\"rows\",\"id\":%d,\"re\":%lld,\"source\":", msgid, (long long)re);
 	UIBB_Str(b, s->name, strlen(s->name), 0, 0);
 	UIBB_Printf(b, ",\"rev\":%lld,\"total\":%d,\"offset\":%d", (long long)s->rev, count, offset);
@@ -922,7 +985,14 @@ const char *UIBSrc_LocalCell(int i, const char *key)
 	return num;
 }
 
-void UIBSrc_Init(void) {}
+void UIBSrc_Init(void)
+{
+	Cvar_RegisterVariable(&touch_srv_sort);
+	Cvar_RegisterVariable(&touch_srv_desc);
+	Cvar_RegisterVariable(&touch_srv_maxping);
+	Cvar_RegisterVariable(&touch_srv_minplayers);
+	Cvar_RegisterVariable(&touch_srv_maxplayers);
+}
 
 void UIBSrc_Reset(void)
 {

@@ -286,6 +286,10 @@ bool UIB_ServerSummary()
 	return true;
 }
 
+string UIB_ServerSort();
+float UIB_ServerDesc();
+void UIB_ServerParams(bool home);
+
 // Home's bar along the bottom (a "tabbar" node, id "nav"): Settings, Credits and
 // Quit joined edge to edge, like tabs. It is on Home and on the Settings and
 // Credits screens it opens (while the menu is not over a match), where the open
@@ -389,10 +393,14 @@ void UIB_BuildHome()
 			// The card is the live server list: one line per server, busiest first, filled in as
 			// the list answers (empty while it loads). No picture: the list is the preview.
 			string preview = "";
+			// The same source, saved sort and saved numeric filters as the Multiplayer list (UIB_ServerParams,
+			// the engine's touch_srv_* cvars): the card is that list's first lines, never a different query.
+			// The text search is not part of it.
 			string previewsource = cvar_string("_uib_debug_servers");
-			if (previewsource == "") previewsource = "servers.all";
+			if (previewsource == "") previewsource = "servers";
+			UIB_ServerParams(true);
 			// sixteen rows asked, up to twelve lines sent (the renderer shows as many as the card's height holds): a server listed under two addresses (IPv4 and IPv6) is one line
-			int previewcount = uib_window(previewsource, 0, 16, "players", true, "");
+			int previewcount = uib_window(previewsource, 0, 16, UIB_ServerSort(), UIB_ServerDesc(), "");
 			int previewlines = 0;
 			string previewrows = "";
 			for (int pi = 0; pi < previewcount && previewlines < 12; ++pi)
@@ -998,20 +1006,42 @@ void UIB_BuildMapPreview()
 
 // ---------------------------------------------------------------- servers
 
-void UIB_ServerParams()
+// The saved view of the server list (engine cvars, archived): shared by Home's card and the list
+string UIB_ServerSort()
 {
-	uib_param("servers", "lan", UIB_VMf("mp.lan") ? "1" : "0");
+	string s = cvar_string("touch_srv_sort");
+	return (s == "") ? "players" : s;
+}
+float UIB_ServerDesc()
+{
+	return cvar("touch_srv_desc") != 0;
+}
+// the view's settings as one string: a change rebuilds the Multiplayer screen
+string UIB_ServerViewSig()
+{
+	return strcat(UIB_ServerSort(), "|", ftos(UIB_ServerDesc()), "|", cvar_string("touch_srv_maxping"), "|",
+		cvar_string("touch_srv_minplayers"), "|", cvar_string("touch_srv_maxplayers"), "|",
+		cvar_string("menu_slist_showempty"), "|", cvar_string("menu_slist_showfull"));
+}
+string uib_mp_viewsig;
+
+// home: the card, which has no LAN switch and no search text
+void UIB_ServerParams(bool home)
+{
+	uib_param("servers", "lan", (!home && UIB_VMf("mp.lan")) ? "1" : "0");
 	uib_param("servers", "empty", cvar_string("menu_slist_showempty"));
 	uib_param("servers", "full", cvar_string("menu_slist_showfull"));
-	uib_param("servers", "laggy", cvar_string("menu_slist_showlaggy"));
-	uib_param("servers", "search", UIB_VM("mp.search"));
+	// slow servers are cut by the saved max ping (touch_srv_maxping), not by a separate switch
+	uib_param("servers", "laggy", "1");
+	uib_param("servers", "search", home ? "" : UIB_VM("mp.search"));
 }
 
 bool UIB_FindServerIn(string source, string address);
 
 void UIB_BuildServers()
 {
-	UIB_ServerParams();
+	UIB_ServerParams(false);
+	uib_mp_viewsig = UIB_ServerViewSig();
 	bool lan = UIB_VMf("mp.lan");
 	// Keep the chosen row highlighted even if its address is edited.
 	string sel = UIB_VM("mp.server");
@@ -1034,24 +1064,54 @@ void UIB_BuildServers()
 		UIB_Open("filters", "row");
 			uib_b("wrap", 1);
 			UIB_Check("lan", _("LAN"), "vm:mp.lan", "lan");
-			UIB_Check("empty", _("Empty"), "cvar:menu_slist_showempty", "");
-			UIB_Check("full", _("Full"), "cvar:menu_slist_showfull", "");
-			UIB_Check("laggy", _("Laggy"), "cvar:menu_slist_showlaggy", "");
+			UIB_Check("empty", _("Show empty"), "cvar:menu_slist_showempty", "");
+			UIB_Check("full", _("Show full"), "cvar:menu_slist_showfull", "");
 			UIB_Button("refresh", _("Refresh"), UIB_A("refresh", _("Refresh"), "refresh"), "secondary");
+		UIB_Close();
+		// Sort and numeric filters: saved (engine cvars), the same for Home's Multiplayer card and this list
+		UIB_Open("view", "row");
+			uib_b("wrap", 1);
+			UIB_Choice("sort", _("Sort"), "cvar:touch_srv_sort", "segmented",
+				strcat("[", UIB_Opt("players", _("Players")), ",", UIB_Opt("ping", _("Ping")), ",", UIB_Opt("name", _("Name")), ",", UIB_Opt("map", _("Map")), "]"), "");
+			UIB_Choice("desc", _("Order"), "cvar:touch_srv_desc", "segmented", strcat("[", UIB_Opt("1", _("High to low")), ",", UIB_Opt("0", _("Low to high")), "]"), "");
+			UIB_Open("maxping", "stepper");
+				uib_s("label", _("Max ping"));
+				uib_s("bind", "cvar:touch_srv_maxping");
+				uib_f("min", 0); uib_f("max", 500); uib_f("step", 25);
+				uib_s("format", "int");
+				uib_s("help", _("0 shows any"));
+			UIB_Close();
+			UIB_Open("minplayers", "stepper");
+				uib_s("label", _("Min players"));
+				uib_s("bind", "cvar:touch_srv_minplayers");
+				uib_f("min", 0); uib_f("max", 64); uib_f("step", 1);
+				uib_s("format", "int");
+				uib_s("help", _("0 shows any"));
+			UIB_Close();
+			UIB_Open("maxplayers", "stepper");
+				uib_s("label", _("Max players"));
+				uib_s("bind", "cvar:touch_srv_maxplayers");
+				uib_f("min", 0); uib_f("max", 64); uib_f("step", 1);
+				uib_s("format", "int");
+				uib_s("help", _("0 shows any"));
+			UIB_Close();
 		UIB_Close();
 	UIB_Close();
 	UIB_Open("servers", "list");
 		string src = cvar_string("_uib_debug_servers");   // stress tests: a synthetic source
 		uib_s("source", (src != "") ? src : "servers");
-		uib_push("columns", UIB_Col("lock", "lock", "", "xs", 2, false, false));
+		// no empty first column: names start at the left edge (a locked server is told on Join)
 		uib_push("columns", UIB_Col("name", "text", _("Server"), "fill", 1, true, false));
 		uib_push("columns", UIB_Col("map", "map", _("Map"), "m", 2, true, false));
 		uib_push("columns", UIB_Col("mode", "mode", _("Mode"), "s", 2, true, false));
 		uib_push("columns", UIB_Col("players", "players", _("Players"), "s", 1, true, true));
 		uib_push("columns", UIB_Col("ping", "ping", _("Ping"), "s", 1, true, true));
-		string sort = UIB_VM("mp.sort");
-		uib_s("sort", sort == "" ? "ping" : sort);
-		uib_b("desc", UIB_VMf("mp.desc"));
+		uib_s("sort", UIB_ServerSort());
+		uib_b("desc", UIB_ServerDesc());
+		// the numeric filters, for renderers that also filter the rows they hold (the engine's rows already obey them)
+		uib_f("maxPing", cvar("touch_srv_maxping"));
+		uib_f("minPlayers", cvar("touch_srv_minplayers"));
+		uib_f("maxPlayers", cvar("touch_srv_maxplayers"));
 		uib_s("filter", UIB_VM("mp.search"));
 		// one tap chooses a server, the one Join button (or a double tap) joins it;
 		// rows are text only: no per-row buttons, no page behind a row
@@ -2163,7 +2223,8 @@ void UIB_Tick()
 	if ((top == "home" || top == "mp") && uib_gettime(1) > uib_next_tick)
 	{
 		uib_next_tick = uib_gettime(1) + 0.5;
-		if (UIB_ServerSummary() || top == "home")
+		bool viewchanged = (top == "mp" && UIB_ServerViewSig() != uib_mp_viewsig);
+		if (UIB_ServerSummary() || top == "home" || viewchanged)
 			UIB_Build(top);
 		// Home and Multiplayer share one background query and its cached rows: every
 		// 10 s while the full list shows, every 30 s to keep Home's preview live.
@@ -2457,7 +2518,7 @@ void UIB_ValueEvent(string node, string value, string json)
 			}
 			break;
 	}
-	UIB_ServerParams();
+	UIB_ServerParams(false);
 	UIB_RebuildAll();
 }
 

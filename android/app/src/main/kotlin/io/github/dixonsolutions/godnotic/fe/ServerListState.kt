@@ -81,6 +81,13 @@ internal class ServerListState(
     /** Chips the player has flipped: theirs beats any later value from the engine. */
     private val chosen = HashSet<String>()
     private var laggyMs = 150.0
+    /** The saved numeric filters (the engine's touch_srv_* settings, 0 = off), from the list's props. */
+    private var maxPing = 0.0
+    private var minPlayers = 0.0
+    private var maxPlayers = 0.0
+    /** The sort the engine last published: a change of it (a saved view, another renderer) is adopted. */
+    private var propSort = ""
+    private var propDesc = false
     private var search = ""
     private var searchTotal: Int? = null
     /** The unfiltered source count: a pending search must not turn the list into zero rows. */
@@ -204,6 +211,11 @@ internal class ServerListState(
         val max = cells.num("max")
         if (!include("full") && max > 0 && max - players <= 0) return false
         if (!include("laggy") && cells.num("ping") >= laggyMs) return false
+        // the saved numeric filters, as the engine applies them (touch_uib_src.c build_servers)
+        val ping = cells.num("ping")
+        if (maxPing > 0 && ping > maxPing) return false
+        if (minPlayers > 0 && players < minPlayers) return false
+        if (maxPlayers > 0 && players > maxPlayers) return false
         return true
     }
 
@@ -229,10 +241,41 @@ internal class ServerListState(
      * would be undone before the finger left the glass.
      */
     fun merge(props: Map<String, Any?>): Map<String, Any?> {
+        adopt(props)
         var out = if (sort.isEmpty()) props else props + mapOf("sort" to sort, "desc" to desc)
         val sel = mergedSelection(props)
         if (sel != props["selected"].list()) out = out + ("selected" to sel)
         return out
+    }
+
+    /**
+     * The saved view arrives with the list's props: the sort (taken over only when the
+     * engine's own value changed, so a header tap is not undone by the props that were
+     * already in flight) and the numeric filters, which re-filter the rows held now.
+     */
+    private fun adopt(props: Map<String, Any?>) {
+        val ps = props.str("sort")
+        val pd = props.bool("desc")
+        if (ps != propSort || pd != propDesc) {
+            // the first props seen are a baseline: a column this list was already given stays
+            val first = propSort.isEmpty()
+            propSort = ps
+            propDesc = pd
+            if (ps.isNotEmpty() && (ps != sort || pd != desc) && (!first || sort.isEmpty())) {
+                sort = ps
+                desc = pd
+                if (!hold) sortWindow(0, slots.size)
+            }
+        }
+        val mp = props.num("maxPing", 0.0)
+        val lo = props.num("minPlayers", 0.0)
+        val hi = props.num("maxPlayers", 0.0)
+        if (mp != maxPing || lo != minPlayers || hi != maxPlayers) {
+            maxPing = mp
+            minPlayers = lo
+            maxPlayers = hi
+            rebuildShown()
+        }
     }
 
     /**
@@ -302,7 +345,9 @@ internal class ServerListState(
             from = minOf(from, offset)
             to = maxOf(to, offset + rows.size - 1)
         }
-        if (firstListing && !hold) sortWindow(offset, rows.size)
+        // The whole list stays in the saved order as answers arrive (the order Home's card
+        // shows), never only its first window: unless a finger is on it.
+        if (!hold && (firstListing || rows.isNotEmpty())) sortWindow(0, slots.size)
         rebuildShown()
     }
 
@@ -448,6 +493,8 @@ internal class ServerListState(
             else -> ca.str(sort).compareTo(cb.str(sort), ignoreCase = true)
         }
         if (desc) r = -r
+        // the engine's order exactly (touch_uib_src.c cmp_rows): then the lower ping, then the address
+        if (r == 0) r = ping(ca).compareTo(ping(cb))
         if (r == 0) r = keyOf(a).compareTo(keyOf(b)) // the same order every refresh
         return r
     }

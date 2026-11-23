@@ -169,26 +169,23 @@ class ServerListStateTest {
         assertEquals(listOf("c:3", "a:1", "b:2"), keys())
 
         state.hold = false
+        // let go: the list catches up and takes the sort order
         state.begin(3)
         state.accept(0, 3, listOf(row("c:3", 50), row("a:1", 50), row("b:2", 50)))
-        assertEquals(listOf("c:3", "a:1", "b:2"), keys())
-        state.choose("ping", false)
         assertEquals(listOf("a:1", "b:2", "c:3"), keys())
     }
 
     @Test
-    fun changingPingsDoNotMoveRowsOrSelectionDuringRefresh() {
+    fun changingPingsReorderRowsButKeepTheSelectionDuringRefresh() {
         state.choose("ping", false)
         state.accept(0, 2, listOf(row("a", 10), row("b", 20)))
         state.select("a")
         state.begin(2)
         state.accept(0, 2, listOf(row("b", 5), row("a", 90)))
-        assertEquals(listOf("a", "b"), keys())
-        assertEquals("a", state.selected)
-        assertEquals(90, state.row(0)!!["cells"].obj().int("ping"))
-        state.choose("ping", false)
+        // the list follows its sort as pings change (the order Home's card shows); the choice stays
         assertEquals(listOf("b", "a"), keys())
         assertEquals("a", state.selected)
+        assertEquals(90, state.row(1)!!["cells"].obj().int("ping"))
     }
 
     @Test
@@ -615,5 +612,69 @@ class ServerListStateTest {
         assertTrue(state.select(""))
         assertEquals("", state.selected)
         assertEquals(listOf<Any?>(), state.merge(mapOf("selected" to emptyList<Any?>()))["selected"] ?: emptyList<Any?>())
+    }
+
+    // ---- the saved view: one order and one set of numeric filters for the card and the list
+
+    private fun props(sort: String = "players", desc: Boolean = true, maxPing: Int = 0, minPlayers: Int = 0, maxPlayers: Int = 0) =
+        mapOf("sort" to sort, "desc" to desc, "maxPing" to maxPing.toDouble(), "minPlayers" to minPlayers.toDouble(), "maxPlayers" to maxPlayers.toDouble())
+
+    @Test
+    fun savedSortKeepsTheWholeListInOrderAsAnswersArrive() {
+        state.merge(props("players", true))
+        state.accept(0, 2, listOf(row("a", players = 1), row("b", players = 9)))
+        assertEquals(listOf("b", "a"), keys())
+        // a later answer from a busier server goes to the top, not to the end
+        state.accept(0, 3, listOf(row("a", players = 1), row("b", players = 9), row("c", players = 12)))
+        assertEquals(listOf("c", "b", "a"), keys())
+        // a ping landing on a quiet server does not break the order
+        state.accept(0, 3, listOf(row("c", players = 12), row("b", players = 9), row("a", players = 1, ping = 20)))
+        assertEquals(listOf("c", "b", "a"), keys())
+    }
+
+    @Test
+    fun equalPlayersGoToTheLowerPingThenTheAddress() {
+        state.merge(props("players", true))
+        state.accept(0, 3, listOf(row("z", players = 5, ping = 40), row("a", players = 5, ping = 90), row("m", players = 5, ping = 40)))
+        assertEquals(listOf("m", "z", "a"), keys())
+    }
+
+    @Test
+    fun aChangedSavedSortIsAdoptedAndReordersTheRowsHeld() {
+        state.merge(props("players", true))
+        state.accept(0, 3, listOf(row("a", players = 1, ping = 30), row("b", players = 9, ping = 90), row("c", players = 5, ping = 60)))
+        assertEquals(listOf("b", "c", "a"), keys())
+        val out = state.merge(props("ping", false))
+        assertEquals("ping", out["sort"])
+        assertEquals(listOf("a", "c", "b"), keys())
+        // props that did not change must not undo a tap on a header
+        state.choose("name", false)
+        val again = state.merge(props("ping", false))
+        assertEquals("name", again["sort"])
+    }
+
+    @Test
+    fun numericFiltersHideRowsAtOnceAndComeBack() {
+        state.merge(props())
+        state.accept(0, 4, listOf(row("a", players = 0, ping = 20), row("b", players = 3, ping = 200), row("c", players = 8, ping = 80), row("d", players = 14, ping = 60)))
+        state.merge(props(maxPing = 100))
+        assertEquals(listOf("d", "c", "a"), keys())
+        state.merge(props(maxPing = 100, minPlayers = 4))
+        assertEquals(listOf("d", "c"), keys())
+        state.merge(props(maxPing = 100, minPlayers = 4, maxPlayers = 10))
+        assertEquals(listOf("c"), keys())
+        state.merge(props())
+        assertEquals(listOf("d", "c", "b", "a"), keys())
+    }
+
+    @Test
+    fun anEmptyReplyDuringARefreshKeepsTheLastGoodList() {
+        state.merge(props())
+        state.accept(0, 3, listOf(row("a", players = 2), row("b", players = 7), row("c", players = 4)))
+        state.begin(0)
+        state.accept(0, 0, emptyList())
+        assertEquals(listOf("b", "c", "a"), keys())
+        state.accept(0, 1, listOf(row("b", players = 7)))
+        assertEquals("a partial answer does not replace the full list", listOf("b", "c", "a"), keys())
     }
 }

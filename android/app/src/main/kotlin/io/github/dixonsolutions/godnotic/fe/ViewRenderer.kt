@@ -2215,7 +2215,8 @@ class ViewRenderer(
                 t.setTextColor(if (n == 0) Theme.TEXT_DIM else Theme.TEXT)
             }
             "mode" -> { t.text = cells.str("modeName").ifEmpty { cells.str(key).uppercase() }; t.setTextColor(Theme.TEXT_MUTED) }
-            else -> { t.text = cells.str(key); t.setTextColor(if (c.str("width") == "fill") Theme.TEXT else Theme.TEXT_MUTED) }
+            // a passworded server: a small padlock right before its name, nothing for the others
+            else -> { t.text = if (key == "name" && cells.bool("lock")) "🔒 " + cells.str(key) else cells.str(key); t.setTextColor(if (c.str("width") == "fill") Theme.TEXT else Theme.TEXT_MUTED) }
         }
     }
 }
