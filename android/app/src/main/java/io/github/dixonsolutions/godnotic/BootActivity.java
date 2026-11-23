@@ -151,7 +151,11 @@ public class BootActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         ReplaceGuard.watch(this);
-        ProcessState.stage(this, "boot");
+        if (!XonoticActivity.running) {
+            // Only a real boot: the launcher icon over a running game bounces straight back to it,
+            // and a "boot" stage left behind made Apply live think the game was not running.
+            ProcessState.stage(this, "boot");
+        }
         if (ReplaceGuard.isReplacing()) {
             // The package is being swapped under this process: no preparation, no update install,
             // no screen that would run against it.
