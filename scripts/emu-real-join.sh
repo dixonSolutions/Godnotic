@@ -7,10 +7,12 @@
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-$root/build/shots/real}; mkdir -p "$out"; rm -f "$out"/*.png "$out"/*.xml
-A=~/Android/Sdk/platform-tools/adb; S=${ANDROID_SERIAL:?run under emu-slot.sh}
+A="timeout 30 $HOME/Android/Sdk/platform-tools/adb"; S=${ANDROID_SERIAL:?run under emu-slot.sh}
 PKG=io.github.dixonsolutions.godnotic.mplist
 G=~/.var/app/io.github.dixonSolutions.Godnotic/data/godnotic/data; D=/sdcard/Android/data/$PKG/files/data
 now() { date +%s.%N; }
+# a loaded host makes Android show "System UI isn't responding": press Wait (only when it is there)
+unanr() { for k in 1 2 3; do $A -s $S shell uiautomator dump /sdcard/anr.xml > /dev/null 2>&1; $A -s $S pull -q /sdcard/anr.xml /tmp/anr-$S.xml 2> /dev/null; grep -q "isn't responding" /tmp/anr-$S.xml 2> /dev/null && $A -s $S shell input tap 696 684 || break; sleep 2; done; }
 ms() { python3 -c "print(int(($2-$1)*1000))" ; }
 log() { echo "$*" | tee -a "$out/times.txt"; }
 : > "$out/times.txt"
@@ -25,14 +27,15 @@ $A -s $S push "$root/build/android-cache/slim/data/." $D/ | tail -1
 U=$($A -s $S shell stat -c %u /sdcard/Android/data/$PKG/files | tr -d '\r')
 $A -s $S shell "chown -R $U:1078 /sdcard/Android/data/$PKG/files; chmod -R ug+rwX /sdcard/Android/data/$PKG/files"
 $A -s $S shell am start -S -n $PKG/io.github.dixonsolutions.godnotic.XonoticActivity | tail -1
-sleep 45
-$A -s $S shell input tap 1321 285; sleep 1
-$A -s $S shell input tap 960 454; sleep 1; $A -s $S shell input text EmuTester; sleep 1
-$A -s $S shell input tap 1350 558; sleep 4
+sleep 45; unanr
+$A -s $S shell input tap 1321 285; sleep 2; unanr
+$A -s $S shell input tap 960 454; sleep 2; $A -s $S shell input text EmuTester; sleep 2
+$A -s $S shell input tap 1350 558; sleep 5; unanr
 # Multiplayer: tap the card, then wait for the list
 t_mp=$(now); $A -s $S shell input tap 1590 700
 n=0
 for i in $(seq 1 60); do
+  unanr
   $A -s $S shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1; $A -s $S pull -q /sdcard/ui.xml "$out/ui-list.xml" 2> /dev/null
   n=$(grep -o 'text="[0-9]*/[0-9]*"' "$out/ui-list.xml" 2> /dev/null | wc -l); [ "$n" -ge 5 ] && break; sleep 1
 done
