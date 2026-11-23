@@ -90,7 +90,7 @@ it fired on the first tap, no misfire, and landed on the platform 304 units high
 ## NOT verified / not done
 - The native Kotlin/GTK settings screens: only the bridge fixture and the QC dialog source changed; no screenshot of the native Settings page
   (the QC menu dialog and bridge tree were not rendered to a picture).
-- Real-server runs were headless desktop, not through adb touch input; one real server gave usable boosts (Blaster only).
+- The desktop real-server runs were headless desktop; the Android run (above) is the real-touch one. Only Blaster was available on those servers; the Devastator was verified on a local server only.
 - Remote servers' balance is not read (not sent); only learned. A modified balance on a remote server is corrected after one boost.
 - The CSQC (port) HUD has no capsule or picker; its DASH sends the same tap with the saved choices.
 - A look drag during the ~0.5 s boost is not kept. Air control after the blast is not modelled. Dodge numbers on a remote server are the
