@@ -114,6 +114,20 @@ sleep 8 # past the 3 second rename grace
 T "touch_join_answered"
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" dest)" != 0 ]; then T "togglemenu 0"; fi
+# Sound attempts are observable even with -nosound. Chat and unclassified lines
+# have no event sound; adjacent events coalesce and volume zero disables it.
+sound_count() { TA "touch_chatlog_sound_state"; sound_value=$(sed -n 's/^CHATLOG-SOUNDS //p' "$d/t.ask" | tail -1); }
+sound_count; before=$sound_value
+T "touch_chatlog_inject 1 Probe^7: hello" "touch_chatlog_inject 3 unrelated notice" "touch_chatlog_inject 3 SoundProbe connected" "touch_chatlog_inject 3 SoundProbe disconnected"
+sleep 1
+sound_count; after=$sound_value
+if [ "$after" = "$((before + 1))" ]; then ok "sound: events coalesce; chat and notes are silent"; else bad "sound: expected one event attempt ($before -> $after)"; fi
+sleep 3
+T "touch_chatlog_sound_volume 0" "touch_chatlog_inject 3 MutedProbe connected"
+sleep 1
+sound_count; muted=$sound_value
+if [ "$muted" = "$after" ]; then ok "sound: volume zero disables events"; else bad "sound: muted event attempted playback"; fi
+T "touch_chatlog_sound_volume 0.25"
 client "$d/g" Guest "connect 127.0.0.1:$port"
 waitfor "$d/g.log" "Guest.*connected" 120 || bad "the guest never joined (log: $d/g.log)"
 sleep 3

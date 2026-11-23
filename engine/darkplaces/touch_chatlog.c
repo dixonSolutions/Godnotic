@@ -45,6 +45,10 @@ static cvar_t touch_chatlog_fade = {CF_CLIENT | CF_ARCHIVE, "touch_chatlog_fade"
 	"seconds a chat line stays in the feed before it fades (it stays in the log)"};
 static cvar_t touch_chatlog_feed = {CF_CLIENT | CF_ARCHIVE, "touch_chatlog_feed", "1",
 	"1 draws the chat feed with event lines and icons; 0 leaves the stock chat lines (the log and its icons stay)"};
+static cvar_t touch_chatlog_sound_file = {CF_CLIENT | CF_ARCHIVE, "touch_chatlog_sound_file", "sound/menu/focus.ogg",
+	"sound played for player events in the chat log"};
+static cvar_t touch_chatlog_sound_volume = {CF_CLIENT | CF_ARCHIVE, "touch_chatlog_sound_volume", "0.25",
+	"player event sound volume (0 disables it; maximum 1)"};
 static cvar_t touch_chatlog_claim = {CF_CLIENT, "_touch_chatlog_claim", "",
 	"where the chat feed, its icons and the log take a finger, as fractions of the screen: x y w h (the whole screen while the log is open; read by the touch layer)"};
 
@@ -122,6 +126,20 @@ static double tcl_ptr_at;
 static char tcl_seen[MAX_SCOREBOARD][MAX_SCOREBOARDNAME];
 static double tcl_conn_at, tcl_event_at = -100;
 static int tcl_was_connected;
+static double tcl_sound_at = -100;
+static unsigned tcl_sound_count;
+
+static void TCL_EventSound(void)
+{
+	float volume = bound(0, touch_chatlog_sound_volume.value, 1);
+	if (!tcl_was_connected || cls.state != ca_connected || cls.signon != SIGNONS ||
+	    cls.demoplayback || host.realtime - tcl_conn_at <= 3 ||
+	    host.realtime - tcl_sound_at < 2 || volume <= 0 || !touch_chatlog_sound_file.string[0])
+		return;
+	tcl_sound_at = host.realtime;
+	tcl_sound_count++; /* attempts, including when sound output is disabled */
+	S_LocalSoundEx(touch_chatlog_sound_file.string, 0, volume);
+}
 
 static void TCL_Toast(const char *s)
 {
@@ -153,6 +171,8 @@ void TouchChatLog_Line(const char *line)
 			const tcl_entry_t *e = TouchChatLog_Get(&cl_log, cl_log.count - 1);
 			if (e->kind == TCL_JOIN || e->kind == TCL_LEAVE)
 				tcl_event_at = host.realtime;
+			if (TCL_EVENTS & TCL_BIT(e->kind))
+				TCL_EventSound();
 		}
 	}
 }
@@ -250,7 +270,10 @@ static void TCL_RenamePoll(void)
 			if (!TouchChatLog_HasRecent(&cl_log, host.realtime, TCL_RENAME, plain, 3.0))
 			{
 				if (TouchChatLog_AddRename(&cl_log, host.realtime, time(NULL), tcl_pend[i].old_, tcl_pend[i].new_))
+				{
 					TCL_Added();
+					TCL_EventSound();
+				}
 			}
 			tcl_pend[i].at = 0;
 		}
@@ -1359,6 +1382,12 @@ static void TCL_Inject_f(cmd_state_t *cmd)
 }
 
 /* test: the log's lines: "CHATLOG <n> <kind> <name> | <plain text>" */
+static void TCL_SoundState_f(cmd_state_t *cmd)
+{
+	(void)cmd;
+	Con_Printf("CHATLOG-SOUNDS %u\n", tcl_sound_count);
+}
+
 static void TCL_Dump_f(cmd_state_t *cmd)
 {
 	static const char *const kn[TCL_NKINDS] = {"chat", "join", "play", "spec", "leave", "rename", "note"};
@@ -1403,6 +1432,8 @@ void TouchChatLog_Init(void)
 	Cvar_RegisterVariable(&touch_chatlog);
 	Cvar_RegisterVariable(&touch_chatlog_fade);
 	Cvar_RegisterVariable(&touch_chatlog_feed);
+	Cvar_RegisterVariable(&touch_chatlog_sound_file);
+	Cvar_RegisterVariable(&touch_chatlog_sound_volume);
 	Cvar_RegisterVariable(&touch_chatlog_claim);
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_scroll", TCL_Scroll_f, "touch_chatlog_scroll <rows>: open the chat log and scroll it back (positive) or forward");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_open", TCL_Open_f, "open the chat log (every line of the session, with times)");
@@ -1416,6 +1447,7 @@ void TouchChatLog_Init(void)
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_download", TCL_Download_f, "save the chat log as text to Downloads (~/Downloads elsewhere)");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_copy", TCL_Copy_f, "put the chat log text on the clipboard");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_inject", TCL_Inject_f, "test: touch_chatlog_inject <1|3> <text> adds a line as the console would deliver it");
+	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_sound_state", TCL_SoundState_f, "test: print player event sound attempts");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_dump", TCL_Dump_f, "test: print the chat log's lines with their kinds");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_finger", TCL_Finger_f, "test: touch_chatlog_finger down|move|up <id> <fx> <fy>: a finger through the claim the touch layer uses");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_state", TCL_State_f, "test: print the chat log's hit targets and state");

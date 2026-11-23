@@ -315,3 +315,10 @@ not a setting.
       owns the row) was updated.
 - [ ] Search (SETTINGS_MAP.md section 4) can find it from the label, the help and at
       least one word a player would type that appears in neither.
+
+Player event sounds use the saved client cvars `touch_chatlog_sound_file` (default
+`sound/menu/focus.ogg`) and `touch_chatlog_sound_volume` (default `0.25`, clamped
+from 0 to 1; 0 disables the sound). They are limited to one every two seconds,
+suppressed during the first three seconds after connecting and during demo
+playback. Chat messages retain the stock `con_chatsound_file` and
+`con_chatsound_team_file` sounds.
