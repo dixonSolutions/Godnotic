@@ -919,6 +919,7 @@ class ViewRenderer(
     private fun card(id: String, props: Map<String, Any?>, hero: Boolean): Entry {
         if (hero) return heroCard(id, props)
         val c = Kit.card(ctx, clickable = true, radiusDp = 16f)
+        if (id == "home/tiles/mp") c.tag = "mp-card" // FitBody gives it the taller allowance
         // photo cards: the picture on top; section cards: an icon slot beside the text
         val img = RoundImage(ctx, 0f)
         val bar = ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -937,7 +938,7 @@ class ViewRenderer(
         titleV.maxLines = 2
         titleV.ellipsize = null
         Kit.fitWords(titleV, Theme.SP_TITLE - 1f, 13f) // "Team Deathmatch" on a narrow card: smaller, never "Dea|thmatch"
-        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") 6 else 2) // Home's Multiplayer card: the live server list
+        val subtitle = Kit.text(ctx, "", Theme.SP_CAPTION + 1f, Theme.TEXT_MUTED, lines = if (id == "home/tiles/mp") CardTags.MAX_ROWS else 2) // Home's Multiplayer card: the live server list
         val badges = FlowGrid(ctx, 0, dp(6f), wrap = true)
         val meta = FlowGrid(ctx, 0, dp(12f), wrap = true)
         val actions = FlowGrid(ctx, 0, dp(10f), wrap = true)
@@ -971,8 +972,11 @@ class ViewRenderer(
             val lines = CardTags.rows(p)
             if (p.str("display") == "table" || lines.isNotEmpty()) {
                 summaryV.text = p.str("summary")
-                // no picture to fill the card: the lines take the room, each a little taller
-                for (r in lines) tagsBox.addView(TagRow(ctx, r, Theme.TEXT_MUTED).also { it.minimumHeight = dp(34f) })
+                // no picture to fill the card: the lines take the room, as many as its height holds,
+                // across its full inner width (a TableRows measures and hides what does not fit)
+                val tbl = TableRows(ctx)
+                for (r in lines) tbl.addView(TagRow(ctx, r, Theme.TEXT, table = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(CardTags.tableRowDp(0f))))
+                tagsBox.addView(tbl, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             } else {
                 summaryV.text = ""
                 CardTags.of(p).takeIf { it.isNotEmpty() }?.let { tagsBox.addView(TagRow(ctx, it, Theme.TEXT_MUTED)) }
@@ -996,7 +1000,7 @@ class ViewRenderer(
             // a chevron promises somewhere to go: only on a card that has a primary action
             // (the pause page's card for someone else's server has none, and did nothing when tapped)
             val tappable = p["primary"] is Map<*, *>
-            chevron.visibility = if (!tappable || photo || actions.childCount > 0 || nodes[x.parent ?: ""]?.type == "grid") View.GONE else View.VISIBLE
+            chevron.visibility = if (!tappable || photo || p.str("display") == "table" || actions.childCount > 0 || nodes[x.parent ?: ""]?.type == "grid") View.GONE else View.VISIBLE
             c.isClickable = tappable
             img.aspect = aspect(p, 16f / 9f)
             img.maxHeight = (ctx.resources.displayMetrics.heightPixels * 0.22f).toInt()
@@ -2293,6 +2297,10 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
     /** Home, fitted: the cells share the exact height given (see FitBody); [stack]: one column. */
     var fill = false
     var stack = false
+    /** Home, landscape: the child at [tallIndex] (among the visible ones) is [tallH] tall, the others [otherH], top-aligned. */
+    var tallIndex = -1
+    var tallH = 0
+    var otherH = 0
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         val width = MeasureSpec.getSize(wSpec)
         if (wrap) {
@@ -2315,9 +2323,13 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
         if (exactH) {
             val rows = max(1, (visible + cols - 1) / cols)
             val ch = max(0, (MeasureSpec.getSize(hSpec) - gap * (rows - 1)) / rows)
+            var vi = 0
             for (i in 0 until childCount) {
                 val c = getChildAt(i)
-                if (c.visibility != GONE) c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY))
+                if (c.visibility == GONE) continue
+                val h = if (tallIndex >= 0 && !stack) (if (vi == tallIndex) tallH else otherH) else ch
+                c.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+                vi++
             }
             setMeasuredDimension(width, MeasureSpec.getSize(hSpec))
             return
@@ -2360,7 +2372,7 @@ class FlowGrid(ctx: Context, private val minChild: Int, private val gap: Int, pr
             for ((k, c) in row.withIndex()) {
                 val x = k * (cw + gap)
                 val left = if (rtl) width - x - cw else x
-                c.layout(left, y, left + cw, y + rowH)
+                c.layout(left, y, left + cw, y + (if (tallIndex >= 0 && fill && !stack) c.measuredHeight else rowH))
             }
             y += rowH + gap
             i += cols
