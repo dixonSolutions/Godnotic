@@ -134,6 +134,34 @@ internal object JoinFlow {
         }
     }
 
+    /** All downloads as one line: "Downloading wind2.pk3 · 12.3 of 40.0 MB · 1.2 MB/s · 0:20 left · 3 waiting". */
+    fun downloading(file: String, bytes: Double, total: Double, speed: Double, running: Int, queued: Int): String {
+        val name = file.substringAfterLast('/').let { if (it.length > 28) it.take(27) + "…" else it }
+        val parts = ArrayList<String>()
+        parts.add("Downloading $name")
+        if (total > 0) parts.add(sizes(bytes, total).replace("/", " of ")) else if (bytes > 0) parts.add(size(bytes))
+        val r = rate(speed)
+        if (r.isNotEmpty()) parts.add(r)
+        if (speed > 1024 && total > bytes) {
+            val left = ((total - bytes) / speed).toInt()
+            parts.add(String.format(java.util.Locale.US, "%d:%02d left", left / 60, left % 60))
+        }
+        if (running + queued > 1) parts.add("${running + queued} files")
+        return parts.joinToString("  ·  ")
+    }
+
+    /**
+     * The one bar of a join: downloads (when there are any) fill the first half, precache and the map
+     * load the rest; the load part is [JoinFlow.progress]'s value (-1 when it has nothing yet, then the half stays).
+     */
+    fun overall(stage: String, sawDownload: Boolean, download: Double, load: Double): Double {
+        val base = if (sawDownload) 0.5 else 0.0
+        if (stage == "downloading") return (download.coerceIn(0.0, 1.0) * 0.5).coerceAtLeast(0.01)
+        if (stage == "connecting") return -1.0
+        val l = if (load < 0) 0.0 else load.coerceIn(0.0, 1.0)
+        return (base + (1 - base) * l).coerceAtLeast(0.01)
+    }
+
     /** The server's own signon data (serverinfo, precache lists) is arriving: nothing loads or downloads yet. */
     fun waiting(seconds: Int): String =
         "Receiving game data from the server" + if (seconds >= 2) "  ·  $seconds s" else ""

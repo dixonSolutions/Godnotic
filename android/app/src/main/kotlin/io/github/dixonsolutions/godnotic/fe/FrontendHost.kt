@@ -334,7 +334,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         loadingStrip = null; loadingText = null; loadingBar = null; loadingTitle = null
         loadingBanner = null; loadingCardView = null; previewStrip = false
         loadingCancel = null; loadingRetry = null; loadingBack = null
-        previewSeen = false; joinError = null
+        previewSeen = false; joinError = null; lastLook = ""; sawDownload = false; barSweep?.cancel(); barSweep = null
         shotPath = ""; shotBitmap = null; lastWorld = false
         if (engineSeen && app.isNotEmpty()) main.post { onApp(app) }
     }
@@ -454,7 +454,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             val banner = Kit.text(activity, "", Theme.SP_DISPLAY, 0xFF7F93B8.toInt(), bold = true, lines = 1)
             banner.typeface = Theme.display
             banner.gravity = Gravity.CENTER
-            banner.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF050A16.toInt(), 0xFF0E1C3A.toInt()))
+            banner.background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF0B1730.toInt(), 0xFF1D4A8C.toInt()))
             screen.addView(banner, android.widget.LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             loadingBanner = banner
             val card = android.widget.LinearLayout(activity)
@@ -511,25 +511,38 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         applyLook(showShot)
         // the server is still sending its precache lists: not a load, not a download (the bar and the text say so)
         val waitS = if (c.containsKey("wait_s")) c.num("wait_s").toInt() else -1
-        val pct = if (waitS >= 0) -1.0 else JoinFlow.progress(stage, c.num("download_progress"), c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt())
+        val dlTotal = c.num("dl_total"); val dlBytes = c.num("dl_bytes")
+        val dlFrac = if (dlTotal > 0) (dlBytes / dlTotal).coerceIn(0.0, 1.0) else c.num("download_progress")
+        if (stage == "downloading" && c.int("dl_running") + c.int("dl_queued") > 0) sawDownload = true
+        // one continuous bar: the downloads (when this join has any) are the first half, precache and the map load the rest
+        val pct = if (waitS >= 0) -1.0 else JoinFlow.overall(stage, sawDownload, dlFrac, JoinFlow.progress(stage, 0.0, c.num("load_progress"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt()))
         val map = app.str("map")
         loadingTitle?.text = when {
             c.bool("local") -> if (map.isNotEmpty()) "Starting ${map.replaceFirstChar { it.uppercase() }}" else "Starting the match"
             c.str("address").isNotEmpty() -> "Joining ${serverLabel(c.str("address"))}"
             else -> "Joining"
         }
-        val what = if (waitS >= 0) JoinFlow.waiting(waitS) else JoinFlow.detail(
-            stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
-            c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(), c.str("join_map"),
-        )
+        val what = if (waitS >= 0) JoinFlow.waiting(waitS)
+            else if (stage == "downloading" && c.containsKey("dl_running")) JoinFlow.downloading(c.str("file"), dlBytes, dlTotal, c.num("speed"), c.int("dl_running"), c.int("dl_queued"))
+            else JoinFlow.detail(
+                stage, c.str("file"), c.num("download_bytes"), c.num("download_total"), c.num("speed"), c.num("downloads").toInt(),
+                c.str("load"), c.str("precache"), c.num("precache_n").toInt(), c.num("precache_total").toInt(), c.str("join_map"),
+            )
         val reconnect = app.str("reconnect")
         loadingText?.text = if (stage == "connecting" && reconnect.isNotEmpty()) reconnect else if (pct >= 0.02) "$what  ·  ${(pct * 100).toInt()}%" else what
         // a real bar: the engine's own progress band is not drawn under the card
         loadingBar?.let { bar ->
-            if (pct < 0) bar.isIndeterminate = true
-            else {
-                if (bar.isIndeterminate) bar.isIndeterminate = false
-                bar.max = 1000
+            if (bar.isIndeterminate) bar.isIndeterminate = false
+            bar.max = 1000
+            if (pct < 0) {
+                // nothing to measure yet: one clean sweep left to right, never the two-piece indeterminate bar
+                if (barSweep == null) barSweep = android.animation.ValueAnimator.ofInt(0, 1000).apply {
+                    duration = 1400; repeatCount = android.animation.ValueAnimator.INFINITE
+                    addUpdateListener { bar.progress = it.animatedValue as Int }
+                    start()
+                }
+            } else {
+                barSweep?.cancel(); barSweep = null
                 bar.progress = (pct * 1000).toInt()
             }
         }
@@ -555,17 +568,25 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val bmp = shotBitmap
         val strip = showShot || lastTransparent
         previewStrip = strip
-        loadingBanner?.visibility = if (previewSeen || showShot) View.GONE else View.VISIBLE // never the logo in a join: a picture, the world, or the map's name
+        val haveBmp = showShot && bmp != null
+        val world = lastWorld // the engine's own world is drawable: it shows through the card
+        // never a black void: the picture, else the live world, else the map's name on a branded backdrop
+        loadingBanner?.visibility = if (haveBmp || world) View.GONE else View.VISIBLE
         (loadingBanner as? android.widget.TextView)?.let { t -> val m = joinMapName; if (t.text.toString() != m) t.text = m }
         when {
-            showShot && bmp != null -> screen.background = ShotDrawable(bmp, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
-            showShot -> screen.setBackgroundColor(android.graphics.Color.BLACK) // decoding: no logo flash
-            lastTransparent -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            else -> screen.setBackgroundColor(android.graphics.Color.BLACK)
+            haveBmp -> screen.background = ShotDrawable(bmp!!, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
+            world -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            else -> screen.setBackgroundColor(0xFF0B1730.toInt())
         }
-        screen.isClickable = !(lastTransparent && !showShot)
+        screen.isClickable = !world
         screen.gravity = Gravity.CENTER_HORIZONTAL or Gravity.TOP
+        val look = if (haveBmp) "picture" else if (world) "world" else "name"
+        if (look != lastLook) { lastLook = look; Log.i(tag, "Join card: look=$look map=$joinMapName stage=$joinStage") }
     }
+    private var lastLook = ""
+    private var barSweep: android.animation.ValueAnimator? = null
+    /** This join had downloads: they are the first half of the one bar. */
+    private var sawDownload = false
 
     private var loadingCardSent = ""
 
