@@ -144,6 +144,8 @@ esac
 if grep -aqE "^[a-z]+\|[^|]*\|.*Tester" "$d/t.events"; then ok "events: the first client's own join is in the log"; else bad "events: the first client's own join is missing"; fi
 
 # ------------------------------------------------------------------ feed + screenshot
+T "screenshot events-empty.png"
+sleep 3
 T "touch_chatlog_fade 600" "touch_chatlog_inject 1 Guest^7: hello everyone this is a longer chat line that has to wrap over more than one row of the feed" "touch_chatlog_inject 3 ^1Red^7Fox^3 is now playing on the ^1Red^3 team" "touch_chatlog_inject 3 ^4Blue^7Bird^3 switched to the ^4Blue^3 team"
 sleep 2
 T "screenshot events-feed.png"

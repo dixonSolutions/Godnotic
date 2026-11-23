@@ -758,7 +758,7 @@ qbool TouchChatLog_Finger(int type, int id, float nx, float ny)
 	cvar_t *sheet;
 	if (type == 0)
 	{
-		if (held || !touch_chatlog.integer || cls.state != ca_connected || host.realtime - tcl_claim_at > 0.25)
+		if (held || !touch_chatlog.integer || cls.state != ca_connected || host.realtime - tcl_claim_at > 1.0)
 			return false;
 		sheet = Cvar_FindVar(&cvars_all, "_touch_chat_sheet", CF_CLIENT);
 		if ((sheet && sheet->integer) || (key_dest != key_game && !tcl_panel))
@@ -1027,21 +1027,29 @@ static void TCL_DrawFeed(const tcl_metrics_t *m, float x, float y, float w, floa
 	unsigned mask = TCL_FEED | (TCL_SystemLines() ? TCL_BIT(TCL_NOTE) : 0);
 	float fade = touch_chatlog_fade.value > 0 ? touch_chatlog_fade.value : 15;
 	float bottom = y + (float)stock_lines * size;
-	float areah = max((float)stock_lines * size, m->rowh * 3), top, ly, used = 0;
+	float areah = max((float)stock_lines * size, m->rowh * 2), top, ly, used = 0;
 	float pad = m->fs * 0.3f, iconw = m->fs * 1.1f + m->fs * 0.4f, textw;
 	float rowsh[TCL_FEED_MAX], rowsw[TCL_FEED_MAX];
 	float claim_top, claim_w;
 	float isz = max(m->fs * 1.5f, 18.0f * m->dp), pitch = max(isz * 1.5f, 40.0f * m->dp);
-	float tbx, tby;
+	float tbx, tby, strip = isz * 1.24f + m->fs * 0.5f;
 	int j;
 
 	if (bottom - areah < 0)
 		areah = bottom;
 	top = bottom - areah;
 	textw = max(w - iconw - pad * 2, m->fs * 8);
-
-	/* the toolbar sits above the feed, left aligned with the text */
-	tby = max(2.0f, top - isz - m->fs * 0.5f);
+	/* the toolbar is a strip of its own: above the box, or when the box is at the top of the
+	 * screen a header row inside it (the lines then get what is left): never on a message */
+	if (cl_log.count > 0 && top < strip)
+	{
+		tby = top + isz * 0.12f;
+		areah = max(m->rowh, areah - strip);
+		top = bottom - areah;
+	}
+	else
+		tby = max(2.0f, top - strip + isz * 0.12f);
+	pitch = min(pitch, max(isz * 1.3f, (w - pad) / (float)TCL_ICONS)); /* never wider than the box */
 	tbx = x + pad;
 	for (j = 0; j < TCL_ICONS && cl_log.count > 0; j++) /* nothing to act on in an empty log */
 	{
