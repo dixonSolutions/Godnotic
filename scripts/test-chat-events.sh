@@ -198,10 +198,15 @@ TA "touch_chatlog_state"
 if [ "$(field "$d/t" filter)" = 0 ]; then ok "filter: reopening starts on All"; else bad "filter: reopening did not select All: $(state "$d/t")"; fi
 # Long press a row, toggle a second row, and export the selection on the first tap.
 read -r sx sy < <(grep -a "^CHATLOG-TARGET row " "$d/t.ask" | head -1 | awk '{print $4, $5}')
-T "touch_chatlog_ptr down $sx $sy" "defer 0.7 \"touch_chatlog_ptr up $sx $sy\""
-sleep 2
+T "touch_chatlog_ptr down $sx $sy"
+for n in $(seq 1 20); do
+	TA "touch_chatlog_state"
+	[ "$(field "$d/t" selected)" = 1 ] && break
+done
+if [ "$(field "$d/t" selected)" = 1 ]; then ok "selection: long press selects while held"; else bad "selection: long press failed while held: $(state "$d/t")"; fi
+T "touch_chatlog_ptr up $sx $sy"
 TA "touch_chatlog_state"
-if [ "$(field "$d/t" selected)" = 1 ]; then ok "selection: long press selects a line"; else bad "selection: long press failed: $(state "$d/t")"; fi
+if [ "$(field "$d/t" selected)" = 1 ]; then ok "selection: release preserves selection"; else bad "selection: release changed selection: $(state "$d/t")"; fi
 read -r sx2 sy2 < <(grep -a "^CHATLOG-TARGET row " "$d/t.ask" | sed -n '2p' | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $sx2 $sy2" "touch_chatlog_ptr up $sx2 $sy2"
 sleep 1
@@ -210,15 +215,24 @@ if [ "$(field "$d/t" selected)" = 2 ]; then ok "selection: tap toggles another l
 read -r dx dy < <(grep -a "^CHATLOG-TARGET download " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $dx $dy" "touch_chatlog_ptr up $dx $dy"
 sleep 2
-if [ -f "$d/t/data/touch_chatlog.txt" ] && [ "$(wc -l < "$d/t/data/touch_chatlog.txt")" = 2 ]; then ok "selection: first download tap exports two selected lines"; else bad "selection: download did not export the selection"; fi
+exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
+if [ -n "$exported" ] && [ "$(wc -l < "$exported")" = 2 ]; then ok "selection: first download tap exports two selected lines"; else bad "selection: download did not export the selection"; fi
 T "touch_chatlog_ptr down $sx2 $sy2" "touch_chatlog_ptr up $sx2 $sy2"
 sleep 1
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" selected)" = 1 ]; then ok "selection: tap deselects a line"; else bad "selection: deselection failed"; fi
+rm -f "$WORK"/godnotic-chat-*.txt
 T "touch_chatlog_close" "touch_chatlog_open"
 sleep 1
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" selected)" = 0 ]; then ok "selection: closing clears selection"; else bad "selection: closing retained selection"; fi
+# A drag held past the long-press threshold must not select a row.
+read -r sx sy < <(grep -a "^CHATLOG-TARGET row " "$d/t.ask" | head -1 | awk '{print $4, $5}')
+move_y=$(awk -v y="$sy" 'BEGIN { print y + 0.08 }')
+T "touch_chatlog_ptr down $sx $sy" "touch_chatlog_ptr move $sx $move_y"
+for n in 1 2 3 4; do TA "touch_chatlog_state"; done
+if [ "$(field "$d/t" selected)" = 0 ]; then ok "selection: held drag does not select"; else bad "selection: held drag selected a line"; fi
+T "touch_chatlog_ptr up $sx $move_y"
 # With no selection, the first download tap exports only the current filter.
 T "touch_chatlog_inject 1 FilterProbe^7: chat-only-marker" "touch_chatlog_inject 3 ^2EventProbe^7 connected" "touch_chatlog_filter events"
 sleep 1
@@ -226,7 +240,8 @@ TA "touch_chatlog_state"
 read -r dx dy < <(grep -a "^CHATLOG-TARGET download " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $dx $dy" "touch_chatlog_ptr up $dx $dy"
 sleep 2
-if [ -s "$d/t/data/touch_chatlog.txt" ] && grep -aq 'EventProbe' "$d/t/data/touch_chatlog.txt" && ! grep -aq 'chat-only-marker' "$d/t/data/touch_chatlog.txt"; then ok "filter: download exports filtered lines"; else bad "filter: download included chat or produced no file"; fi
+exported=$(ls -t "$WORK"/godnotic-chat-*.txt 2>/dev/null | head -1)
+if [ -n "$exported" ] && [ -s "$exported" ] && grep -aq 'EventProbe' "$exported" && ! grep -aq 'chat-only-marker' "$exported"; then ok "filter: download exports filtered lines"; else bad "filter: download included chat or produced no file"; fi
 T "touch_chatlog_filter all"
 sleep 1
 TA "touch_chatlog_state"
