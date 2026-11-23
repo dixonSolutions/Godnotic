@@ -40,13 +40,25 @@ events-filtered.png, events-after.png (log after the feed faded). Logs: build/ch
 Defects found and fixed from these: textured icons rendered as notexture (now drawn as pixel runs);
 the console KEYBOARD tab covered the log's close button (panel starts below it).
 
-## NOT verified
-- Android / the emulator: Android builds only in CI; no APK of this branch was available locally and
-  downloading one is off limits on the metered link. The typing and event screenshots on the emulator are therefore NOT taken.
-- Tablet (touch), portrait phone, real finger input: only the forwarded pointer path
-  (`touch_chatlog_ptr`) was driven, not a real touchscreen. QC compiles; the forwarding from touch_chat.qc is untested live.
-- Stock-CSQC public servers: the finger forwarding lives in the port's QuakeC, so a finger cannot yet scroll/tap the log there (mouse and wheel work).
-- Native Kotlin/GTK pause menus have no "Chat log" button (only the QuakeC game menu).
-- Pins: `components.json` was not updated (component-push.sh is the coordinator's); engine/ differs from the pins.
+## Android emulator (real `adb shell input tap`, touch HUD visible, debug APK built locally)
+Frames (JPG, 1400 px): `build/chatev-shots/emu1/` (first session) and `build/chatev-shots/emu2/` (second).
+Local match (host dedicated server + bots, emulator 5580/5584), per icon, first tap each:
+- log icon (feed strip) opens the log: emu1/t-log-open.jpg, emu2/k-log.jpg. PASS
+- copy: Android clipboard preview with the log text: emu1/t-copy.jpg, emu2/f-copy.jpg. PASS
+- download: toast "Saved godnotic-chat-...txt to Downloads": emu1/t-download.jpg, emu2/f-download.jpg. PASS
+- share: real Android share sheet with the log text: emu1/t-share.jpg, emu2/f-share.jpg. PASS
+- clear: log shows "No messages or events yet", strip hides: emu1/t-clear.jpg. PASS
+- name/icon of a row: Mention / Copy name / Copy line popup: emu1/t-name.jpg. PASS (Copy name tapped: emu1/t-copyname.jpg)
+- close X (after the panel moved below the HUD's top row): emu2/k-close.jpg. PASS
+- tap outside the panel closes it: emu1/t-outside.jpg. PASS
+REAL public server (95.217.62.206:26000 afterslime, "[EU] futa.tips", stock map, live bots and a real player list; joined from the app via +connect):
+- emu2/p2.jpg live match with the strip above the feed lines (real events "Player#5 started playing", "[BOT]Death left the server").
+- log opens on the first tap (emu2/q-log.jpg), copy (q-copy.jpg), download (q-download.jpg), share (q-share.jpg: share sheet with the real server's lines). PASS
+Defects found on the emulator and fixed: the log's close X was under the HUD's info button (panel now starts below the HUD stats/top row, H*0.21); the panel was narrower than needed (the console-button avoidance also fired when the button was above the panel; now only on a real overlap).
+Cause of the owner's "icons do nothing": fingers were handled by the QuakeC layer from a rect it read back from the engine; now the engine takes a finger on the strip, the feed's names and the open log itself, in `TouchVote_Finger` before any CSQC (works for the stock CSQC too).
 
-CI: ci/chatev pushed for the Android compile (head commit carries no skip marker).
+## NOT verified
+- Moving/aiming with the other thumb while tapping (adb input is single touch), and that nothing underneath fires: the claimed finger never reaches the control table (by construction), not observed with two fingers.
+- Tablet hardware and portrait phone on a device; the emulator was 1920x1200 landscape only (desktop frames cover 720x1280 and 960x540).
+- The re-fix of the panel position (H*0.21, width) is checked on desktop only, not re-run on the emulator.
+- Pins: `components.json` was not updated (component-push.sh is the coordinator's); engine/ differs from the pins.

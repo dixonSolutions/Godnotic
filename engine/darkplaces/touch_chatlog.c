@@ -903,7 +903,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	if (key_dest == key_message)
 		pyt = max(pyt, TouchUI_SheetHeaderHeight(H) + 4.0f * m->dp); /* the typing sheet's KEYBOARD tab sits in the top right */
 	if (vid_touchscreen.integer)
-		pyt = max(pyt, H * 0.165f); /* the touch HUD's top row (info, console, MENU, SCORE, CHAT) stays reachable: the panel starts below it */
+		pyt = max(pyt, H * 0.21f); /* the touch HUD's top row (info, console, MENU, SCORE, CHAT) stays reachable: the panel starts below it */
 	pw = W - pxl - inr - edge;
 	ph = H - pyt - inb - edge;
 	if (TouchChatLog_PanelHasInput())
@@ -916,7 +916,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 		if (sscanf(Cvar_VariableString(&cvars_all, "_touch_shell_rect", ~0), "%f %f %f %f", &rx, &ry, &rw, &rh) == 4 && rw > 0)
 		{
 			rx *= W; ry *= H; rw *= W; rh *= H;
-			if (ry < pyt + hdr && rx + rw > pxl + pw * 0.5f && rx < pxl + pw)
+			if (ry < pyt + hdr && ry + rh > pyt && rx + rw > pxl + pw * 0.5f && rx < pxl + pw)
 				pw = max(pw * 0.5f, rx - edge - pxl);
 		}
 	}
