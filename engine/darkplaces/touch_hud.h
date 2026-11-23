@@ -117,4 +117,7 @@ qbool TouchHUD_OverlayFinger(int type, int id, float nx, float ny);
 qbool TouchHUD_OverlayMouse(qbool down, int button, qbool synthetic, float wx, float wy, qbool pointer_free);
 qbool TouchHUD_JoinMouse(qbool down, int button, qbool synthetic, float wx, float wy, qbool pointer_free);
 
+void TouchHUD_SpecInputsBegin(void);
+void TouchHUD_SpecInputsEnd(void);
+
 #endif

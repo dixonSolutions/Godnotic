@@ -32,6 +32,7 @@ applies to both.
 #include "touch_topbar.h"
 #include "touch_cursor.h"
 #include "touch_feel.h"
+#include "touch_mention.h"
 
 extern cvar_t vid_touchscreen;
 extern cvar_t vid_conwidth;
@@ -698,9 +699,45 @@ static void TouchHUD_TestView_f(cmd_state_t *cmd)
 	Con_Printf("TESTVIEW yaw=%.2f pitch=%.2f\n", cl.viewangles[YAW], cl.viewangles[PITCH]);
 }
 
+static cvar_t touch_spectate_inputs = {CF_CLIENT | CF_ARCHIVE, "touch_spectate_inputs", "1", "show the followed player's inputs"};
+static int spec_test_mask = -1, spec_test_keyboard = -1;
+static void TouchHUD_TestInputs_f(cmd_state_t *cmd)
+{
+ spec_test_mask = Cmd_Argc(cmd) > 1 ? atoi(Cmd_Argv(cmd, 1)) : -1;
+ spec_test_keyboard = Cmd_Argc(cmd) > 2 ? atoi(Cmd_Argv(cmd, 2)) : -1;
+ Con_Printf("SPECTATE_INPUTS mask=%d keyboard=%d\n", spec_test_mask, spec_test_keyboard);
+}
+static qbool spec_inputs_mask(int *mask)
+{
+ prvm_prog_t *prog = CLVM_prog;
+ mdef_t *g;
+ int state = TouchUI_SpectatorState();
+ if (!touch_spectate_inputs.integer || (state != 2 && state != 3)) return false;
+ g = prog && prog->loaded ? PRVM_ED_FindGlobal(prog, "g_stat_PRESSED_KEYS") : NULL;
+ if (!g || g->ofs < 0 || g->ofs >= prog->numglobals) return false;
+ *mask = (g->type & ~DEF_SAVEGLOBAL) == ev_float ? (int)PRVM_GLOBALFIELDFLOAT(g->ofs) : PRVM_GLOBALFIELDVALUE(g->ofs)->_int;
+ return true;
+}
+static char spec_saved_panel[128];
+static cvar_t *spec_panel;
+void TouchHUD_SpecInputsBegin(void)
+{
+ int mask;
+ spec_panel = NULL;
+ if (!spec_inputs_mask(&mask)) return;
+ spec_panel = Cvar_FindVar(&cvars_all, "hud_panel_pressedkeys", ~0);
+ if (spec_panel) { dp_strlcpy(spec_saved_panel, spec_panel->string, sizeof(spec_saved_panel)); Cvar_SetQuick(spec_panel, "0"); }
+}
+void TouchHUD_SpecInputsEnd(void)
+{
+ if (spec_panel) { Cvar_SetQuick(spec_panel, spec_saved_panel); spec_panel = NULL; }
+}
+
 void TouchHUD_Init(void)
 {
 	TouchHudMode_Init();
+	Cvar_RegisterVariable(&touch_spectate_inputs);
+	Cmd_AddCommand(CF_CLIENT, "_touch_test_spectate_inputs", TouchHUD_TestInputs_f, "test hook: mask and keyboard override, -1 disables");
 	Cvar_RegisterVariable(&touch_viewmodel_restored);
 	Cvar_RegisterVariable(&cl_touch_weplist_scale);
 	Cvar_RegisterVariable(&touch_topbar_auto);
@@ -3036,7 +3073,7 @@ qbool TouchHUD_HideStockKeyPanel(prvm_prog_t *prog)
 	{
 		mfunction_t *f = i < 0 ? prog->xfunction : prog->stack[i].f;
 		const char *name = f ? PRVM_GetString(prog, f->s_name) : "";
-		if (TouchSpec_HideStockPanel(name, 1, 1, 0, 1))
+		if (strcmp(name, "HUD_PressedKeys") && TouchSpec_HideStockPanel(name, 1, 1, 0, 1))
 		{
 			static int reported;
 			int bit = !strcmp(name, "HUD_InfoMessages") ? 1 : 2;
@@ -3600,12 +3637,48 @@ static void draw_chrome(float a)
 		draw_pill("touch_con_x", 0.090f, "touch_con_y", 0.948f, "touch_con_size", 0.060f, "touch_con_aspect", 2.9f, "CONSOLE", role_owned(ROLE_CON), ca);
 }
 
+static void draw_spectate_inputs(void)
+{
+ static const char *commands[] = {"+forward", "+back", "+moveleft", "+moveright", "+jump", "+crouch", "+fire", "+fire2"};
+ static const char *labels[] = {"FIRE", "ALT", "JUMP", "CROUCH"};
+ static const int bits[] = {64, 128, 16, 32};
+ static int last_target = -999;
+ int mask, i, target = TouchUI_SpectateeStatus();
+ float u = ui_h() / 360.0f, x = 12*u, y = ui_h() - 92*u;
+ qbool keyboard;
+ if (!in_play() || cl.intermission || cursor_wanted() || TouchChatLog_PanelHasInput()) return;
+ if (!spec_inputs_mask(&mask)) { if (spec_test_mask < 0 || !touch_spectate_inputs.integer) return; mask = spec_test_mask; }
+ if (spec_test_mask >= 0) mask = spec_test_mask;
+ if (target != last_target) { last_target = target; if (spec_test_mask < 0) mask = 0; }
+ keyboard = spec_test_keyboard >= 0 ? spec_test_keyboard != 0 : VID_HasKeyboard();
+ shapes_probe();
+ if (keyboard) {
+  for (i = 0; i < 8; i++) {
+   int keys[2] = {-1, -1}; char buf[64]; const char *name;
+   Key_FindKeysForCommand(commands[i], keys, 2, -1);
+   if (keys[0] == K_MOUSE1) name = "M1";
+   else if (keys[0] == K_MOUSE2) name = "M2";
+   else if (keys[0] >= 0) name = Key_KeynumToString(keys[0], buf, sizeof(buf));
+   else name = "-";
+   widget_capsule(x + (i % 4)*35*u + 16*u, y + (i / 4)*25*u + 12*u, 15*u, 10*u, name, (mask & (1 << i)) != 0, false, 0.9f, C_ACCENT);
+  }
+ } else {
+  float cx = x + 26*u, cy = y + 27*u, r = 23*u;
+  float dx = ((mask & 8) != 0) - ((mask & 4) != 0), dy = ((mask & 2) != 0) - ((mask & 1) != 0);
+  if (dx && dy) { dx *= 0.7071f; dy *= 0.7071f; }
+  widget_button(cx, cy, r, "", false, 0.9f, C_ACCENT);
+  widget_button(cx + dx*11*u, cy + dy*11*u, 9*u, "", dx || dy, 0.9f, C_ACCENT);
+  for (i = 0; i < 4; i++) widget_button(x + 67*u + (i % 2)*32*u, y + 13*u + (i / 2)*29*u, 13*u, labels[i], (mask & bits[i]) != 0, 0.9f, C_ACCENT);
+ }
+}
+
 void TouchHUD_Draw(void)
 {
 	float a;
 	float cx, cy, hx, hy;
 	frames_drawn++;
 	TouchHudMode_Update();
+	draw_spectate_inputs();
 	TouchDodge_DrawCue(); // over the port's CSQC HUD too
 	draw_endmenu();
 	if (TouchMode_IsMatchEnd(hud_mode()))
