@@ -298,3 +298,18 @@ class JoinNoWedgeTest {
         assertEquals(JoinFlow.BACKDROP_TOP, JoinFlow.backdropColorAt(0, h))
     }
 }
+
+/** Emulator frames (1920x1200, Hightime-like server): the card dropped at engine stage idle while the app said loading, and the screen was black for 28 s. */
+class JoinHoldsThroughTheWorldLoadTest {
+    @org.junit.Test fun cardStaysWhileTheAppSaysLoadingEvenAfterTheGrace() {
+        assertTrue(JoinFlow.holdCard("idle", "loading", true, false, false, JoinFlow.FAIL_GRACE_MS + 30_000, false))
+        // ...until the game is entered, a failure shows, or the player cancels
+        assertFalse(JoinFlow.holdCard("idle", "ingame", true, false, false, 100, false))
+        assertFalse(JoinFlow.holdCard("idle", "loading", true, false, false, 100, true))
+        assertTrue(JoinFlow.holdCard("idle", "loading", true, true, false, 100, false))
+        // a menu with nothing explaining it still goes after the grace
+        assertFalse(JoinFlow.holdCard("idle", "menu", true, false, false, JoinFlow.FAIL_GRACE_MS + 50, false))
+        // no card is raised from a stray loading state when there is none
+        assertFalse(JoinFlow.holdCard("idle", "loading", false, false, false, 0, false))
+    }
+}

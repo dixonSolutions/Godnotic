@@ -65,6 +65,9 @@ internal object JoinFlow {
         if (!hasCard || cancelled) return false
         if (failed) return true
         if (appState == "ingame" || appState == "paused") return false
+        // the engine reads `idle` while it loads the world in one blocking step (it draws nothing and reports no stage); the
+        // app still says `loading`: the card stays until the game is entered, or the screen is black for the whole step
+        if (appState == "loading") return true
         return reconnecting || idleMs < FAIL_GRACE_MS
     }
 

@@ -1141,6 +1141,17 @@ class ViewRenderer(
         if (waiting.size == 1) events.image(ref, dp(480f), dp(270f))
     }
 
+    /**
+     * The picture file of an INSTALLED map when it is known already (the list's rows and cards have asked for it), else
+     * null and the engine is asked now: a join to a stock map shows the map's own picture from its first frame, not art.
+     */
+    fun mapPicture(map: String): String? {
+        val ref = "pk3:maps/" + map
+        knownPath(ref)?.let { return it }
+        prefetch(ref)
+        return null
+    }
+
     /** Fetches a picture ahead of its view (the card of a chosen server, Home's top map). */
     private fun prefetch(ref: String) {
         knownPath(ref)?.let { Images.load(it, CARD_PX) { }; return } // the file is known: only decode it ahead

@@ -95,6 +95,37 @@ NOT verified (no emulator or Robolectric in this harness, and live joins were st
   non-image pictures refused (MapShotsTest), a server ignoring Range is never read (ServerShotsTest, harvester self-test), a local game is
   unaffected (scripts/test-touch-local-join.sh: PASS), the stock server join and a csprogs download (join sequence, csqc test: PASS).
 
+## Emulator run (Android debug APK, headless 1920x1200, adb input taps), what the frames show
+Built locally (gradle assembleDebug, x86_64, libcurl/png/SDL copied into jniLibs, fresh slim bundle from scripts/android-stage-assets.sh),
+installed on emulator-5584 only, internet cut by iptables except the host (10.0.2.2). Server: scripts/emu-join-fixture.sh (5 packs over HTTP at
+450 KB/s; the map's pack is 3rd and holds the only levelshot, under its first revision's name). Setup helpers: scripts/emu-setup.sh,
+scripts/emu-join-burst.sh, scripts/emu-contact-sheet.py. Frames in docs/handoffs/srvjoin-shots/ (before/after pairs):
+- popup: emu-popup-BEFORE-art-no-picture.jpg (generated art, the picture never came) vs emu-popup-AFTER-real-picture-first-frame.jpg
+  (the real picture, read from the server's own pack by the probe + Range reads, in the first popup frame of a 0.5 s burst; 3 Range GETs in the server log).
+- join card: emu-join-BEFORE-art-instead-of-picture-2of5.jpg (art although a levelshot exists; full-bleed, no band) vs
+  emu-join-AFTER-real-picture-first-card-frame.jpg / ...-downloading.jpg / ...-loading-map-2-line-detail.jpg: the real picture edge to edge
+  behind the bottom card from the first card frame, "Connecting…", "File 1 of 5 · MB of MB · MB/s · left · mobile data" now on two lines,
+  "Models 2 / 311 · mobile data · 15.1 MB used · 60%". No dark band in any of these frames.
+- emu-keyboard-over-card-BEFORE.jpg: the address field's keyboard stayed up and shrank the card's window; fixed (focus cleared and the
+  keyboard hidden when the card is raised). Checked in later frames: gone.
+- emu-join-BEFORE-black-after-card-dropped.jpg: after "Loading map" the card dropped at engine stage idle (app still "loading") and the
+  screen was black for ~28 s (21 frames at 1.3 s). Cause: JoinFlow.holdCard dropped the card after its 2.5 s grace. Fixed: it holds while
+  the app says loading (JoinHoldsThroughTheWorldLoadTest). On the device the log then read "Join card: dropped stage=idle app=ingame ...
+  idleMs=9576": held 9.5 s past the grace and dropped only at ingame. I did not capture a new burst of that run (the emulator died).
+- emu-error-master-unreachable.jpg: no network: "Master server unreachable / Check your connection. Retrying automatically." with Refresh.
+- emu-ingame-after-join.jpg: the match after the join.
+Timings seen (local fixture, so network is ~0): tap on a list row -> real picture in the popup <= 0.5 s (first popup frame); tap Join in the
+popup -> first card frame with the real picture <= 0.5 s (burst spacing 0.5 s). Join -> in game ~50 s here (5 packs at 450 KB/s plus a slow
+software-GL emulator), not comparable with a tablet.
+Found and fixed on the way: Android blocks cleartext HTTP from Kotlin, which would have made every popup picture read from a plain-http map
+host fail (res/xml/network_security_config.xml); the card detail was cut off by the mobile-data tag; the keyboard over the card; the card
+dropping before the world.
+Also noticed (not mine): BootActivity needs the internet to start even with all packs on disk (planSetup "Could not reach the download server");
+the engine rejoins the last server by itself when the app starts; the "Viewing full screen" system hint appears over the first screen.
+NOT done: real PUBLIC servers on the emulator (a live join with downloads over the metered link was refused earlier in this session and the
+emulator then died twice under host load; the coordinator's later instruction arrived after that), a stock-map server join from frame one
+on the emulator (the engine path installed-map picture is built, mapPicture(), but not seen in a frame), the pixel/Robolectric test.
+
 ## Not done / next
 - HTTP cache of popular csprogs.dat builds (race it with the in-protocol download): the only client-side cut of the 9 s;
   needs a published release and a CRC table. Preloading the world during the signon wait would hide about 1 s but
