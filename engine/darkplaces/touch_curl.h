@@ -24,6 +24,13 @@ static cvar_t curl_segment_size = {CF_CLIENT | CF_ARCHIVE, "curl_segment_size", 
 
 static cvar_t curl_retries = {CF_CLIENT | CF_ARCHIVE, "curl_retries", "6", "times a failed download the current map needs (curl --forthismap) is tried again, resuming the file from where it stopped, 1, 2, 4, 8, 15 and 15 s apart, before the join goes on without it (Godnotic); 0 = stock, the first failure ends it"};
 
+static cvar_t curl_mirrors = {CF_CLIENT | CF_ARCHIVE, "curl_mirrors", "", "base URLs (each ending in /, space separated) that hold map packs by their exact file name: when the server's own URL for a pack the map needs fails for good, the same file name is asked for at each of these in turn (Godnotic, docs/NETWORK.md); a pack with a size and crc from curl_expect is checked against them. Empty = no fallback"};
+
+// what the server said a pack is (curl_expect), to reject a wrong file from a mirror
+#define TC_MAXEXPECT 16
+static struct { char name[MAX_QPATH]; long long size; unsigned crc; } tc_expect[TC_MAXEXPECT];
+static int tc_nexpect;
+
 // downloads waiting to be tried again (touch_curl.h, TouchCurl_Retry)
 typedef struct tc_retry_s
 {
@@ -34,6 +41,7 @@ typedef struct tc_retry_s
 	double maxspeed;
 	int loadtype;
 	int tries;
+	int mirror;           // mirrors of curl_mirrors used so far
 	double due;           // realtime of the next attempt; 0 while one is running
 }
 tc_retry_t;
@@ -446,15 +454,44 @@ void TouchCurl_Init(void)
 // same download again: the partial file is resumed (Curl_Begin's own resume),
 // and while the attempt is pending the download still counts as "added", so
 // the client keeps waiting. Returns true when a new attempt is planned.
+// The pack could not be had from the URL the server gave (or the last mirror):
+// ask the next entry of curl_mirrors for the same file name. Returns true when
+// a new attempt is planned (r->url is the mirror's, due now).
+static qbool TC_NextMirror(downloadinfo *di, tc_retry_t *r, int error)
+{
+	const char *p = curl_mirrors.string, *name = di->filename + 8;
+	int n = 0;
+	if (!p[0] || strchr(name, '/') || strstr(name, ".."))
+		return false;
+	while (COM_ParseToken_Simple(&p, false, false, true))
+	{
+		char url[1024];
+		size_t l = strlen(com_token);
+		if (l < 8 || (strncmp(com_token, "http://", 7) && strncmp(com_token, "https://", 8)))
+			continue;
+		if (n++ < r->mirror)
+			continue;
+		r->mirror = n;
+		dpsnprintf(url, sizeof(url), "%s%s%s", com_token, com_token[l - 1] == '/' ? "" : "/", name);
+		if (!strcmp(url, di->url))
+			continue;
+		dp_strlcpy(r->url, url, sizeof(r->url));
+		dp_strlcpy(r->name, name, sizeof(r->name));
+		r->maxspeed = di->maxspeed;
+		r->loadtype = di->loadtype;
+		r->tries = max(0, curl_retries.integer - 2); // two attempts at each mirror
+		r->due = host.realtime;
+		Con_Printf("Download of %s failed (%d): trying the mirror %s\n", name, error, com_token);
+		return true;
+	}
+	return false;
+}
+
 static qbool TouchCurl_Retry(downloadinfo *di, int status, CURLcode error)
 {
 	tc_retry_t *r;
 	int max = curl_retries.integer;
 	if (max <= 0 || status == 2 /* CURL_DOWNLOAD_ABORTED, declared below */ || di->buffer || di->post_content_type || strncmp(di->filename, "dlcache/", 8))
-		return false;
-	// the server answered 4xx (no such file, forbidden): trying again only
-	// holds the join up for a minute; 408 and 429 are worth another try
-	if (status == 3 /* CURL_DOWNLOAD_SERVERERROR, error is the HTTP code */ && (int)error >= 400 && (int)error < 500 && (int)error != 408 && (int)error != 429)
 		return false;
 	for (r = tc_retries; r; r = r->next)
 		if (!strcmp(r->fn, di->filename))
@@ -466,9 +503,20 @@ static qbool TouchCurl_Retry(downloadinfo *di, int status, CURLcode error)
 		r->next = tc_retries;
 		tc_retries = r;
 	}
+	// the server answered 4xx (no such file, forbidden): trying again only
+	// holds the join up for a minute; 408 and 429 are worth another try
+	if (status == 3 /* CURL_DOWNLOAD_SERVERERROR, error is the HTTP code */ && (int)error >= 400 && (int)error < 500 && (int)error != 408 && (int)error != 429)
+	{
+		if (TC_NextMirror(di, r, (int)error))
+			return true;
+		r->due = -1;
+		return false;
+	}
 	if (r->tries >= max)
 	{
 		Con_Printf("Download of %s failed for good after %d tries (curl error %d)\n", di->filename + 8, r->tries + 1, (int)error);
+		if (TC_NextMirror(di, r, (int)error))
+			return true;
 		r->due = -1; // dropped by the sweep in TouchCurl_RetryFrame
 		return false;
 	}
@@ -685,6 +733,86 @@ done:
 	return ok;
 }
 
+static unsigned TC_Crc32(FILE *f)
+{
+	static unsigned table[256];
+	unsigned c = 0xffffffffu;
+	unsigned char buf[16384];
+	size_t n, i;
+	if (!table[1])
+		for (i = 0; i < 256; i++)
+		{
+			unsigned v = (unsigned)i;
+			int k;
+			for (k = 0; k < 8; k++)
+				v = (v & 1) ? 0xedb88320u ^ (v >> 1) : v >> 1;
+			table[i] = v;
+		}
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		for (i = 0; i < n; i++)
+			c = table[(c ^ buf[i]) & 0xff] ^ (c >> 8);
+	return ~c;
+}
+
+// curl_expect <pack> <size> <crc32 hex>: what the server says the pack is
+static void TouchCurl_Expect_f(cmd_state_t *cmd)
+{
+	int i;
+	const char *name = Cmd_Argv(cmd, 1);
+	if (Cmd_Argc(cmd) < 4 || !name[0] || strchr(name, '/') || strstr(name, ".."))
+	{
+		Con_Print("usage: curl_expect <pack.pk3> <size> <crc32 in hex>\n");
+		return;
+	}
+	for (i = 0; i < tc_nexpect; i++)
+		if (!strcmp(tc_expect[i].name, name))
+			break;
+	if (i == tc_nexpect)
+	{
+		if (tc_nexpect >= TC_MAXEXPECT)
+			i = 0; // the oldest slot is reused
+		else
+			tc_nexpect++;
+	}
+	dp_strlcpy(tc_expect[i].name, name, sizeof(tc_expect[i].name));
+	tc_expect[i].size = atoll(Cmd_Argv(cmd, 2));
+	tc_expect[i].crc = (unsigned)strtoul(Cmd_Argv(cmd, 3), NULL, 16);
+}
+
+// a pack the server described must be that file: size and crc32, whichever server it came from
+static qbool TC_ExpectOK(const char *name, const char *path, const char **why)
+{
+	int i;
+	FILE *f;
+	long size;
+	unsigned crc;
+	for (i = 0; i < tc_nexpect; i++)
+		if (!strcmp(tc_expect[i].name, name))
+			break;
+	if (i == tc_nexpect)
+		return true;
+	f = fopen(path, "rb");
+	if (!f)
+		return true; // TC_ZipOK has just opened it
+	fseek(f, 0, SEEK_END);
+	size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (tc_expect[i].size > 0 && size != tc_expect[i].size)
+	{
+		fclose(f);
+		*why = "not the size the server announced";
+		return false;
+	}
+	crc = TC_Crc32(f);
+	fclose(f);
+	if (tc_expect[i].crc && crc != tc_expect[i].crc)
+	{
+		*why = "not the crc the server announced";
+		return false;
+	}
+	return true;
+}
+
 // libcurl.c, a download finished: usable? A pack that is not is emptied, and the
 // attempt is a failure (TouchCurl_Ended tries it again from byte 0)
 static qbool TouchCurl_Verify(downloadinfo *di)
@@ -694,7 +822,7 @@ static qbool TouchCurl_Verify(downloadinfo *di)
 	if (di->loadtype != LOADTYPE_PAK || di->buffer || strncmp(di->filename, "dlcache/", 8))
 		return true;
 	TC_RealPath(path, sizeof(path), di->filename, "");
-	if (TC_ZipOK(path, &why))
+	if (TC_ZipOK(path, &why) && TC_ExpectOK(di->filename + 8, path, &why))
 		return true;
 	Con_Printf("Download of %s is not a whole pack (%s): deleted, fetching it again\n", di->filename + 8, why);
 	TC_Empty(di->filename);
@@ -833,6 +961,58 @@ void TouchCurl_ManualRetry(void)
 
 // libcurl.c Curl_EndDownload, before the download is counted: true = a new
 // attempt is planned, count nothing yet
+// Plain words for the join card: why a pack could not be had
+static void TC_Reason(int status, int error, char *out, size_t size)
+{
+	if (status == 0)
+		dp_strlcpy(out, "The file arrived damaged or incomplete: it is not what the server announced or not a valid pack.", size);
+	else if (status == 3 && (error == 404 || error == 410))
+		dpsnprintf(out, size, "The download server does not have this file (HTTP %d).", error);
+	else if (status == 3 && (error == 401 || error == 403))
+		dpsnprintf(out, size, "The download server refused the file (HTTP %d).", error);
+	else if (status == 3)
+		dpsnprintf(out, size, "The download server answered HTTP %d.", error);
+	else if (error == 23 || error == 0)
+		dp_strlcpy(out, "The file could not be saved: this device has no free storage left, or the folder is read-only.", size);
+	else if (error == 33)
+		dp_strlcpy(out, "The download server cannot continue a partly downloaded file.", size);
+	else if (error == 28)
+		dp_strlcpy(out, "The download stalled and timed out.", size);
+	else if (error == 6 || error == 7 || error == 35 || error == 60)
+		dp_strlcpy(out, "The download server could not be reached.", size);
+	else if (error == 18 || error == 52 || error == 55 || error == 56)
+		dp_strlcpy(out, "The connection to the download server kept dropping.", size);
+	else
+		dpsnprintf(out, size, "The download failed (error %d).", error);
+}
+
+// A pack the map needs is gone for good (every retry and mirror used): the join
+// stops with a card that says so, instead of loading on without it and failing
+// later in a model or CSQC call. Queued as a command: this runs inside the
+// download list, and a disconnect from here would cancel the list under it.
+static void TC_PackFailed(downloadinfo *di, int status, int error)
+{
+	char name[MAX_QPATH], reason[256], cmd[512];
+	size_t i;
+	if (strncmp(di->filename, "dlcache/", 8))
+		return;
+	dp_strlcpy(name, di->filename + 8, sizeof(name));
+	for (i = 0; name[i]; i++) // the name comes from the server and goes into a command line
+		if (!((name[i] >= 'a' && name[i] <= 'z') || (name[i] >= 'A' && name[i] <= 'Z') || (name[i] >= '0' && name[i] <= '9') || name[i] == '.' || name[i] == '_' || name[i] == '-' || name[i] == '+'))
+			name[i] = '_';
+	TC_Reason(status, error, reason, sizeof(reason));
+	Con_Printf("Download of %s failed for good: %s\n", name, reason);
+	dpsnprintf(cmd, sizeof(cmd), "\ntouch_pack_failed \"%s\" \"%s\"\n", name, reason);
+	Cbuf_AddText(cmd_local, cmd);
+}
+
+static void TouchCurl_DropRetries(void)
+{
+	tc_retry_t *r;
+	for (r = tc_retries; r; r = r->next)
+		r->due = -1;
+}
+
 static qbool TouchCurl_Ended(downloadinfo *di, int status, qbool ok, CURLcode error)
 {
 	qbool changed = TC_HdrMismatch(di, true), retry;
@@ -866,5 +1046,7 @@ static qbool TouchCurl_Ended(downloadinfo *di, int status, qbool ok, CURLcode er
 		TC_DropMeta(di->filename);
 	}
 	retry = di->forthismap && TouchCurl_Retry(di, status, error);
+	if (di->forthismap && !retry && status != 2 /* not the player's own cancel */)
+		TC_PackFailed(di, status, error);
 	return retry;
 }

@@ -55,6 +55,8 @@ net_download_inorder 0 restores the stock acks.
 
 static cvar_t net_download_inorder = {CF_CLIENT, "net_download_inorder", "1", "ack the server's download so a lost or overtaken block costs one resend of that block, not of everything after it (Godnotic; 0 = stock acks)"};
 
+static cvar_t net_download_overlap = {CF_CLIENT, "net_download_overlap", "1", "fetch the server's csprogs.dat at once, while the map's HTTP packs download, instead of after them (Godnotic; 0 = stock order). Client only: a stock server is fine"};
+
 typedef struct { int start, end; } tdl_span_t;
 
 static struct
@@ -165,6 +167,8 @@ qbool TouchNetDL_Received(int start, int size)
 	int oldpos;
 	if (!net_download_inorder.integer || !cls.qw_downloadname[0] || !cls.qw_downloadmemory)
 		return false;
+	if (start < 0 || size < 0 || start > cls.qw_downloadmemorymaxsize - size)
+		return false; // a block outside the file (CL_ParseDownload drops it)
 	now = Sys_DirtyTime();
 	if (tdl.number != cls.qw_downloadnumber)
 	{
@@ -224,7 +228,13 @@ void TouchNetDL_Stored(int start, int size)
 	cls.qw_downloadmemorycursize = furthest;
 }
 
+qbool TouchNetDL_OverlapCSQC(void)
+{
+	return net_download_overlap.integer != 0;
+}
+
 void TouchNetDL_Init(void)
 {
+	Cvar_RegisterVariable(&net_download_overlap);
 	Cvar_RegisterVariable(&net_download_inorder);
 }

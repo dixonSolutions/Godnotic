@@ -5,6 +5,10 @@
 // keeps its pace at high ping (touch_netdl.c).
 
 void TouchNetDL_Init(void);
+// CL_BeginDownloads, with curl packs for the map still running: may the
+// server's csprogs.dat be fetched now, over the game connection, instead of
+// after the packs? (net_download_overlap)
+qbool TouchNetDL_OverlapCSQC(void);
 // CL_ParseDownload: a block arrived; true = its ack is handled here (the
 // stock code then records none)
 qbool TouchNetDL_Received(int start, int size);

@@ -235,6 +235,7 @@ typedef struct downloadinfo_s
 }
 downloadinfo;
 LIST_HEAD(downloads);
+static void TouchCurl_DropRetries(void); // Touch (touch_curl.h)
 static int numdownloads = 0;
 
 static qbool noclear = false;
@@ -295,6 +296,7 @@ void Curl_Clear_forthismap(void)
 	if (curl_mutex) Thread_LockMutex(curl_mutex);
 	List_For_Each_Entry(di, &downloads, downloadinfo, list)
 		di->forthismap = false;
+	TouchCurl_DropRetries(); // Touch: a pack waiting to be tried again belongs to the map that is gone
 	Curl_CommandWhenError(NULL);
 	Curl_CommandWhenDone(NULL);
 	numdownloads_fail = 0;
@@ -608,7 +610,9 @@ static void Curl_EndDownload(downloadinfo *di, CurlStatus status, CURLcode error
 	do \
 	{ \
 		di->stream = FS_OpenRealFile(di->filename, "wb", false); \
-		FS_Close(di->stream); \
+		if(di->stream) /* Touch: no storage left or a read-only folder: no file to close */ \
+			FS_Close(di->stream); \
+		di->stream = NULL; \
 		if(di->startpos && !di->callback) \
 		{ \
 			Curl_Begin(di->url, di->extraheaders, di->maxspeed, di->filename, di->loadtype, di->forthismap, di->post_content_type, di->postbuf, di->postbufsize, NULL, 0, NULL, NULL); \
@@ -1347,6 +1351,18 @@ void Curl_CancelAll(void)
 	if (curl_mutex) Thread_UnlockMutex(curl_mutex);
 }
 
+void Curl_CancelForthismap(void)
+{
+	downloadinfo *di, *next;
+	if(noclear || !curl_dll)
+		return;
+	if (curl_mutex) Thread_LockMutex(curl_mutex);
+	List_For_Each_Entry_Safe(di, next, &downloads, downloadinfo, list)
+		if(di->forthismap)
+			Curl_EndDownload(di, CURL_DOWNLOAD_ABORTED, CURLE_OK, NULL);
+	if (curl_mutex) Thread_UnlockMutex(curl_mutex);
+}
+
 /*
 ====================
 Curl_Running
@@ -1638,6 +1654,8 @@ void Curl_Init_Commands(void)
 	Cvar_RegisterVirtual  (&curl_useragent,        "cl_curl_useragent");
 	Cvar_RegisterVirtual  (&curl_useragent_append, "cl_curl_useragent_append");
 
+	Cvar_RegisterVariable (&curl_mirrors); // Touch: mirrors by file name (touch_curl.h)
+	Cmd_AddCommand(CF_CLIENT | CF_CLIENT_FROM_SERVER, "curl_expect", TouchCurl_Expect_f, "curl_expect <pack> <size> <crc32 hex>: what a pack must be (Godnotic)");
 	Cvar_RegisterVariable (&sv_curl_defaulturl);
 	Cvar_RegisterVariable (&sv_curl_serverpackages);
 	Cvar_RegisterVariable (&sv_curl_maxspeed);

@@ -27,6 +27,8 @@ void Curl_Init_Commands(void);
 void Curl_Shutdown(void);
 qbool Curl_Available(void);
 void Curl_CancelAll(void);
+// Touch: stop the downloads the current join needs (a disconnect: the player left or the join failed)
+void Curl_CancelForthismap(void);
 void Curl_Clear_forthismap(void);
 qbool Curl_Have_forthismap(void);
 void Curl_Register_predownload(void);

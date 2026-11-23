@@ -29,6 +29,7 @@ touch_joinfail_logic.h.
 #include "touch_nativefe.h"
 #include "touch_datafetch.h"
 #include "touch_joinname.h"
+#include "libcurl.h"
 #ifdef CONFIG_MENU
 #include "menu.h"
 #endif
@@ -223,8 +224,28 @@ static void TouchJoinFail_Retry_f(cmd_state_t *cmd)
 	Cbuf_AddText(cmd_local, line);
 }
 
+// touch_pack_failed "<pack>" "<reason>" (touch_curl.h: a pack the map needs could not be
+// downloaded, retries and mirrors used up). The join stops here, with a card that says what
+// and why, rather than loading on without the pack. Queued by the download code as a command so
+// it runs outside the download list.
+static void TouchJoinFail_PackFailed_f(cmd_state_t *cmd)
+{
+	char text[256];
+	if (cls.state != ca_connected || Cmd_Argc(cmd) < 3)
+		return; // already stopped by an earlier failed pack, or the player left
+	if (cls.netcon)
+		dp_strlcpy(jf.address, cls.netcon->address, sizeof(jf.address));
+	Curl_CancelAll(); // the other packs of this join: partial files stay, Retry resumes them
+	CL_DisconnectEx(false, "Download: could not get %s", Cmd_Argv(cmd, 1));
+	jf.active = false;
+	jf.pending_kind = 0;
+	dpsnprintf(text, sizeof(text), "Could not download %s", Cmd_Argv(cmd, 1));
+	report(TOUCHJOINFAIL_FILES, text, Cmd_Argv(cmd, 2));
+}
+
 void TouchJoinFail_Init(void)
 {
+	Cmd_AddCommand(CF_CLIENT, "touch_pack_failed", TouchJoinFail_PackFailed_f, "Godnotic: stop the join because a pack the map needs could not be downloaded");
 	Cvar_RegisterVariable(&join_fail_serial);
 	Cvar_RegisterVariable(&join_fail_kind);
 	Cvar_RegisterVariable(&join_fail_text);

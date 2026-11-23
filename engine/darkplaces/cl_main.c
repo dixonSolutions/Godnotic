@@ -393,6 +393,7 @@ void CL_DisconnectEx(qbool kicked, const char *fmt, ... )
 	if (Sys_CheckParm("-profilegameonly"))
 		Sys_AllowProfiling(false);
 
+	Curl_CancelForthismap(); // Touch: leaving a join stops its downloads (partial files stay for a retry)
 	Curl_Clear_forthismap();
 
 	Con_DPrintf("CL_Disconnect\n");

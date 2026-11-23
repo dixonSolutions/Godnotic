@@ -1108,6 +1108,7 @@ static void CL_UpdateItemsAndWeapon(void)
 static void CL_BeginDownloads(qbool aborteddownload)
 {
 	char vabuf[1024];
+	qbool overlapcsqc = false; // Touch: only the csprogs.dat download goes on while curl packs run
 	// quakeworld works differently
 	if (cls.protocol == PROTOCOL_QUAKEWORLD)
 		return;
@@ -1116,14 +1117,19 @@ static void CL_BeginDownloads(qbool aborteddownload)
 	if(Curl_Have_forthismap())
 	{
 		Curl_Register_predownload(); // come back later
-		return;
+		overlapcsqc = TouchNetDL_OverlapCSQC(); // Touch: the server's csprogs.dat is fetched beside the packs (touch_netdl.c)
+		if (!overlapcsqc)
+			return;
 	}
 
 	// if we got here...
 	// curl is done, so let's start with the business
+	if (!overlapcsqc) // Touch: the load starts when the packs are in
+	{
 	if(!cl.loadbegun)
 		SCR_PushLoadingScreen("Loading precaches", 1);
 	cl.loadbegun = true;
+	}
 
 	// if already downloading something from the previous level, don't stop it
 	if (cls.qw_downloadname[0])
@@ -1158,6 +1164,9 @@ static void CL_BeginDownloads(qbool aborteddownload)
 				|| ((int)progsize != csqc_progsize.integer && csqc_progsize.integer != -1)))
 			Con_Printf("Keeping local %s (cl_csqc_download 0) — touch controls stay available\n", csqc_progname.string);
 	}
+
+	if (overlapcsqc) // Touch: models and sounds wait for the packs
+		return;
 
 #ifdef __ANDROID__
 	if (cl.loadmodel_current < cl.loadmodel_total && TouchAndroid_HoldMapLoad())
@@ -1425,6 +1434,8 @@ static void CL_BeginDownloads_f(cmd_state_t *cmd)
 	// to prevent accidentally cancelled downloads
 	if(cl.loadbegun)
 		Con_Printf("cl_begindownloads is only valid once per match\n");
+	else if (cls.state != ca_connected) // Touch: a late download's command after the join was left or failed
+		Con_Printf("cl_begindownloads: not connected\n");
 	else
 		CL_BeginDownloads(false);
 }
@@ -1551,8 +1562,13 @@ static void CL_ParseDownload(void)
 		return;
 	}
 
-	if (start + size > cls.qw_downloadmemorymaxsize)
-		Host_Error("corrupt download message\n");
+	// Touch: a block outside the download is dropped, not trusted: a negative start wrote
+	// before the buffer, and a server that changed the file under us ended the app in Host_Error
+	if (start < 0 || size < 0 || start + size > cls.qw_downloadmemorymaxsize)
+	{
+		Con_Printf("CL_ParseDownload: block %i+%i is outside the %i byte download, ignored\n", start, size, cls.qw_downloadmemorymaxsize);
+		return;
+	}
 
 	// only advance cursize if the data is at the expected position
 	// (gaps are unacceptable)
@@ -1568,7 +1584,7 @@ static void CL_DownloadBegin_f(cmd_state_t *cmd)
 {
 	int size = atoi(Cmd_Argv(cmd, 1));
 
-	if (size < 0 || size > 1<<30 || FS_CheckNastyPath(Cmd_Argv(cmd, 2), false))
+	if (size < 0 || size > 64<<20 /* Touch: was 1<<30, a phone cannot give a server one gigabyte */ || FS_CheckNastyPath(Cmd_Argv(cmd, 2), false))
 	{
 		Con_Printf("cl_downloadbegin: received bogus information\n");
 		CL_StopDownload(0, 0);
