@@ -66,6 +66,7 @@
     "children": [
      "pause/actions/resume",
      "pause/actions/settings",
+     "pause/actions/chatlog",
      "pause/actions/team",
      "pause/actions/spectate",
      "pause/actions/disconnect"
@@ -95,6 +96,20 @@
       "id": "settings",
       "label": "Settings",
       "icon": "settings"
+     },
+     "style": "secondary"
+    },
+    "children": []
+   },
+   {
+    "id": "pause/actions/chatlog",
+    "type": "button",
+    "props": {
+     "label": "Chat log",
+     "action": {
+      "id": "chatlog",
+      "label": "Chat log",
+      "icon": ""
      },
      "style": "secondary"
     },

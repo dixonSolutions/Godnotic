@@ -72,6 +72,8 @@ static int tcl_ntg;
 static float tcl_min_target; /* console units: 44 dp */
 static float tcl_slop;
 static float tcl_pointer_x, tcl_pointer_y; /* the last press, console units */
+static float tcl_claim_r[4];   /* the area that takes a finger, console units */
+static double tcl_claim_at = -100;
 static float tcl_panel_rect[4];            /* the open log's panel: a press inside it, on nothing, does nothing */
 
 /* the pointer */
@@ -746,6 +748,35 @@ qbool TouchChatLog_Key(int key, qbool down)
 	return false;
 }
 
+/* vid_sdl.c, every finger (TouchVote_Finger): the feed's icons and names and the open log take a finger
+ * before the game's touch layer sees it, so they work under any server's CSQC (the stock one too).
+ * A finger on nothing of the feed is not taken: it looks around as before. True when taken. */
+qbool TouchChatLog_Finger(int type, int id, float nx, float ny)
+{
+	static int held;
+	float x = nx * vid_conwidth.value, y = ny * vid_conheight.value;
+	cvar_t *sheet;
+	if (type == 0)
+	{
+		if (held || !touch_chatlog.integer || cls.state != ca_connected || host.realtime - tcl_claim_at > 0.25)
+			return false;
+		sheet = Cvar_FindVar(&cvars_all, "_touch_chat_sheet", CF_CLIENT);
+		if ((sheet && sheet->integer) || (key_dest != key_game && !tcl_panel))
+			return false;
+		if (!tcl_panel && (x < tcl_claim_r[0] || x > tcl_claim_r[0] + tcl_claim_r[2] || y < tcl_claim_r[1] || y > tcl_claim_r[1] + tcl_claim_r[3] || TCL_HitAt(x, y) < 0))
+			return false;
+		held = id;
+		TCL_Pointer(0, x, y);
+		return true;
+	}
+	if (!held || held != id)
+		return false;
+	TCL_Pointer(type == 1 ? 1 : 2, x, y);
+	if (type == 2)
+		held = 0;
+	return true;
+}
+
 /* console.c: the panel draws the chat input itself */
 qbool TouchChatLog_PanelHasInput(void)
 {
@@ -758,6 +789,8 @@ qbool TouchChatLog_PanelHasInput(void)
 static void TCL_Claim(float x, float y, float w, float h)
 {
 	char s[96];
+	tcl_claim_r[0] = x; tcl_claim_r[1] = y; tcl_claim_r[2] = w; tcl_claim_r[3] = h;
+	tcl_claim_at = host.realtime;
 	if (w <= 0 || h <= 0 || vid_conwidth.value <= 0)
 		s[0] = 0;
 	else
@@ -1148,6 +1181,17 @@ static void TCL_Dump_f(cmd_state_t *cmd)
 	Con_Printf("CHATLOG-END %u\n", cl_log.count);
 }
 
+/* test: a finger through the claim the touch layer uses: touch_chatlog_finger down|move|up <id> <fx> <fy> (prints taken or not) */
+static void TCL_Finger_f(cmd_state_t *cmd)
+{
+	const char *p = Cmd_Argv(cmd, 1);
+	qbool taken;
+	if (Cmd_Argc(cmd) < 5)
+		return;
+	taken = TouchChatLog_Finger(!strcmp(p, "down") ? 0 : !strcmp(p, "move") ? 1 : 2, atoi(Cmd_Argv(cmd, 2)), (float)atof(Cmd_Argv(cmd, 3)), (float)atof(Cmd_Argv(cmd, 4)));
+	Con_Printf("CHATLOG-FINGER %s %s\n", p, taken ? "taken" : "not taken");
+}
+
 /* test: where things are: the targets as window fractions, and the panel's state */
 static void TCL_State_f(cmd_state_t *cmd)
 {
@@ -1181,5 +1225,6 @@ void TouchChatLog_Init(void)
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_copy", TCL_Copy_f, "put the chat log text on the clipboard");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_inject", TCL_Inject_f, "test: touch_chatlog_inject <1|3> <text> adds a line as the console would deliver it");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_dump", TCL_Dump_f, "test: print the chat log's lines with their kinds");
+	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_finger", TCL_Finger_f, "test: touch_chatlog_finger down|move|up <id> <fx> <fy>: a finger through the claim the touch layer uses");
 	Cmd_AddCommand(CF_CLIENT, "touch_chatlog_state", TCL_State_f, "test: print the chat log's hit targets and state");
 }

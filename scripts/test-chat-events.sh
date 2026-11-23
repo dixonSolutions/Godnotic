@@ -164,6 +164,22 @@ sleep 3
 TA "touch_chatlog_state"
 if [ "$(field "$d/t" panel)" = 1 ]; then ok "tap: a tap on the log icon opens the log"; else bad "tap: the log did not open: $(state "$d/t")"; fi
 if grep -aq "^CHATLOG-TARGET close " "$d/t.ask" && grep -aq "^CHATLOG-TARGET chip 2 " "$d/t.ask"; then ok "tap: the log has close and filter targets"; else bad "tap: log header targets missing"; fi
+# the engine-level finger path (what a finger does under ANY server's CSQC, stock included): a finger far from
+# the panel is taken only while the log is open, and a press outside the panel closes it
+TA "touch_chatlog_finger down 7 0.99 0.99"
+T "touch_chatlog_finger up 7 0.99 0.99"
+TA "touch_chatlog_state"
+if [ "$(field "$d/t" panel)" = 0 ]; then ok "finger: a press outside the open log closes it (engine finger path)"; else bad "finger: panel still open: $(state "$d/t")"; fi
+T "touch_chatlog_open"
+sleep 2
+TA "touch_chatlog_state"
+read -r lx2 ly2 < <(grep -a "^CHATLOG-TARGET chip 2 " "$d/t.ask" | head -1 | awk '{print $4, $5}')
+T "touch_chatlog_finger down 5 $lx2 $ly2" "touch_chatlog_finger up 5 $lx2 $ly2"
+sleep 2
+TA "touch_chatlog_state"
+if [ "$(field "$d/t" filter)" = 2 ]; then ok "finger: a finger tap on the Events chip is taken and acts"; else bad "finger: chip not pressed by a finger: $(state "$d/t")"; fi
+T "touch_chatlog_filter all"
+sleep 1
 # a tap on a name in the log: that player's actions
 read -r nx ny < <(grep -a "^CHATLOG-TARGET name " "$d/t.ask" | head -1 | awk '{print $4, $5}')
 T "touch_chatlog_ptr down $nx $ny" "defer 0.1 \"touch_chatlog_ptr up $nx $ny\"" "defer 1.5 \"screenshot events-popup.png\""
