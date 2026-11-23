@@ -61,7 +61,7 @@ WIDGETS = [
     ("CROUCH",  "touch_crouch", "right", "button"),
     ("WEAPON",  "touch_weapon", "right", "button"),
     ("ZOOM",    "touch_zoom",   "right", "button"),
-    ("HOOK",    "touch_hook",   "right", "button"),
+    # HOOK is an entry of the weapon strip now, not a widget.
     ("TURN",    "touch_turn",   "left",  "button"),
     ("RELOAD",  "touch_reload", "right", "button"),
     ("DODGE",   "touch_dodge",  "left",  "button"),

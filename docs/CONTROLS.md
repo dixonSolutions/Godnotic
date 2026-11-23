@@ -66,7 +66,7 @@ feed and the chat feed each get a band that touches neither.
 | Look zone | Short tap = fire | `+attack` for one frame |
 | Fire | Hold; a thumb that drags off it turns the view while it keeps firing | `+attack` (+ look) |
 | **ALT** | Hold. Only there while the weapon in hand has a secondary fire it can fire; fades out when it runs dry | `+attack2` — see [Secondary fire](#secondary-fire-alt) |
-| **HOOK** | Hold to hook, let go to release; drag to steer like FIRE. Only there while a hook is to hand | offhand hook (`+hook`) or the Hook weapon — see [Grappling hook](#grappling-hook-hook-button-and-fall-rescue-engine) |
+| **HOOK** (entry of the weapon strip) | Hold to hook, let go to release; drag to steer like FIRE. A row after the weapons while the server has a hook; faint with no fuel | offhand hook (`+hook`) or the Hook weapon — see [Grappling hook](#grappling-hook-hook-button-and-fall-rescue-engine) |
 | **HOP** | Jumps while held, again at every landing (that is the bunny-hop); a thumb that drags off it turns the view while it stays held | `+jump` |
 | **KEEP** | Checkbox up and left of DUCK: tap to keep jumping with no finger down (HOP shows the latch), tap again to stop. Drops on death, in menus and with a keyboard | `+jump` held |
 | DUCK | Tap or hold; drag off it to turn | `+crouch` |
@@ -98,7 +98,7 @@ the native front ends read it rather than guessing again.
 
 | Mode | On screen | Not there |
 |------|-----------|-----------|
-| **Playing** | Top bar (console button, MENU, SCORE, CHAT); move stick, look, FIRE, ALT, HOP + KEEP, DUCK, TURN, weapon strip, NADE, HOOK / ZOOM when the weapon has them, vitals; optional SPECTATE (`touch_tospec_visible 1`, placed in the layout editor); READY in warmup | — |
+| **Playing** | Top bar (console button, MENU, SCORE, CHAT); move stick, look, FIRE, ALT, HOP + KEEP, DUCK, TURN, weapon strip (with a HOOK entry and the NADE action row), ZOOM when the weapon has it, vitals; optional SPECTATE (`touch_tospec_visible 1`, placed in the layout editor); READY in warmup | — |
 | **Dead** (waiting to respawn) | Top bar; **RESPAWN** where HOP is (`+jump`), look; SPECTATE if placed; READY in warmup | stick, FIRE, ALT, DUCK, strip, vitals |
 | **Spectating, free-fly** | Top bar; move stick + **UP / DOWN** rocker beside it (`+moveup` / `+movedown`), look; MENU > **Follow player**; with the spectator bar on (`touch_specbar_visible 1`, off by default), **< FOLLOW >** bottom right too | weapons, FIRE, ALT, HOP, DUCK, TURN, HOOK, NADE, CONSOLE pill, any join control (joining is the join dialog) |
 | **Following a player** | Top bar; MENU > **Previous player / Next player / Free-fly**; with the bar on, **< FREE >** with the player's name above it; their vitals (read only) | stick and rocker (the view is theirs), everything above |
@@ -544,7 +544,7 @@ keeps its physical size across aspect ratios — `mm = _size × 183.2` on the
 | Weapon | `touch_weapon_` | — | no (the weapon strip switches weapons) |
 | Weapon strip | `touch_weplist_` | `_x`, `_y`, `_visible` only: sized by `cl_touch_weplist_scale` — see [Weapon strip](#weapon-strip) | yes |
 | Zoom | `touch_zoom_` | `touch_zoom_visible` 0 never / 1 always / 2 contextual | contextual (`2`) |
-| Hook | `touch_hook_` | `touch_hook_visible` 0 never / 1 always / 2 while a hook is to hand | contextual (`2`) |
+| Hook | (none: an entry of the weapon strip) | `touch_hook_visible` 0 leaves the entry out, anything else shows it while the server has a hook. Old layouts' `1` / `2` both mean on; their `touch_hook_x/_y/_size` are ignored | on (`2`) |
 | Turn | `touch_turn_` | `touch_turn_angle` (90–360, 180), `touch_turn_time` (0–0.5 s, 0.12; 0 = at once) | yes |
 | Dash | `touch_dodge_` | see [Smart DASH](#smart-dash-dodge-or-weapon-boost-engine-both-huds) | no |
 | Reload | `touch_reload_` | — | no |
@@ -1465,7 +1465,7 @@ mode, a 3-minute local match against 3 skill-8 bots: 5 kills / 2 deaths.
 | `cl_touch_practice_magnet` | `0` | Pick up items within `_magnet_radius` (96) in clear view |
 | `cl_touch_practice_burst` | `0` | Simulated burst point for splash shots at a hidden enemy |
 
-### Grappling hook: HOOK button and fall rescue (engine)
+### Grappling hook: HOOK entry and fall rescue (engine)
 
 Xonotic's grappling hook comes two ways, and which one a server offers decides
 what the touch controls can do. Both are handled in the engine client
@@ -1484,18 +1484,22 @@ the same on a public server and in a local match.
   previous weapon back on release, unless the player picked another meanwhile.
 
 Hooks fly at 1800 u/s, pull at 2000 u/s, catch on any solid surface and are
-lost on sky. With neither, nothing can hook: HOOK is not shown
-(`touch_hook_visible 2`) and the rescue does nothing.
+lost on sky. With neither, nothing can hook: the HOOK entry is not shown
+and the rescue does nothing.
 
-**HOOK button.** Up and in from FIRE, between ALT and ZOOM and left of the
-weapon strip at its largest. Hold it and the hook goes out along the view and
-pulls; let go and it lets go. A finger dragged on it turns the view as on FIRE
-(`touch_fire_drag_look`), since the hook goes where the player looks. It glows
-while the rescue holds the hook. It is hidden with a keyboard attached (the
-controls are off), while a mouse aims next to the touch controls, and in the
-stock vote and intermission screens like every other control. Movable in the
-layout editor; mirrored by `touch_handedness`. Stock prompts that name `+hook`
-("press HOOK to use it") name the button.
+**HOOK entry (the weapon strip).** There is no separate HOOK button: the hook
+is picked from the weapon strip, as the entry after the last weapon (the Hook
+weapon is not also a row of its own). Hold the row and the hook goes out along
+the view and pulls; let go and it lets go. With the Hook weapon the hold
+switches to it, fires it once it is in hand and takes the previous weapon back
+on release. A finger dragged off the row turns the view as on FIRE
+(`touch_fire_drag_look`). It is lit while the rescue holds the hook, and
+faint while the server has a hook but none is to hand (no fuel); its place is
+kept, so rows never move. Off with `touch_hook_visible 0` (Settings → Mobile →
+HUD → *Hook in weapon bar*). Old saved layouts carry over: `1` and `2` both
+mean on, `0` stays off, and `touch_hook_x/_y/_size` are retired (ignored; the
+layout editor no longer has a HOOK widget). Stock prompts that name `+hook`
+("press HOOK to use it") name the entry.
 
 **Fall rescue** (`cl_touch_hook_rescue`, on by default; Settings → Mobile →
 HUD → *Catch me with the hook when I fall off the map*):
@@ -1545,7 +1549,7 @@ decision (the fall, the anchor and its cost, fired, caught, released and why);
 | `_cl_touch_hook_avail` | — | Set by the engine: 0 none, 1 offhand hook, 2 Hook weapon |
 | `_cl_touch_hook_state` | — | Set by the engine: 1 HOOK held, 2 the rescue holds or aims |
 
-Commands: `+touch_hook` / `-touch_hook` (what the port's HOOK button sends),
+Commands: `+touch_hook` / `-touch_hook` (what the port's HOOK entry sends),
 `touch_hook_status` (one line of state, for tests and bug reports).
 
 Limits: air control is not modelled, so a player steering hard toward a ledge
@@ -1711,8 +1715,9 @@ brakes a little later than it could.
 
 ### Grenades (engine, both HUDs)
 
-On a server with offhand grenades (`g_nades`) a NADE row sits under the last
-weapon on the weapon strip, above its grip (`engine/darkplaces/touch_nade.c`;
+On a server with offhand grenades (`g_nades`) a NADE row sits in the weapon
+strip's action area: after a gap under the weapons and the HOOK entry, taller
+than a weapon row (34 units against 26) for a thumb, above the strip's grip (`engine/darkplaces/touch_nade.c`;
 the port's CSQC draws it in `touch_hud.qc`, the engine HUD in `touch_hud.c`).
 Its place is kept while the server has grenades, so the weapon rows never move.
 
@@ -1733,7 +1738,19 @@ Its place is kept while the server has grenades, so the weapon rows never move.
   next. Bonus grenades show as a count on the row. The type is the server's
   (`g_nades_nade_type`): whether it lets a client choose is not sent, so the
   row offers no choice.
-- The HOOK button stays away while grenades have `+hook`.
+- Nades and the hook never share a finger: `+hook` is the grenade's while
+  grenades are on (so the offhand hook is not counted there, only the Hook
+  weapon), and while one of the two rows is held the other takes no touch.
+- **One band per finger** (`engine/darkplaces/touch_strip.h`, mirrored in
+  `touch_weapons.qc`). A finger lands on exactly one of: a weapon row, the
+  HOOK entry, the gap (dead), the NADE row. Padding is sideways, and upward over
+  the first row; rows share edges. A row that exists but cannot be pressed now
+  (a grenade on its way, a hook out of fuel) keeps the finger and does nothing.
+  The bug it fixed (nade icon firing the hook): the NADE row was tested only
+  while a grenade was ready, and every weapon row was padded 12 % on all four
+  sides, so a finger on the top of the waiting NADE row landed in the padded
+  bottom of the row above, which with the Hook weapon (impulse 0) was the hook.
+  `scripts/test-touch-strip.sh` covers each case.
 - `touch_nade_status` prints the mutator, row, fuse, bonus, held, safety and
   throws; `_cl_touch_nade` / `_cl_touch_nade_timer` tell the port's CSQC what
   to draw.
@@ -1974,7 +1991,7 @@ cvar is on exactly one of them:
 | Sub-tab | Rows |
 |---------|------|
 | **Controls** | Input mode (Dynamic / Touch / Keyboard & mouse, switch mid-game, announce, touch-only), layout presets, opacity, scale, glass tint, left-handed, stick dead zone and reach, FIRE hold / toggle, dodge button, customize / save / reset |
-| **HUD** | Weapon bar: size (`cl_touch_weplist_scale` 0.7–2.4), across (`touch_weplist_x`), down (`touch_weplist_y` 0.15–0.85), show; readout size (`touch_hud_scale`); grappling hook: HOOK button off / when available / always (`touch_hook_visible`), *Catch me with the hook when I fall off the map* (`cl_touch_hook_rescue`); quick turn: TURN button (`touch_turn_visible`), turn by (`touch_turn_angle` 90–360); *Keep MENU, CHAT and SCORE on screen with a keyboard* (`touch_desk_pills`); grenades: NADE row (`cl_touch_nade_row`), throw before it blows (`cl_touch_nade_autothrow`) |
+| **HUD** | Weapon bar: size (`cl_touch_weplist_scale` 0.7–2.4), across (`touch_weplist_x`), down (`touch_weplist_y` 0.15–0.85), show; readout size (`touch_hud_scale`); grappling hook: *Hook in weapon bar* off / on (`touch_hook_visible`), *Catch me with the hook when I fall off the map* (`cl_touch_hook_rescue`); quick turn: TURN button (`touch_turn_visible`), turn by (`touch_turn_angle` 90–360); *Keep MENU, CHAT and SCORE on screen with a keyboard* (`touch_desk_pills`); grenades: NADE row (`cl_touch_nade_row`), throw before it blows (`cl_touch_nade_autothrow`) |
 | **Aim** | Look sensitivity, vertical, invert; aim assist on / off with Light, Medium (the defaults) and Strong; slowdown, pull (0–1), catch cone (1–15°), max pull (0–180°/s), target ring, *Keep tracking the enemy I am shooting* (`cl_touch_aimassist_track`), and an *Auto dodge* section: on / off (`cl_touch_autododge`), servers and local or local only (`cl_touch_autododge_scope`), shots from behind too (`cl_touch_autododge_rear`), the arrow (`cl_touch_autododge_cue`) |
 | **Auto-shoot** | Auto-shoot on / off, reaction delay (0–0.5 s), shoot radius (0–6°), keep firing, which weapons; shot choice: secondary fire when better, lead moving targets, guide and detonate rockets, switch to the best weapon, *Hold fire when the blast would hit me* (`cl_touch_autoshoot_safe`); aim-area-only, range — see [Shoot helpers](#shoot-helpers-auto-shoot-and-aim-assist-engine) |
 | **Dynamics** | Performance profile, frame cap, vsync, dynamic resolution, render scale, jump button mode |
