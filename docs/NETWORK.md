@@ -1008,3 +1008,15 @@ total, speed; before, the card said "Receiving game data" for 9 s with no number
 the server's first data arrives (bytes of the last join's total, 22 KB by default); on a metered link the card says
 "mobile data" and how much the join used, and the app sets `touch_net_metered` (the map picture is then only
 range-read when it is at most `touch_net_metered_shot_kb`, 256 KB, so a Quake 1 BSP is not fetched for show).
+
+### 1289 q1android: a resume against a server that ignores Range
+A server whose HTTP host ignores `Range` (Python's `http.server`, the Quake 1 server's pack host) answers a
+resumed request with `200` and the whole file. libcurl then fails the transfer with error 33
+(`CURLE_RANGE_ERROR`) before it writes a byte. A partial pack on disk (an app killed mid-download, a failed
+attempt, a download started by `touch_early_downloads`) was resumed from the same offset by every retry, so
+all six tries failed identically and the join went on without the pack: no HUD pictures, textures, models.
+`TouchCurl_Ended` now empties the file and drops its `.meta` on error 33, and the retry starts at byte 0.
+A fresh download from such a server was already safe: the parallel pieces need `206` from every extra
+connection (`TC_Write`, `TouchCurl_Frame`) and otherwise leave the stock transfer alone. Test:
+`scripts/test-curl-norange.sh <engine> <basedir>` (before: error 33 on every try, file stays at the partial;
+after: the whole file, identical to the source).
