@@ -371,6 +371,7 @@ final class AndySUState {
     static String friendlyMessage(String message) {
         if (message == null) return "";
         String lower = message.toLowerCase(Locale.ROOT);
+        if (UpdateRetry.offline(message)) return UpdateRetry.offlineMessage();
         if (lower.contains("could not download")) return UpdateRetry.publishingMessage();
         return oneLine(message);
     }

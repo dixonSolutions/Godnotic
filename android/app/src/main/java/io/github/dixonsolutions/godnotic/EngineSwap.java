@@ -81,7 +81,7 @@ final class EngineSwap {
 
     /** Whether the engine (and its loader) runs in this process: a swap needs one to replace. */
     static boolean engineRunning() {
-        return appContext != null && XonoticActivity.running && "game".equals(ProcessState.stage());
+        return LiveApply.engineUp(appContext != null, XonoticActivity.running, ProcessState.engineStarted());
     }
 
     /** The loader answers for the engine library it loads; null means the swap was accepted. */
@@ -294,7 +294,7 @@ final class EngineSwap {
      * restarts: a refusal leaves the running engine as it was.
      */
     static synchronized String swapEngine(File slotDir, String version) {
-        if (!engineRunning()) return "the game is not running yet";
+        if (!engineRunning()) return "the game has not started yet";
         String blocked = preflight(slotDir, version);
         if (blocked != null) {
             decline(version, blocked);

@@ -280,4 +280,10 @@ public class AndySUStateTest {
         assertTrue(AndySUState.mayApplyUnasked(false, true));
         assertTrue(AndySUState.mayApplyUnasked(true, false));
     }
+
+    @Test public void hostOfflineErrorIsPlainText() {
+        String m = AndySUState.friendlyMessage("java.net.UnknownHostException: Unable to resolve host "
+                + "\"release-assets.githubusercontent.com\": No address associated with hostname");
+        org.junit.Assert.assertEquals(UpdateRetry.offlineMessage(), m);
+    }
 }

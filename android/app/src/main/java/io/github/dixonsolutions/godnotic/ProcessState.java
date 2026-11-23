@@ -60,6 +60,11 @@ final class ProcessState {
         return stage;
     }
 
+    /** Whether the game's engine was started in this process and has not gone away. */
+    static boolean engineStarted() {
+        return engine;
+    }
+
     /** The engine is up (or went away): the game's own thread is running. */
     static void engine(Context context, boolean running) {
         engine = running;

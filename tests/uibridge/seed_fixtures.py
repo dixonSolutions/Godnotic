@@ -340,13 +340,27 @@ def control_dialog(unlocked=True, local=True):
         ], title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
     sec = lambda k, kids, t: N(f"ctl/{k}", "section", kids, title=t)
     return N("ctl", "screen", [
-        sec("bots", [N("ctl/bots/n", "stepper", label="Bots", bind="vm:ctl.bots", value=3, min=0, max=32, step=1),
-                     N("ctl/bots/apply", "button", label="Apply", action=A("ctl.bots", "Apply", "check"), style="secondary")], "Bots"),
+        sec("bots", [N("ctl/bots/botform", "form", [
+            N("ctl/bots/botform/n", "stepper", label="Bots", bind="cvar:touch_ctl_bots", value=4, min=0, max=32, step=1),
+            N("ctl/bots/botform/skill", "choice", label="Skill", bind="cvar:touch_ctl_skill", style="segmented", value="4",
+              options=[{"value": "1", "label": "Easy"}, {"value": "4", "label": "Normal"}, {"value": "7", "label": "Hard"}, {"value": "10", "label": "Godlike"}]),
+            N("ctl/bots/botform/team", "choice", label="Team", bind="cvar:touch_ctl_team", style="segmented", value="auto",
+              options=[{"value": "auto", "label": "Balanced"}, {"value": "red", "label": "Red"}, {"value": "blue", "label": "Blue"}],
+              help="Team games only. Balanced spreads the bots over the teams.")], density="compact"),
+                     N("ctl/bots/apply", "button", label="Apply bots", action=A("ctl.bots", "Apply bots", "check"), style="primary")], "Bots"),
+        sec("match", [N("ctl/match/maprow", "row", [
+            N("ctl/match/maprow/map", "field", label="Map name", bind="vm:ctl.map", value=""),
+            N("ctl/match/maprow/go", "button", label="Change map", action=A("ctl.map", "Change map", "map"), style="secondary")]),
+                      N("ctl/match/limits", "form", [
+            N("ctl/match/limits/time", "stepper", label="Time limit", bind="cvar:touch_ctl_timelimit", value=20, min=0, max=120, step=5, unit="min"),
+            N("ctl/match/limits/frags", "stepper", label="Frag limit", bind="cvar:touch_ctl_fraglimit", value=30, min=0, max=500, step=10)], density="compact"),
+                      N("ctl/match/matchbtns", "row", [
+            N("ctl/match/matchbtns/limitsapply", "button", label="Apply limits", action=A("ctl.limits", "Apply limits", "check"), style="secondary"),
+            N("ctl/match/matchbtns/more", "button", label="More time", action=A("ctl.extend", "More time"), style="secondary"),
+            N("ctl/match/matchbtns/restart", "button", label="Restart", action=A("ctl.restart", "Restart", "resume"), style="secondary")])], "Match"),
         sec("players", [N("ctl/players/kickrow", "row", [
-            N("ctl/players/kickrow/who", "field", label="Player number or name", bind="vm:ctl.kick", value=""),
-            N("ctl/players/kickrow/kick", "button", label="Kick", action=A("ctl.kick", "Kick", "close"), style="destructive")])], "Players"),
-        sec("match", [N("ctl/match/restart", "button", label="Restart", action=A("ctl.restart", "Restart", "resume"), style="secondary"),
-                      N("ctl/match/time", "stepper", label="Time limit", bind="vm:ctl.timelimit", value=20, min=0, max=120, step=5, unit="min")], "Match"),
+            N("ctl/players/kickrow/who", "field", label="Kick: player number or name", bind="vm:ctl.kick", value=""),
+            N("ctl/players/kickrow/kick", "button", label="Kick", action=A("ctl.kick", "Kick", "close"), style="destructive")])], "Server"),
         sec("cheats", [N("ctl/cheats/toggle", "button", label="Turn cheats on", action=A("ctl.cheats", "Turn cheats on"), style="secondary")], "Cheats"),
     ] + ([] if local else [N("ctl/forget", "button", label="Forget password", action=A("ctl.forget", "Forget password", "lock"), style="secondary")]),
         title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.close", "Close", "check", style="primary"))
@@ -622,7 +636,7 @@ def main():
                                app([pause_screen(hosting=True)], modal=[lan_popup()], context="game")))
     write("control-locked", fixture("control-locked", "Server control on another's server before the rcon password: only the password form.",
                                     app([pause_screen()], modal=[control_dialog(unlocked=False)], context="game")))
-    write("control", fixture("control", "Server control on this device's own game (no password): bots, kick, map and limits, cheats.",
+    write("control", fixture("control", "Server control on this device's own game (no password): bots (count, skill, team), map, limits, kick, cheats.",
                              app([pause_screen(hosting=True)], modal=[control_dialog()], context="game")))
     write("credits", fixture("credits", "Credits and licence.", app([h, credits_screen()])))
 

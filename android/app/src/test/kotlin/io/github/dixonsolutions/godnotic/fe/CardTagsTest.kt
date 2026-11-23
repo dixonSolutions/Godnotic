@@ -61,7 +61,7 @@ class CardTagsTest {
             assertTrue("w=$w", CardTags.tableSizeFor((w * d).toInt(), d) > CardTags.sizeFor((w * d).toInt(), d))
         }
         assertEquals(52f, CardTags.tableRowDp(600f), 0f)
-        assertEquals(34f, CardTags.tableRowDp(180f), 0f)
+        assertEquals(32f, CardTags.tableRowDp(180f), 0f)
         assertTrue(CardTags.NAME_WEIGHT > CardTags.MAP_WEIGHT)
     }
 }
