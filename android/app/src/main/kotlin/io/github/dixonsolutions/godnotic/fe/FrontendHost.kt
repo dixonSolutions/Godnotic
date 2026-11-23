@@ -423,7 +423,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         // a fetched real picture (popup finished after Join, or an earlier visit) beats the dialog's art; the engine's own beats both
         val realLocal = joinMapName.takeIf { it.isNotEmpty() }?.let { MapShots.cached(it)?.path }
         val installed = joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { renderer?.mapPicture(it) }
-        val shot = JoinFlow.firstShot(c.str("levelshot"), realLocal ?: installed ?: hint?.second, joinMapName.takeIf { it.isNotEmpty() && c.str("levelshot").isEmpty() }?.let { MapShots.fallbackPath(it, "") })
+        val shot = JoinFlow.firstShot(c.str("levelshot"), realLocal ?: installed ?: hint?.second, null)
         val showShot = JoinFlow.showShot(curShot.path.ifEmpty { shot }, lastWorld)
         previewSeen = JoinFlow.preview(stage, previewSeen, showShot)
         val kind = if (c.str("levelshot").isNotEmpty()) c.str("levelshot_kind") else MapShots.kindOf(shot)
@@ -622,8 +622,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val haveBmp = showShot && bmp != null
         val world = lastWorld // the engine's own world is drawable: it shows through the card
         // never a black void: the picture, else the live world, else the map's name on a branded backdrop
-        loadingBanner?.visibility = if (haveBmp || world) View.GONE else View.VISIBLE
-        (loadingBanner as? android.widget.TextView)?.let { t -> val m = joinMapName; if (t.text.toString() != m) t.text = m }
+        loadingBanner?.visibility = View.GONE // never the map's name as text: the picture, the live world, else the neutral gradient
         when {
             haveBmp -> setShotBackground(screen, bmp!!, if (shotGeneric) JoinFlow.GENERIC_DIM else 1f)
             world -> screen.setBackgroundColor(android.graphics.Color.TRANSPARENT)

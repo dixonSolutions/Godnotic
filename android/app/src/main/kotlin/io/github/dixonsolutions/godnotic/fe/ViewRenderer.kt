@@ -239,6 +239,9 @@ class ViewRenderer(
             // a custom map's picture from the map-picture host, for the first rows only and never on a metered link
             if (knownPath("pk3:maps/$map") == null && MapShots.prefetchAllowed(metered)) MapShots.fetchAsync(map)
         }
+        // ...and, from the server itself, the first rows' custom maps (one probe and a few Range reads per map, never on a metered link)
+        if (MapShots.prefetchAllowed(metered)) for ((map, host, port) in state.firstServers(WARM_MAPS))
+            if (knownPath("pk3:maps/$map") == null && MapShots.cached(map) == null && !MapShots.recentlyMissing(map)) MapShots.fetchAllAsync(map, host, port, false) { }
         for (l in lists[source].orEmpty()) {
             state.publish { offset, total, rows -> l.rows(offset, total, rows) }
             nodes[l.id]?.let { bindEmpty(it) }
@@ -461,6 +464,8 @@ class ViewRenderer(
             }
             (sv.layoutParams as? FrameLayout.LayoutParams)?.let { lp -> lp.height = if (modal) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT; sv.layoutParams = lp }
             if (modal) { bar.setPadding(dp(8f), 0, dp(8f), dp(4f)); body.setPadding(dp(8f), dp(4f), dp(8f), dp(8f)); bottom.setPadding(dp(8f), dp(8f), dp(8f), dp(4f)) }
+            // a dialog's action row sits on the dialog's own body: the full-screen bottom bar's darker strip is a band there (the Welcome's Continue)
+            bottom.setBackgroundColor(if (modal) Color.TRANSPARENT else 0xF2050B18.toInt())
             // Dim only a paused local game; an online match remains visible.
             root.setBackgroundColor(if (p.str("kind") == "game") { MenuBackdrop.color(p.bool("menu_paused")) } else if (modal) Color.TRANSPARENT else Theme.BG)
             // Home has no header (the banner is its title): the space goes to the banner and cards
@@ -1783,17 +1788,15 @@ class ViewRenderer(
             img.onShown = { Log.i("Godnotic", "Preview: picture set ${android.os.SystemClock.uptimeMillis() - t0} ms after build map=$map") }
             picture(img, ref, sync = true, blocking = false) // a picture that is not decoded yet never holds the dialog (or Join) back
             if (knownPath(ref) == null) {
-                // not installed (a server's custom map): never a bare box. A file fetched before, else art from the
-                // map's name at once, and a small picture from the map-picture host fading in over it
-                val art = MapShots.fallback(map, cells.str("mode"))
-                img.onMissing = { img.set(art) }
+                // not installed (a server's custom map): a file fetched before, else the neutral loading state while a small
+                // picture is fetched from the picture host or the server's own pack; nobody has one: the box closes up. Never art.
+                var fetching = true
+                img.onMissing = { if (fetching) img.set(null) else img.visibility = View.GONE }
                 val have = MapShots.cached(map)?.let { Images.now(it.path, CARD_PX) }
-                img.set(have ?: art)
-                if (have == null) {
-                    // the real picture, with no host of ours: the picture host, else the server's own map pack by Range requests
+                if (have != null) { fetching = false; img.set(have) } else {
                     val host = address.substringBeforeLast(':').trim('[', ']'); val port = address.substringAfterLast(':').toIntOrNull() ?: 26000
-                    MapShots.fetchAllAsync(map, host, port, JoinFlow.metered(Net.kind(ctx))) { f ->
-                        Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) img.set(b) } }
+                    MapShots.fetchAllAsync(map, host, port, JoinFlow.metered(Net.kind(ctx)), onFail = { img.post { fetching = false; img.visibility = View.GONE } }) { f ->
+                        Images.now(f.path, CARD_PX)?.let { b -> img.post { if (img.tag == ref) { fetching = false; img.visibility = View.VISIBLE; img.set(b) } } }
                     }
                 }
             }
@@ -1810,7 +1813,7 @@ class ViewRenderer(
         val join = Kit.button(ctx, "Join", primary = true) {
             Log.i("Godnotic", "Preview: Join tapped $address")
             // the join card's picture until the engine names one: the same one the dialog showed (installed, fetched, or the art)
-            joinHint = map to (if (map.isNotEmpty()) (knownPath("pk3:maps/$map") ?: MapShots.cached(map)?.path ?: MapShots.fallbackPath(map, cells.str("mode"))) else null)
+            joinHint = map to (if (map.isNotEmpty()) (knownPath("pk3:maps/$map") ?: MapShots.cached(map)?.path) else null)
             closeDetails()
             events.row("mp/servers", address, "activate")
         }.apply {

@@ -29,4 +29,8 @@ chk "the engine's own download lines start at the bottom edge" 'y = vid_conheigh
 if grep -nE 'banner\.background' "$fe/FrontendHost.kt"; then bad "the banner has its own background (a band behind the card)"; else ok "the map-name banner has no background of its own"; fi
 chk "the placeholder state sets the gradient on the whole screen" 'screen\.background = nameBackdrop' "$fe/FrontendHost.kt"
 chk "the picture state is the screen's background (full bleed)" 'setShotBackground\(screen, bmp' "$fe/FrontendHost.kt"
+# no placeholder art: never the map's name as text, never generated art (owner, v1.2.323 pomp)
+if grep -nE 'fun fallback|fallbackPath|fallbackFile' "$fe/MapShots.kt" "$fe/ViewRenderer.kt" "$fe/FrontendHost.kt"; then bad "generated placeholder art exists"; else ok "no generated placeholder art"; fi
+chk "the join card never shows the map's name as text" 'loadingBanner\?\.visibility = View\.GONE' "$fe/FrontendHost.kt"
+chk "the popup closes up when no picture can be found" 'img\.visibility = View\.GONE' "$fe/ViewRenderer.kt"
 exit $fail

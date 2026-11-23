@@ -123,6 +123,20 @@ internal class ServerListState(
         return out
     }
 
+    /** The (map, host, port) of the first `n` rows drawn: the servers whose custom maps' pictures are worth fetching ahead. */
+    fun firstServers(n: Int): List<Triple<String, String, Int>> {
+        val out = ArrayList<Triple<String, String, Int>>()
+        for (i in 0 until minOf(n, size)) {
+            val key = keyAt(i) ?: continue
+            val cells = items[key]?.row?.get("cells") as? Map<*, *> ?: continue
+            val map = cells["map"]?.toString().orEmpty()
+            val addr = (cells["address"]?.toString().orEmpty()).ifEmpty { key.toString() }
+            val host = addr.substringBeforeLast(':').trim('[', ']'); val port = addr.substringAfterLast(':').toIntOrNull() ?: continue
+            if (map.isNotEmpty() && host.isNotEmpty()) out.add(Triple(map, host, port))
+        }
+        return out
+    }
+
     /** Rows the list has been sent at some point (drawn or filtered out). */
     val known: Int get() = items.size
 

@@ -65,12 +65,12 @@ class MapShotsTest {
         assertTrue(MapShots.valid("sinister_full_r1")); assertTrue(MapShots.valid("quark-ht"))
     }
 
-    @Test fun listPrefetchSkipsAMeteredLinkButArtAndKindsAreStable() {
+    @Test fun listPrefetchSkipsAMeteredLinkAndKindsAreStable() {
         assertTrue(MapShots.prefetchAllowed(false)); assertFalse(MapShots.prefetchAllowed(true))
-        assertEquals("generic", MapShots.kindOf(File(tmp, "x.fallback.png").path))
+        assertEquals("map", MapShots.kindOf(File(tmp, "x.jpg").path))
         assertEquals("list", MapShots.kindOf("/data/fe_cache/maps_x.jpg"))
-        // the card's first picture (the art, generic) is replaced by the engine's own list picture, then the map's: never the other way
-        val art = JoinFlow.Shot("/m/x.fallback.png", "generic", "x")
+        // an engine stand-in (generic) is replaced by the engine's own list picture, then the map's: never the other way
+        val art = JoinFlow.Shot("/m/generic.jpg", "generic", "x")
         val eng = JoinFlow.Shot("/fe_cache/maps_x.jpg", "list", "x")
         assertEquals(eng, JoinFlow.nextShot(art, eng))
         assertEquals(eng, JoinFlow.nextShot(eng, art))
