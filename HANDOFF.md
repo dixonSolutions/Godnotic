@@ -88,8 +88,16 @@ Fixed from the first look: the capsule sat inside the stick area (moved above DA
 - A look drag during the ~0.5 s boost is not kept. Air control after the blast is not modelled. Dodge numbers on a remote server are the
   stock ones.
 ## Known bugs / neighbours
-- Engine segfault on a headless client: `net_slist` then `slist` against the real master list crashed the client in `TouchSrvInfo_PlayerDetails`
-  ("src string unterminated or truncated to 127 bytes") when printing player lists. Not mine; reproduced twice.
+- Server list status (coordinator follow-up, fixed): `TouchSrvInfo_PlayerDetails` copied the name from its opening quote to the END of the whole
+  status (`dp_strlcpy`), so every long status warned "src string unterminated or truncated" through Con_Printf (spam, and it also interleaved with
+  `fe_dump` JSON). It now copies exactly the bytes between the quotes (memcpy, clamped, NUL). A second source of the same warning was
+  `netconn.c` copying a busy server's whole player block into `players[2800]`; that now goes through `TouchNet_CopyPlayerBlock` (touch_net.c):
+  whole lines only, no warning. Test: `tests/srvinfo/test_frontend_players.py` has a second fake server with 45 long colour-coded players
+  (a 3 KB status): 35 whole rows listed, no truncation warning, process exits 0 (it failed on the old code through the warning assertion).
+  THE SEGFAULT: I could not reproduce it again. On the old code the real-master repro (`net_slist`, `slist`, quit) ran 5 more times with rc 0
+  and 6-12 warnings each; with the fix, 3 runs rc 0 and 0 warnings. The crash I saw first was most likely my own: a second client started on the
+  same userdir while the first was still running (its log had 67 lines). The stock-server crash (dedicated, SV_Frame) was a server started
+  on a basedir whose pk3 links dangled. No out-of-bounds write exists in PlayerDetails (players[128] is capped, names clamped to 127).
 - The stock-data flatpak the coordination notes mention is gone (`~/.local/share/flatpak/.../xonotic/data` missing, `godnotic-audit/base` pk3 links
   dangle), so the stock-server suites cannot run; I used the 20261107 packs plus the audit progs as a foreign-CSQC server.
 - Forward Devastator boost after another-level landing: one MISS in the numbers above.
