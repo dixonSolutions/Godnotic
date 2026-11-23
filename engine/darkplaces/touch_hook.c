@@ -21,6 +21,7 @@ are touch_rescue.h's.
 #include "touch_turn.h"
 #include "touch_pause.h"
 #include "touch_nade.h"
+#include "touch_dash.h"
 #include "touch_frontend.h"
 #include "touch_tactics.h"
 
@@ -338,6 +339,7 @@ void TouchHook_ProgsChanged(void)
 	bind_weapon();
 	TouchDodge_ProgsChanged();
 	TouchNade_ProgsChanged();
+	TouchDash_ProgsChanged();
 	th.switched = false;
 	th.prev_weapon = -1;
 	TouchRescue_Reset(&th.rs);
@@ -391,7 +393,7 @@ qbool TouchHook_Held(void)
 
 qbool TouchHook_InUse(void)
 {
-	return th.held || th.switched || host.realtime - th.release_time < HOOK_GUARD;
+	return th.held || th.switched || host.realtime - th.release_time < HOOK_GUARD || TouchDash_Busy();
 }
 
 qbool TouchHook_Rescuing(void)
@@ -422,7 +424,7 @@ int TouchHook_Buttons(void)
 	static cvar_t *sheet;
 	if (!sheet)
 		sheet = Cvar_FindVar(&cvars_all, "_touch_chat_sheet", CF_CLIENT);
-	return (sheet && sheet->integer ? 512 : 0) | th.buttons | TouchDodge_Buttons() | TouchNade_Buttons() | TouchTactics_Buttons();
+	return (sheet && sheet->integer ? 512 : 0) | th.buttons | TouchDodge_Buttons() | TouchNade_Buttons() | TouchDash_Buttons() | TouchTactics_Buttons();
 }
 
 // The server runs the nades mutator (offhand grenades on +hook).
@@ -547,6 +549,7 @@ void TouchHook_Frame(void)
 
 	TouchPause_Frame();
 	TouchNade_Frame();
+	TouchDash_Frame();
 	TouchTurn_Frame();
 	if (cl.worldmodel != th.hurt_model)
 		th_bind_map();
@@ -785,6 +788,7 @@ void TouchHook_Init(void)
 	TouchTactics_Init();
 	TouchPause_Init();
 	TouchNade_Init();
+	TouchDash_Init();
 	TouchFE_Init(); // native front-end bridge (touch_frontend.c)
 	TouchMention_Init();
 	TouchChatLog_Init();

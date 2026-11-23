@@ -11,6 +11,7 @@ Updated by hand; if an item is not here, it is not being tracked.
 | Move stick fixed in place and larger; top bar never overlaps | touch_hud.c, touch_topbar.h | 1.2.217 |
 | Spectator bar opt-in; MENU carries follow; aim-pull dead band | touch_spectate, touch_hudmode | 1.2.218 |
 | Auto boost: pure decision function + 42 checks (not wired yet) | touch_boost.h | 1.2.219 |
+| Smart DASH: dodge or weapon boost (up/forward, weapon chosen, server dodging read, picker, setting default on) | touch_dash.c, touch_dashplan.h, touch_hud.c hooks | work/dash, not released |
 | Music starts when its pack arrives late | touch_fs_mount.h | 1.2.220-226 |
 | Dynamic cursor: no pointer until a mouse is used | vid_touchdetect.c | 1.2.226 |
 | Escape opens the native menu and stays open | EscapeKeyRoute (Android) | 1.2.226 |
@@ -42,7 +43,6 @@ Updated by hand; if an item is not here, it is not being tracked.
 | OSK: system keyboard first, fall back to ours | needs SDL_IsScreenKeyboardShown for a real 'did it appear' answer, not a blind timer |
 | Map load, reconnect, vote responsiveness | one benchmark family: extend scripts/bench-load.sh to reconnect and vote before optimising |
 | Server filter glitches beyond the two in progress | needs a reproduction |
-| Auto boost: wire the decision to a control and a setting, default off | cvar, HUD trigger, settings row, test |
 | Asset profile on Android | confirm slim/ASTC is chosen; phone packs are the cheap 554 MB win |
 
 ## Rules used

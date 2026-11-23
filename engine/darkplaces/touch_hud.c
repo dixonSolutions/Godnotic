@@ -22,6 +22,7 @@ applies to both.
 #include "touch_aim.h"
 #include "touch_hook.h"
 #include "touch_nade.h"
+#include "touch_dash.h"
 #include "touch_turn.h"
 #include "touch_ui.h"
 #include "touch_altfire.h"
@@ -2376,7 +2377,7 @@ void TouchHUD_Frame(void)
 			if (f->role == ROLE_TURN)
 				TouchTurn_Start(); // on the press: nothing to undo
 			if (f->role == ROLE_DODGE)
-				Cbuf_AddText(cmd_local, "+dodge\n-dodge\n"); // a press and release in one frame would never be seen
+				TouchDash_Press(now); // Touch: the smart DASH (touch_dash.c): a dodge or a weapon boost
 		}
 		else
 		{
@@ -2388,6 +2389,8 @@ void TouchHUD_Frame(void)
 			f->last_x = px;
 			f->last_y = py;
 			f->first_frame = false;
+			if (f->role == ROLE_DODGE)
+				TouchDash_Hold(px, py, now - f->down_time); // Touch: long-press picker
 		}
 		f->lost_time = 0;
 	}
@@ -2409,6 +2412,8 @@ void TouchHUD_Frame(void)
 		if (now - f->lost_time < grace)
 			continue;
 		// released
+		if (f->role == ROLE_DODGE)
+			TouchDash_Release(f->last_x, f->last_y); // Touch: a tap acts on release
 		if (f->role == ROLE_CON || f->role == ROLE_CHAT || f->role == ROLE_PAUSE)
 			pill_release(f);
 		else if (f->role == ROLE_TOSPEC || f->role == ROLE_READY)
@@ -2812,6 +2817,25 @@ static void draw_circle_widget(const char *xk, float dx, const char *yk, float d
 	float nx = cv(xk, dx);
 	widget_center(!strcmp(xk, "touch_crouch_x") ? crouch_x(nx) : nx, cv(yk, dy), &cx, &cy);
 	widget_button(cx, cy, widget_radius(cv(sk, ds)), label, pressed, a, accent);
+}
+
+// Touch: what a tap on DASH would do, under the button, and the long-press
+// picker (touch_dash.c decides; this only draws).
+static void draw_dash_extras(float a)
+{
+	float cx, cy, r;
+	const char *label;
+	touch_dash_chip_t chips[10];
+	int n, i;
+	widget_center(cv("touch_dodge_x", 0.165f), cv("touch_dodge_y", 0.480f), &cx, &cy);
+	r = widget_radius(cv("touch_dodge_size", 0.100f));
+	TouchDash_NoteButton(cx, cy, r);
+	label = TouchDash_Label();
+	if (label[0] && !TouchDash_PickerOpen())
+		widget_capsule(cx, cy + r * 1.45f, r * 0.95f, r * 0.32f, label, false, false, a * 0.85f, C_ACCENT);
+	n = TouchDash_Chips(chips, 10);
+	for (i = 0; i < n; i++)
+		widget_capsule(chips[i].x, chips[i].y, chips[i].hx, chips[i].hy, chips[i].label, chips[i].hot, chips[i].current, a, C_ACCENT);
 }
 
 static void draw_pill(const char *xk, float dx, const char *yk, float dy, const char *sk, float ds, const char *ak, float da, const char *label, qbool pressed, float a)
@@ -3534,7 +3558,10 @@ void TouchHUD_Draw(void)
 	if (cv("touch_reload_visible", 0))
 		draw_circle_widget("touch_reload_x", 0.720f, "touch_reload_y", 0.480f, "touch_reload_size", 0.100f, "RLD", role_owned(ROLE_RELOAD), a, C_ACCENT);
 	if (cv("touch_dodge_visible", 0))
+	{
 		draw_circle_widget("touch_dodge_x", 0.165f, "touch_dodge_y", 0.480f, "touch_dodge_size", 0.100f, "DASH", role_owned(ROLE_DODGE), a, C_ACCENT);
+		draw_dash_extras(a); // Touch: indicator and picker
+	}
 
 	// Readouts draw only for a live player, like Touch_Hud_Draw.
 	if (cl.stats[STAT_HEALTH] > 0)
