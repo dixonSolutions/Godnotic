@@ -21,24 +21,14 @@ object HomeFit {
     /** True when a field of at least [minField] and chips of [chipsNatural] fit beside each other in [width]. */
     fun sideBySide(width: Int, minField: Int, chipsNatural: Int, gap: Int) = width >= minField + gap + chipsNatural
 
-    /** What the server-list card spends on its title, summary and padding (dp), and the shortest it takes ten lines at. */
-    const val MP_OVERHEAD_DP = 100f
-    const val MP_MIN_BANNER = 0.12f
-
     /**
-     * [mpTall] (with [density]): in landscape the server-list card takes all the height the row
-     * leaves, enough for [CardTags.WANTED_ROWS] lines, by shrinking the banner (to at least
-     * [MP_MIN_BANNER] of the height) where it has to; the other cards keep their size.
+     * Every card, the server-list one included, is [Plan.cardH] tall: the server card shows the
+     * lines that fit its share (see [TableRows]) rather than growing past its neighbours.
      */
-    fun plan(w: Int, h: Int, gap: Int, tiles: Int, mpTall: Boolean = false, density: Float = 0f): Plan {
+    fun plan(w: Int, h: Int, gap: Int, tiles: Int): Plan {
         val portrait = w < h
         val n = max(1, tiles)
-        var bannerH = min((w / BANNER_ASPECT).toInt(), (h * if (portrait) 0.24f else LANDSCAPE_BANNER).toInt())
-        val tall = mpTall && density > 0f && !portrait
-        if (tall) {
-            val need = ((MP_OVERHEAD_DP + CardTags.WANTED_ROWS * CardTags.MIN_ROW_DP) * density).toInt()
-            bannerH = min(bannerH, max((h * MP_MIN_BANNER).toInt(), h - gap - need))
-        }
+        val bannerH = min((w / BANNER_ASPECT).toInt(), (h * if (portrait) 0.24f else LANDSCAPE_BANNER).toInt())
         val room = max(0, h - bannerH - gap)
         val tilesH = if (portrait) {
             // stacked cards: wide, but never taller than 0.4 of the width each
@@ -48,10 +38,8 @@ object HomeFit {
             val cw = (w - gap * (n - 1)) / n
             min(room, (cw * 1.25f).toInt())
         }
-        val mpH = if (tall) max(tilesH, room) else tilesH
-        val gridH = max(tilesH, mpH)
-        val total = bannerH + gap + gridH
-        return Plan(portrait, bannerH, bannerH + gap, gridH, max(0, (h - total) / 2), tilesH, mpH)
+        val total = bannerH + gap + tilesH
+        return Plan(portrait, bannerH, bannerH + gap, tilesH, max(0, (h - total) / 2), tilesH, tilesH)
     }
 }
 
@@ -89,14 +77,10 @@ class FitBody(ctx: Context, spacingPx: Int) : LinearLayout(ctx) {
         val h = MeasureSpec.getSize(hSpec) - paddingTop - paddingBottom
         val gap = max(dividerDrawable?.intrinsicHeight ?: 0, 1)
         val tiles = (0 until g.childCount).count { g.getChildAt(it).visibility != GONE }
-        val mpIndex = (0 until g.childCount).map { g.getChildAt(it) }.filter { it.visibility != GONE }.indexOfFirst { it.tag == "mp-card" }
-        val p = HomeFit.plan(w, h, gap, tiles, mpIndex >= 0, resources.displayMetrics.density)
+        val p = HomeFit.plan(w, h, gap, tiles)
         plan = p
         g.fill = true
         g.stack = p.stack
-        g.tallIndex = if (!p.stack && p.mpH != p.cardH) mpIndex else -1
-        g.tallH = p.mpH
-        g.otherH = p.cardH
         banner()?.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(p.bannerH, MeasureSpec.EXACTLY))
         g.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(p.tilesH, MeasureSpec.EXACTLY))
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))

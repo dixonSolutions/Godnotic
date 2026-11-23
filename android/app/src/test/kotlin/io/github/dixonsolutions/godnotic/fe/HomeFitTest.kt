@@ -54,44 +54,76 @@ class HomeFitTest {
         for ((w, h, d) in listOf(Triple(1920, 1200, 2f), Triple(1200, 1920, 2f), Triple(2400, 1080, 2.75f), Triple(1080, 2400, 2.75f))) {
             val p = HomeFit.plan(w, h, (16 * d).toInt(), 3)
             val cardW = if (p.stack) w else (w - 2 * (16 * d).toInt()) / 3
-            val rowPx = Math.round(CardTags.tableRowDp(cardW / d) * d)
+            val natural = Math.round(CardTags.tableRowDp(cardW / d) * d)
             val cardH = if (p.stack) (p.tilesH - 2 * (16 * d).toInt()) / 3 else p.tilesH
             val avail = cardH - (120 * d).toInt()
+            val rowPx = CardTags.rowPxFor(avail, natural, d) // the card shrinks its lines (down to the minimum) to fit
             val n = CardTags.fitRows(avail, rowPx, CardTags.MAX_ROWS)
             assertTrue("$w x $h: $n lines in $avail px", n >= 1)
             assertTrue("$w x $h: lines never overflow", n * rowPx <= avail)
         }
     }
 
-    /** The lines the server-list card holds in a plan: its height less the overhead, at the row height it picks. */
+    /** The lines the server-list card holds in a plan: its height less the title, summary and padding (about 100 dp), at the row height it picks. */
     private fun mpLines(p: HomeFit.Plan, w: Int, d: Float, gap: Int): Int {
         val cardW = (w - 2 * gap) / 3
         val natural = Math.round(CardTags.tableRowDp(cardW / d) * d)
-        val avail = p.mpH - (HomeFit.MP_OVERHEAD_DP * d).toInt()
+        val avail = p.mpH - (100 * d).toInt()
         return CardTags.fitRows(avail, CardTags.rowPxFor(avail, natural, d), CardTags.MAX_ROWS)
     }
 
-    @Test fun theServerCardShowsTenLinesOnTheOwnersTablet() {
+    @Test fun theServerCardIsAsTallAsTheOtherCardsInLandscape() {
         val d = 2f
         val gap = (9 * d).toInt()
-        // the whole 1920x1200 screen, and the page's real box (less the bottom bar and padding)
-        for ((w, h) in listOf(1920 to 1200, 1872 to 960)) {
-            val p = HomeFit.plan(w, h, gap, 3, true, d)
-            assertTrue("$w x $h: ${mpLines(p, w, d, gap)} lines in $p", mpLines(p, w, d, gap) >= 10)
+        for ((w, h) in listOf(1920 to 1200, 1872 to 960, 1824 to 1000, 2400 to 1080, 1280 to 520)) {
+            val p = HomeFit.plan(w, h, gap, 3)
+            assertEquals("$w x $h: $p", p.cardH, p.mpH)
+            assertEquals("$w x $h: grid is the card height", p.cardH, p.tilesH)
             assertTrue("fits", p.top >= 0 && p.top + p.tilesTop + p.tilesH <= h)
-            assertTrue("banner stays", p.bannerH >= (h * HomeFit.MP_MIN_BANNER).toInt())
-            // the other cards keep their size (never above 1.25 of their width)
-            val plain = HomeFit.plan(w, h, gap, 3)
-            assertTrue("other cards: ${p.cardH} vs ${plain.tilesH}", p.cardH >= plain.tilesH && p.cardH <= ((w - 2 * gap) / 3 * 1.25f).toInt())
         }
-        // without the server card (or upright) nothing changes
-        assertEquals(HomeFit.plan(1920, 1200, 18, 3).tilesH, HomeFit.plan(1920, 1200, 18, 3, false, d).tilesH)
-        assertEquals(HomeFit.plan(1200, 1920, 18, 3).tilesH, HomeFit.plan(1200, 1920, 18, 3, true, d).tilesH)
+    }
+
+    @Test fun theServerCardShowsTheLinesThatFitTheSharedHeight() {
+        val d = 2f
+        val gap = (9 * d).toInt()
+        val p = HomeFit.plan(1872, 960, gap, 3)
+        val n = mpLines(p, 1872, d, gap)
+        // more than a few, never below the minimum line height, never past the card
+        assertTrue("$n lines in $p", n in 5..CardTags.WANTED_ROWS)
+        val cardW = (1872 - 2 * gap) / 3
+        val natural = Math.round(CardTags.tableRowDp(cardW / d) * d)
+        val avail = p.mpH - (100 * d).toInt()
+        val rowPx = CardTags.rowPxFor(avail, natural, d)
+        assertTrue("row ${rowPx}px", rowPx >= Math.round(CardTags.MIN_ROW_DP * d) && n * rowPx <= avail)
+    }
+
+    @Test fun portraitIsUnchanged() {
+        // upright: the stacked cards, as before
+        val p = HomeFit.plan(1200, 1920, 18, 3)
+        assertTrue(p.stack)
+        assertEquals(p.cardH, p.mpH)
+        assertEquals(minOf(1920 - p.bannerH - 18, 3 * (1200 * 0.4f).toInt() + 2 * 18), p.tilesH)
     }
 
     @Test fun aShortCardShrinksItsLinesRatherThanShowingFewer() {
         assertEquals(88, CardTags.rowPxFor(2000, 88, 2f))
         assertEquals(60, CardTags.rowPxFor(600, 88, 2f))
         assertEquals(60, CardTags.rowPxFor(300, 88, 2f)) // never below the minimum
+    }
+
+    @Test fun chipsStartAtTheTitleWithEqualGapsAndOnlyTheLastGivesWay() {
+        val gap = 20; val sep = 2
+        val natural = listOf(110, 90, 140)
+        // room enough: the first chip starts at the title's x (0), equal gaps, nothing shortened
+        val roomy = CardTags.chipSlots(natural, 1000, gap, sep)
+        assertEquals(0, roomy[0][0])
+        assertEquals(natural, roomy.map { it[1] })
+        val gaps = (1 until roomy.size).map { roomy[it][0] - (roomy[it - 1][0] + roomy[it - 1][1]) }
+        assertTrue("gaps $gaps", gaps.all { it == gap + sep + gap })
+        // a narrow row: the earlier chips keep their width, the last is cut to what is left
+        val tight = CardTags.chipSlots(natural, 330, gap, sep)
+        assertEquals(listOf(110, 90), tight.take(2).map { it[1] })
+        assertTrue("last ${tight[2][1]}", tight[2][1] in 0 until 140 && tight[2][0] + tight[2][1] <= 330)
+        assertEquals(roomy.map { it[0] }, tight.map { it[0] })
     }
 }
