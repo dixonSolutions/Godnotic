@@ -61,6 +61,17 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
             return super.dispatchTouchEvent(ev)
         }
     }
+    private var imeShown = false
+    init {
+        // the system keyboard: when it is up (it takes more than a seventh of the screen) the renderer gives the page the room
+        root.viewTreeObserver.addOnGlobalLayoutListener {
+            val r = android.graphics.Rect()
+            root.getWindowVisibleDisplayFrame(r)
+            val full = root.rootView.height
+            val up = full > 0 && (full - r.bottom) > full / 7
+            if (up != imeShown) { imeShown = up; renderer?.imeChanged(up) }
+        }
+    }
     private val screenLayer = FrameLayout(activity)
     private val dialogLayer = FrameLayout(activity)
     private val toastLayer = FrameLayout(activity)

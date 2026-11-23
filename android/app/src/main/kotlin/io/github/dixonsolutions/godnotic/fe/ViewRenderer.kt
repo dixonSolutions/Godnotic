@@ -239,6 +239,28 @@ class ViewRenderer(
         }
     }
 
+    private var imeUp = false
+    private val imeHidden = HashMap<View, Int>()
+
+    /**
+     * The system keyboard came up or went away. While it is up the page gets the room: a screen's header
+     * row and search block and Home's tab bar are hidden, so a field being typed in (the player name, with
+     * its keypad) has the height to be seen instead of a strip of a few lines.
+     */
+    fun imeChanged(up: Boolean) {
+        if (up == imeUp) return
+        imeUp = up
+        val views = ArrayList<View>()
+        for (e in nodes.values) {
+            if (e.type == "screen") { e.bar?.let { views.add(it) }; e.top?.let { views.add(it) } }
+            else if (e.type == "tabbar") views.add(e.view)
+        }
+        for (v in views) {
+            if (up) { if (!imeHidden.containsKey(v)) { imeHidden[v] = v.visibility; v.visibility = View.GONE } }
+            else imeHidden.remove(v)?.let { v.visibility = it }
+        }
+    }
+
     override fun imageReady(ref: String, path: String) {
         imagePaths[ref] = path
         if (path.isNotEmpty() && memo.put(ref, path)) saveMemo()
