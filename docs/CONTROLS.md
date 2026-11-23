@@ -783,6 +783,14 @@ be seen working.
 | `cl_touch_aimassist_lastseen` | `1` | During a fight, an enemy that goes out of sight is held where it was last seen (below) |
 | `cl_touch_autoshoot_teamsafe` | `1` | Team games: no shot while a teammate is on its line or inside its blast, and no rocket set off next to one |
 | `cl_touch_aimassist_track` | `1` | Follow a fight with the thumb at rest: keep pulling toward the enemy auto-shoot fired at (combat lock, below) and let a projectile's lead slide rather than jump when the enemy reverses; 0 = only while a finger aims |
+| `cl_touch_autoshoot_humanlead` | `1` | Lead and shot timing for players who strafe, jump and reverse at random, not only bots: the target's velocity is smoothed over 30 ms when it is clean and up to 110 ms when it jitters, one garbage sample cannot move it far, a long-flight projectile waits up to 0.25 s for a target that has just changed direction to settle, and the fire window widens a little while the velocity jitters (0 = the old fixed smoothing, no waiting) |
+| `cl_touch_autoshoot_arc` | `1` | Mortar, Electro orbs and Mine Layer: hold the shot while the arc to where the enemy will be hits a wall or the floor on the way (two traces), so a lob is not thrown into the wall in front of you |
+| `cl_touch_aim_breakout` | `1` | Turn away and the helpers let go: a look drag that leaves the target drops the pull, the slowdown and auto-fire for that target at once, and it is not taken again for `cl_touch_aim_breakout_cooldown` unless you turn back onto it |
+| `cl_touch_aim_breakout_angle` | `1.2` | Degrees of drag away from the target (summed over about a quarter second) that release it |
+| `cl_touch_aim_breakout_speed` | `15` | Deg/s a drag must exceed to count as turning away; slower is a thumb at rest |
+| `cl_touch_aim_breakout_flick` | `90` | A single frame of drag this fast (deg/s) releases the target at once |
+| `cl_touch_aim_breakout_cooldown` | `0.7` | Seconds before a released target may be taken again, and for which no other target pulls the view (0 - 3) |
+| `cl_touch_aim_breakout_return` | `4` | Degrees from the body's edge within which turning back toward a released target takes it again at once |
 | `cl_touch_autoshoot_weapons` | `0` | 0 = every weapon, 1 = instant-hit fire only (judged from the weapon in hand; for a weapon the engine does not know, from `_cl_touch_weapon_class`) |
 | `cl_touch_autoshoot_aimonly` | `0` | 1 = auto-shoot only while a finger is on the aim area or FIRE |
 | `cl_touch_aim_ring` | `1` | Draw a ring at the crosshair: accent while an enemy is in the cone, red while the crosshair is on one (`_cl_touch_aim_lock`) |
