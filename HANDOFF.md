@@ -76,24 +76,18 @@ buttons, InUse), `touch_hud.c` (DASH press/hold/release, `draw_dash_extras`), `m
 - ~/.cache/godnotic-work/dash-shots/real_tap.png (real server, real masks), real_up_blaster.png, real_fwd_blaster.png, real_*_devastator.png.
 Fixed from the first look: the capsule sat inside the stick area (moved above DASH), chips overlapped (spacing widened).
 
-## Android emulator (real public server, real adb input)
-Debug APK (x86_64, `assembleDebug` through heavy-run.sh, libsdl/mipmap/assets copied from chatev) installed on emulator-5580, game data pushed, joined
-`66.226.73.30:27301` (Sonoran Arena, stock maps, real ping) with `+connect` and played through the app: dismissed the first-run music prompt, Android's
-full-screen notice and the server's stats question by adb taps. Frames (JPG, 1400 px): ~/.cache/godnotic-work/dash-shots-android/
-- 0_after_prompt.jpg (joining), 0b_dialogs_gone.jpg, **1_capsule.jpg** (the match, DASH with its "DODGE" capsule above it, no overlap with the stick/buttons),
-  2_after_first_tap.jpg, **3_picker.jpg** (after `adb shell input swipe x y x y 3500`: the picker open, chips AUTO UP FORWARD / AUTO BLA, DASH highlighted),
-  4_after_pick.jpg, 5_boost_midair.jpg, 6_after_boost.jpg. Console excerpt (condump): console-excerpt.txt.
-- The FIRST `adb shell input tap` on DASH acted: exactly one `touch dash: tap: dodge (...)` line, then the 0.4 s watch ("no dodge": this server has no dodging).
-  Holding for the picker made no tap line (no misfire) and printed the chips at 0.134/0.204/0.274 x 0.380 and 0.134/0.187 x 0.315.
-- NOT captured: the slide onto UP and the boost on Android (frames 4-6 are the same view, nothing fired: the UP chip coordinates were not parsed because
-  my first console pull raced, so the script slid to (0,0)). The same sequence passed with real finger events on the desktop engine (ui2 case) and the boost
-  fired on the real server from the desktop client (blaster up/forward above).
-- Layout: the second picker row sits next to the small stock panel icons (trash/copy/download/share) at the left; they are close, not overlapping.
+## Android emulator (real public server, real touch events) - DONE after the picker polish
+Debug APK (x86_64, built after the merge with origin/main) on emulator-5580 under emu-slot.sh, game data pushed from local files, joined the real public server
+`66.226.73.30:27301` (Sonoran Arena, stock maps, real ping) and played a match through the app. Frames (JPG <= 1500 px, all looked at): ~/.cache/godnotic-work/dash-shots-android/
+- 1_capsule.jpg: the match with DASH and its capsule above it. 2_after_first_tap.jpg.
+- 3_picker.jpg: after `adb shell input motionevent DOWN 317 576` and a 1.2 s hold: the picker open (rings on Auto/Auto, Blaster, Up, Forward; readable names; clear gap to the chat-log icons).
+- 4_finger_on_up.jpg: the finger moved (motionevent MOVE x6) onto the Up chip, read from the console AFTER the picker opened (Up chip at 439 450): Up filled. 4b_after_pick.jpg: capsule "Blaster up".
+- 5a_boost_rising.jpg, 5b_boost_midair.jpg (health 87), 6_after_landing.jpg (health 88, on the upper platform). 0_after_prompt/0b_dialogs_gone: the first-run prompts dismissed.
+Console (console-excerpt.txt, console-final.txt): the first `input tap` = exactly one `tap: dodge` decision (this server has no dodging); the long press = no tap line; `picked Up (dir 1)`;
+then ONE tap on DASH = `tap: boost (open launch up)` -> `boost: blaster up ... predicted landing -242 -971 80` -> `fired blaster` -> `landed: from -267 -984 80 landed -421 -1063 384 predicted -339 -1049 384 error 83 (horizontal 83, vertical 0)`:
+it fired on the first tap, no misfire, and landed on the platform 304 units higher (the real server's push; health 100 -> 87).
 
 ## NOT verified / not done
-- ANDROID, partly done (see "Android emulator" below): APK built and run on the emulator on a real public server; the first adb tap, the
-  long-press picker and the capsule are shown; the slide-to-UP pick and the boost on Android were NOT captured (a second run could not get an
-  emulator slot: 14 jobs queued, and one earlier run lost its emulator mid-run).
 - The native Kotlin/GTK settings screens: only the bridge fixture and the QC dialog source changed; no screenshot of the native Settings page
   (the QC menu dialog and bridge tree were not rendered to a picture).
 - Real-server runs were headless desktop, not through adb touch input; one real server gave usable boosts (Blaster only).
