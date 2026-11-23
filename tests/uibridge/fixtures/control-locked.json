@@ -179,7 +179,7 @@
     "children": [
      "ctl/text",
      "ctl/form",
-     "ctl/hint"
+     "ctl/remember"
     ]
    },
    {
@@ -223,11 +223,12 @@
     "children": []
    },
    {
-    "id": "ctl/hint",
-    "type": "text",
+    "id": "ctl/remember",
+    "type": "switch",
     "props": {
-     "body": "If nothing happens, the password is wrong or rcon is off on this server.",
-     "style": "caption"
+     "label": "Remember for this server",
+     "bind": "vm:ctl.remember",
+     "value": true
     },
     "children": []
    }

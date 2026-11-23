@@ -336,7 +336,7 @@ def control_dialog(unlocked=True, local=True):
                 N("ctl/form/pw", "field", label="Rcon password", bind="vm:ctl.password", value="", kind="password",
                   private=True, hasValue=False, submit=A("ctl.auth", "Unlock")),
             ], submit=A("ctl.auth", "Unlock", "lock", style="primary")),
-            N("ctl/hint", "text", body="If nothing happens, the password is wrong or rcon is off on this server.", style="caption"),
+            N("ctl/remember", "switch", label="Remember for this server", bind="vm:ctl.remember", value=True),
         ], title="Server control", presentation="dialog", dismissable=True, primary=A("ctl.auth", "Unlock", "lock", style="primary"))
     sec = lambda k, kids, t: N(f"ctl/{k}", "section", kids, title=t)
     return N("ctl", "screen", [

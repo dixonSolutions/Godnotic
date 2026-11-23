@@ -408,6 +408,7 @@ fn server_control_is_hidden_until_the_player_may_control_the_server() {
     let own = snap("control.json");
     assert!(own.node("ctl/bots/n").is_some() && own.node("ctl/players/kickrow/kick").is_some() && own.node("ctl/cheats/toggle").is_some());
     assert!(own.node("ctl/form/pw").is_none() && own.node("ctl/forget").is_none());
+    assert_eq!(locked.node("ctl/remember").unwrap().bool("value"), Some(true), "Remember is ticked by default");
     // the password is never described in a fixture or its field's value
     assert_eq!(locked.node("ctl/form/pw").unwrap().bool("private"), Some(true));
     assert!(locked.node("ctl/form/pw").unwrap().str("value").is_none_or(|v| v.is_empty()));

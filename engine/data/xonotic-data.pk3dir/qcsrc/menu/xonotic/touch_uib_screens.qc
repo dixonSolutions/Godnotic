@@ -1492,12 +1492,26 @@ bool UIB_CtlCheats()
 	return UIB_VM("ctl.cheats") == "1";
 }
 
+float uib_ctl_denied0;   // _touch_rcon_denied when the password was sent
+
 void UIB_CtlOpen()
 {
 	UIB_VMSet("ctl.bots", cvar_string("bot_number"));
 	UIB_VMSet("ctl.timelimit", cvar_string("timelimit"));
 	UIB_VMSet("ctl.fraglimit", cvar_string("fraglimit"));
 	UIB_VMSet("ctl.password", "");
+	UIB_VMSet("ctl.denied", "");
+	if (UIB_VM("ctl.remember") == "")
+		UIB_VMSet("ctl.remember", "1");
+	// the front end kept this server's password (encrypted) and set it with the server's
+	// address in ctl.saved before the open: unlocked at once
+	string saved = UIB_VM("ctl.saved");
+	UIB_VMSet("ctl.saved", "");
+	if (!UIB_CtlLocal() && saved != "" && saved == UIB_JoinAddress())
+	{
+		uib_ctl_denied0 = cvar("_touch_rcon_denied");
+		UIB_VMSet("ctl.auth", saved);
+	}
 	UIB_Modal("ctl");
 }
 
@@ -1523,7 +1537,9 @@ void UIB_BuildControl()
 				uib_j("submit", UIB_A("ctl.auth", _("Unlock"), ""));
 			UIB_Close();
 		UIB_Close();
-		UIB_Text("hint", _("If nothing happens, the password is wrong or rcon is off on this server."), "caption");
+		UIB_Switch("remember", _("Remember for this server"), "vm:ctl.remember", "");
+		if (UIB_VM("ctl.denied") == "1")
+			UIB_Text("hint", _("Wrong password, or rcon is off on this server."), "warning");
 		UIB_Done();
 		return;
 	}
@@ -1672,6 +1688,19 @@ void UIB_LanPopupClose(bool resume)
 
 // Every tick while in a game: open the popup once when a LAN game this device
 // hosts is up, close it when the first player joins if the switch says so.
+// a server that refused the rcon password: back to the password form with a line
+// saying so (the front end forgets the stored password on the same refusal)
+void UIB_CtlTick()
+{
+	if (UIB_VM("ctl.auth") == "" || cvar("_touch_rcon_denied") <= uib_ctl_denied0)
+		return;
+	uib_ctl_denied0 = cvar("_touch_rcon_denied");
+	cvar_set("rcon_password", "");
+	UIB_VMSet("ctl.auth", "");
+	UIB_VMSet("ctl.denied", "1");
+	UIB_RebuildAll();
+}
+
 void UIB_LanPopupTick()
 {
 	if (uibn_context != "game" || !cvar("touch_lan_hosting"))
@@ -2123,6 +2152,7 @@ void UIB_Tick()
 		uib_toast(dbg, "success", "check", 4);
 	}
 	UIB_LanPopupTick();
+	UIB_CtlTick();
 	UIB_JoinFailTick();
 	UIB_JoinTick();
 	TouchData_UIBTick();
@@ -2247,6 +2277,8 @@ void UIB_Action(string node, string a, string payload)
 			if (pw == "" || addr == "")
 				return;
 			cvar_set("rcon_password", pw);
+			uib_ctl_denied0 = cvar("_touch_rcon_denied");
+			UIB_VMSet("ctl.denied", "");
 			UIB_VMSet("ctl.password", "");
 			UIB_VMSet("ctl.auth", addr);
 			UIB_RebuildAll();
