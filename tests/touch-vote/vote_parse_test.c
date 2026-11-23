@@ -66,6 +66,12 @@ int main(void)
 	check_line("late join status", "^7Vote for ^1restart^7 called by ^7Caller^7.", TOUCHVOTE_MSG_CALL, "Caller", "restart");
 
 	{
+		// the server's real "vote help" tail (sv_vote_commands default, colours as sent, ^3 .. ^7)
+		touchvote_list_t list;
+		CHECK_INT(1, TouchVote_ParseList("You can call a vote for or execute these commands: ^3restart fraglimit gotomap nextmap endmatch reducematchtime extendmatchtime allready resetmatch kick cointoss movetoauto shuffleteams balanceteams bots nobots^7 and maybe further ^3arguments^7", &list, 0), "default server help");
+		CHECK_INT(16, list.count, "default server help count");
+	}
+	{
 		static touchvote_list_t list;
 		CHECK_INT(1, TouchVote_ParseList("You can call a vote for or execute these commands: ^3restart gotomap kick ^7 and maybe further ^3arguments^7", &list, 0), "allowed votes response");
 		CHECK_INT(3, list.count, "allowed vote count");

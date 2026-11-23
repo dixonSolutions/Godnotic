@@ -1847,7 +1847,7 @@ void UIB_VoteTick()
 
 void UIB_VoteOpen()
 {
-	uib_vote_key = "";
+	strcpy(uib_vote_key, "");
 	// ask again each time: the server's list may have changed
 	TouchVoteCall_AskCommands();
 	UIB_Push("vote.call");
