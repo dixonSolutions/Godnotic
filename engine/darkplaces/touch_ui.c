@@ -133,6 +133,13 @@ float TouchUI_SheetHeaderHeight(float h)
 	return min(max(hdr_h, 48.0f * TouchUI_ConPerDp()), h * 0.16f);
 }
 
+/* The KEYBOARD toggle of the mouse sheet (touch controls off); hung 8 under
+ * the top of the screen over the chat line. */
+float TouchUI_MouseToggleHeight(float h)
+{
+	return bound(28.0f, h * 0.06f, 44.0f);
+}
+
 float TouchUI_ChatInputTop(float height)
 {
 	return TouchUI_SheetHeaderHeight(height) + 6.0f;
@@ -1283,7 +1290,7 @@ static int TouchUI_LayoutMouseSheet(touchui_sheet_t kind, float x, float y, floa
 {
 	int n = 0;
 	qbool keys = TouchUI_KeysShown(kind);
-	float bh = bound(28.0f, h * 0.06f, 44.0f);
+	float bh = TouchUI_MouseToggleHeight(h);
 	float bw = bh * 4.0f;
 	float kb_h = TouchUI_KeysHeight(w, h, 0, bound(0.28f, touch_kb_height.value, 0.70f));
 

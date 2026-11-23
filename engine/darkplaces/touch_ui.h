@@ -156,6 +156,7 @@ void TouchUI_PositionChatLog(float *x, float *y);
 float TouchUI_ConsoleHeight(float con_h);
 /* Height of the console / chat sheet's header row, sheet units. */
 float TouchUI_SheetHeaderHeight(float h);
+float TouchUI_MouseToggleHeight(float h);
 
 /* Current interactive state */
 touchui_tab_t TouchUI_GetTab(void);
