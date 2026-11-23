@@ -151,12 +151,16 @@ Tactics (caption "Tactics play for you in matches on this device only."):
 | ESP in local matches | `cl_touch_esp_enabled` (string: "local" / "off") | switch, writes "1" / "0" |
 | Outline enemies behind walls | `cl_touch_practice_seethrough` | switch |
 
-**Player** (Name and colours). Sub-tabs Profile / Colours.
+**Player** (Name, character, colours). One page, no sub-tabs
+(`qcsrc/menu/xonotic/touch_uib_player.qc`).
 
 | Row | Cvar | Control |
 |---|---|---|
-| Name | `_cl_name` | field, apply "reconnect" |
-| Shirt colour / Pants colour | `_cl_color` via `vm:player.shirt`, `vm:player.pants` | colour pickers |
+| Name | `_cl_name` | field, apply "reconnect"; shows the colour codes themselves (`^` is written `^^` for the bridge, which strips codes from display text) |
+| Name colours | appends `^0`..`^9` to `_cl_name` via `vm:player.namecolour` | `colour` with a 10-entry palette and `labels` "0".."9" |
+| Character | `_cl_playermodel` + `_cl_playerskin` | the model's preview picture, `<` and `>` to flip through stock and uploaded models in one cycle, its name and "n of N" under it; Delete only on an uploaded one |
+| Shirt / Pants | `_cl_color` via `vm:player.shirt`, `vm:player.pants` | `colour` pickers |
+| Your own model | `uib_pm_import`, `godnotic-playermodels.txt` | file picker; a model that passes the check becomes the character, one that does not says why |
 
 **Privacy** (Statistics and identity).
 
@@ -510,7 +514,7 @@ Gentle mode `cl_gentle`. "Close the address popup when someone joins"
 the same switch (docs/UI_BRIDGE.md, Create), and leaves Settings.
 
 ### Player
-Subtitle: "Name, colours, privacy". Sub-tabs Profile / Colours / Privacy.
+Subtitle: "Name, character, colours". One page (see the Player table above). Privacy is its own section.
 
 - **Privacy**: the three statistics switches as switches, Rankings and Show my name
   greyed while Statistics is off (as the classic tab does), the "Nothing is shared"

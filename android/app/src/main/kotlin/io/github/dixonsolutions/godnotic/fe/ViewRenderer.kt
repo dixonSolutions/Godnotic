@@ -319,6 +319,7 @@ class ViewRenderer(
         "choice" -> choice(id, props)
         "field" -> field(id, props)
         "button" -> button(id, props)
+        "colour" -> colourRow(id, props)
         else -> generic(id, type, props)
     }
 
@@ -1292,6 +1293,23 @@ class ViewRenderer(
                 }
                 holder.addView(Kit.formRow(ctx, title(p), help(p), sl))
             }
+        }
+        return e
+    }
+
+    /** `colour`: the label, then a swatch per palette entry (ColourSwatches). */
+    private fun colourRow(id: String, props: Map<String, Any?>): Entry {
+        val holder = FrameLayout(ctx)
+        val e = Entry(id, "colour", holder, null, props)
+        e.bind = { x ->
+            holder.removeAllViews()
+            val p = x.props
+            val col = Kit.column(ctx, 4f)
+            col.addView(Kit.formRow(ctx, title(p), help(p), null))
+            val sw = ColourSwatches.view(ctx, p["palette"].list().map { it.toString() }, p["labels"].list().map { it.toString() }, p.str("value")) { hex -> events.value(id, hex) }
+            sw.setPadding(dp(16f), 0, dp(16f), dp(8f))
+            col.addView(sw)
+            holder.addView(col)
         }
         return e
     }

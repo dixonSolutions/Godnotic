@@ -4669,6 +4669,14 @@
           },
           "maxItems": 64
          },
+         "labels": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "maxLength": 8
+          },
+          "maxItems": 64
+         },
          "preview": {
           "type": "string",
           "pattern": "^(pk3:|asset:|mod:)[^\\s]{1,250}$"

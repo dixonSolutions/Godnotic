@@ -790,25 +790,30 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
         val (node, action) = pendingFile ?: return true
         pendingFile = null
         val uri = data?.data ?: return true
+        val player = action.str("id").startsWith("player.") // Settings > Player's upload: not a mod
         Thread({
-            val path = try { importFile(uri) } catch (e: Exception) { Log.w(tag, "Native UI: could not copy the chosen file", e); null }
+            val path = try { importFile(uri, player) } catch (e: Exception) { Log.w(tag, "Native UI: could not copy the chosen file", e); null }
             main.post {
                 if (path == null) { toast("Could not read that file", "error"); return@post }
                 // the install is reviewed before anything is written: the mods topic says when
-                NativeBridge.enqueue(FeArgs.command("sub", "mods", "1"))
+                if (!player) NativeBridge.enqueue(FeArgs.command("sub", "mods", "1"))
                 client?.event("action", mapOf("node" to node, "action" to action.str("id"), "payload" to mapOf("path" to path)))
             }
         }, "godnotic-import").start()
         return true
     }
 
-    private fun importFile(uri: Uri): String {
-        var name = if (uri.scheme == "file") uri.lastPathSegment ?: "mod.zip" else "mod.zip"
+    private fun importFile(uri: Uri, player: Boolean = false): String {
+        val fallback = if (player) "model.pk3" else "mod.zip"
+        var name = if (uri.scheme == "file") uri.lastPathSegment ?: fallback else fallback
         if (uri.scheme != "file") activity.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0)?.let { name = it }
         }
         // the file's stem names the mod when the archive has no top folder: keep it, plainly
-        val ext = if (name.lowercase().endsWith(".pk3")) ".pk3" else ".zip"
+        // a player model keeps its own extension (iqm, dpm, md3, zym, pk3, zip): the engine reads the format from the file
+        val ext = if (player) ("." + name.substringAfterLast('.', "pk3").lowercase().replace(Regex("[^a-z0-9]"), "").take(4).ifEmpty { "pk3" })
+            else if (name.lowercase().endsWith(".pk3")) ".pk3" else ".zip"
+        val limit = if (player) 32L * 1024 * 1024 else 8L * 1024 * 1024
         val stem = name.substringBeforeLast('.').lowercase().replace(Regex("[^a-z0-9_-]"), "_").take(48).ifEmpty { "mod" }
         // where ModImport (the QuakeC menu's picker) puts it too: no mod can reach it
         val dir = java.io.File(baseDir ?: activity.getExternalFilesDir(null) ?: activity.filesDir, "userdata/luastate/incoming")
@@ -822,7 +827,7 @@ class FrontendHost(private val activity: Activity, private val baseDir: File?) :
                     val n = input.read(buf)
                     if (n < 0) break
                     total += n
-                    if (total > 8L * 1024 * 1024) throw java.io.IOException("over 8 MB, the engine's limit for a package")
+                    if (total > limit) throw java.io.IOException("over ${limit shr 20} MB, the engine's limit")
                     o.write(buf, 0, n)
                 }
             }
