@@ -76,10 +76,43 @@ Each is one line marked `// Touch:`.
   `Touch_FS_ZstdClose(file)` in `FS_Close`.
 - `makefile.inc`: `touch_warm.o`, `touch_crc.o`, `touch_prvm.o`.
 
+## Third pass (lean): in-match numbers and unused skin maps
+
+Measured on the same desktop setup (3 runs each, medians, taskset -c 12-23, the
+machine shared with other builds, so read the spreads):
+
+| Scenario | Value |
+|---|---|
+| Process start to menu | 575-610 ms (before), 558 ms (after; no change, within noise) |
+| Cold Play, returning player | 2873-2889 ms (before), 2825 ms (after; no change) |
+| Warm Play | 1075-1089 ms (before), 895 ms (after); the engine's default path did not change, so this is machine load between the runs, not a win |
+| In-match main-thread frame, 4 bots, 15 s | mean 2.3 ms, p95 3.2 ms (offscreen Mesa; new `match` scenario) |
+| Peak resident memory in a match | 700 MB (new `FRAMETIME_MEM` line); menu alone 227 MB |
+
+Where a stormkeep match's memory goes (memlist at 8 s): QuakeC edicts are the
+largest block, 107 MB server (4864 edicts x 5494 fields), 38 MB CSQC, 30 MB menu;
+decoded sounds 58 MB; fonts 18 MB; the map 15 MB. The Mesa software rasterizer's
+textures show as another 276 MB of anonymous memory. Findings that were *not* worth a change:
+the first pass already defers most models (an `fs_opentrace` of a match lists a
+model the background loader only measured, not loaded); every font size, the
+fallback face and kerning are already lazy (`touchfont`); the idle native-UI menu
+is already throttled (`TouchFE_MaxFPS`). What is left at start-up is video/GL init
+(188 ms, the driver), the cfg chain (99 ms), font first sizes (about 9 ms each
+for 9 faces plus the 12 MB `unifont.ttf` inflated once, 43 ms) and the menu QC.
+
+| Cvar (default) | What it does | Result |
+|---|---|---|
+| `touch_skin_skipgloss 1` | `_gloss` maps of skins and models are not read while `r_shadow_gloss` is 0 (the battery and thermal profiles now set it, since they also turn deluxe mapping and coronas off). They load at the next map once gloss is raised. | stormkeep with `r_shadow_gloss 0`: bytes loaded 286.8 -> 253.6 MB (-12 %), 449 -> 392 texture loads; with the switch off 235.3 MB shows the other maps unchanged |
+
+`FRAMETIME_MEM rss=.. peak=..` (touch_frametime.h, Linux and Android) is printed
+with the other FRAMETIME lines, so `bench-frames.sh` on a device or emulator
+reports it too.
+
 ## Measuring
 
 - `scripts/bench-load.sh` (first pass): start to menu, menu to map, joins.
-- `scripts/perf-guard.sh`: menu, cold Play and warm Play for a returning player,
+- `scripts/perf-guard.sh`: menu, cold Play and warm Play for a returning player, and
+  `match` (mean and p95 frame time and peak RSS of 15 s of play),
   medians against a baseline recorded on the same machine (`-r`), 15 % plus 40 ms
   allowed (`-t`, `-s`), `-p 2,3` to pin. Exit status 1 when something got slower.
   Run it before a release on a quiet machine; it is not a CI job, because a shared
