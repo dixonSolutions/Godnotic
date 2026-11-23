@@ -878,7 +878,8 @@ fn keypad_parts<E: IsA<gtk::Editable> + Clone + 'static>(r: &E, groups: &[serde_
             if let Some(hex) = k.get("colour").and_then(|v| v.as_str()) {
                 swatch_css(hex);
                 b.add_css_class(&format!("gn-sw-{}", &hex[1..]));
-                b.set_label(&(if text.starts_with("^x") { "x".to_string() } else { text.trim_start_matches('^').to_string() }));
+                // the six ^xRGB colours are plain swatches: no letter that reads as a close button
+                b.set_label(&(if text.starts_with("^x") { String::new() } else { text.trim_start_matches('^').to_string() }));
                 b.set_tooltip_text(Some(text));
             } else {
                 b.set_label(&glyph_label(text));

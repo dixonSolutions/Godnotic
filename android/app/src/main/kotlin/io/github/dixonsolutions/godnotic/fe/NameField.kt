@@ -103,11 +103,11 @@ object NameField {
         return root
     }
 
-    /** A colour key: a round swatch of its colour, the code's digit or ^x on it; a tap types the code. */
+    /** A colour key: a round swatch of its colour, the code's digit on it (none for the ^xRGB ones); a tap types the code. */
     private fun swatch(ctx: Context, code: String, hex: String, insert: (String) -> Unit): View {
         val fill = Color.parseColor(hex)
         val t = TextView(ctx).apply {
-            text = if (code.startsWith("^x")) "x" else code.removePrefix("^")
+            text = if (code.startsWith("^x")) "" else code.removePrefix("^")   // the six free colours are plain swatches: no letter that reads as a close button
             gravity = Gravity.CENTER
             textSize = Theme.SP_CAPTION
             typeface = Theme.bold
