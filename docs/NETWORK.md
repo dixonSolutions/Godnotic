@@ -981,6 +981,34 @@ before the precache lists), so they are in the first fragment.
 - Connect topic: `dl_file`, `dl_files_done`, `dl_files_total`, `dl_all_bytes`, `dl_all_total`,
   `sig_bytes` (docs/FRONTEND_BRIDGE.md).
 
+## Joining a public server: where the time goes (2026-11-23)
+
+Measured with `scripts/bench-srvjoin.py`: a headless client (empty userdir, so a first join) presses Join on a
+real public server from the master list; every `FE> connect` snapshot is stamped, and the milestones are read
+from the stamps (ms after the connect command). RTT to these servers was 214-280 ms.
+
+| server | map | picture (right map) | first data in | in game | notes |
+|---|---|---|---|---|---|
+| Astral Bane 173.249.194.249 (stock 0.8.6) | atelier/boil | 421 ms list thumbnail, yes | 4.7 s | 6.2-6.8 s | CSQC bundled: no download |
+| The Good Place 130.61.215.219 (0.8.6autobuild) | glowplant | 544 ms, yes | 6.3 s | 19.1-19.4 s | CSQC 800 KB over the game connection, 9.3 s at 89 KB/s |
+| gianmarco 159.195.41.211 (custom map, HTTP) | phdm2_q3, skytown2 | 1.5-2.1 s (range-read from the pack), yes | 6.4 s | 8.3-8.8 s | 15-21 MB pack in parallel with the signon wait; warm second join 8.5 s, 0 bytes |
+
+What is in those 6-19 s, for a stock server at ~215-280 ms RTT: connect 2 RTT (0.4 s), then the server's first
+message (serverinfo and precache lists, 22 KB in 1 KB fragments, one per round trip: 22 x ~265 ms = 4.2-5.7 s),
+then the local load of the world (about 1 s) and 4 more round trips (0.9 s). Only a Godnotic or Insanotic server
+(windowed reliable channel above) removes the 22 round trips; nothing on the client can, because the stock
+server sends the next fragment only when the last is acknowledged. The other wait is a server whose csprogs.dat is
+not one we bundle: it is sent in-protocol, one 1400-byte block per server tick (64/s, about 89 KB/s), so 800 KB
+costs 9 s whatever the client's `rate` (tried 20000000: same). It cannot overlap with the signon wait, because the
+server's `cl_downloadbegin` travels on the same reliable channel, behind the 22 fragments. The remaining lever is
+an HTTP cache of popular csprogs.dat builds (see HANDOFF.md).
+
+What changed in this pass: the in-protocol csprogs.dat download is now a download on the join card (file, bytes of
+total, speed; before, the card said "Receiving game data" for 9 s with no number); the card's one bar moves while
+the server's first data arrives (bytes of the last join's total, 22 KB by default); on a metered link the card says
+"mobile data" and how much the join used, and the app sets `touch_net_metered` (the map picture is then only
+range-read when it is at most `touch_net_metered_shot_kb`, 256 KB, so a Quake 1 BSP is not fetched for show).
+
 ### 1289 q1android: a resume against a server that ignores Range
 A server whose HTTP host ignores `Range` (Python's `http.server`, the Quake 1 server's pack host) answers a
 resumed request with `200` and the whole file. libcurl then fails the transfer with error 33

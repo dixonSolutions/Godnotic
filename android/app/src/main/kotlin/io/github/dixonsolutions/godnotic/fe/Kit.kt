@@ -404,7 +404,10 @@ object Images {
 }
 
 /** A picture that covers its bounds (centre crop): the join card's map picture. */
-class ShotDrawable(private val bitmap: Bitmap, dim: Float = 1f) : android.graphics.drawable.Drawable() {
+class ShotDrawable(private val bitmap: Bitmap, private val dimValue: Float = 1f) : android.graphics.drawable.Drawable() {
+    private val dim = dimValue
+    /** Drawn from this bitmap at this dimming already (the card does not rebuild it every look). */
+    fun same(b: Bitmap, d: Float) = b === bitmap && d == dimValue
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).also {
         if (dim < 1f) { val v = (dim * 255).toInt().coerceIn(0, 255); it.colorFilter = android.graphics.LightingColorFilter((v shl 16) or (v shl 8) or v, 0) }
     }

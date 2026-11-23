@@ -1745,7 +1745,7 @@ void UIB_BuildLoading()
 	switch (state)
 	{
 		case "connecting": stage = _("Connecting"); break;
-		case "downloading": stage = sprintf(_("Downloading %s"), file); break;
+		case "downloading": stage = sprintf(_("Downloading %s"), (strstrofs(file, "csprogs.dat", 0) >= 0) ? _("the server's game code") : file); break;
 		default: stage = _("Loading the map"); break;
 	}
 	string detail = "";

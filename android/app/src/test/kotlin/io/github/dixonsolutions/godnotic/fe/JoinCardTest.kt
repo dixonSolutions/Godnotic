@@ -58,11 +58,28 @@ class JoinCardTest {
 
 class JoinBarTest {
     @org.junit.Test fun overallIsOneContinuousBar() {
-        assertEquals(0.25, JoinFlow.overall("downloading", true, 0.5, 0.0), 1e-9)
-        assertEquals(0.5, JoinFlow.overall("loading", true, 1.0, 0.0), 1e-9)
-        assertEquals(0.75, JoinFlow.overall("loading", true, 1.0, 0.5), 1e-9)
-        assertEquals(0.5, JoinFlow.overall("loading", false, 0.0, 0.5), 1e-9)
+        // server data: the first fifth; downloads: the next two fifths; precache and load: the rest
+        assertEquals(0.4, JoinFlow.overall("downloading", true, 0.5, 0.0), 1e-9)
+        assertEquals(0.6, JoinFlow.overall("loading", true, 1.0, 0.0), 1e-9)
+        assertEquals(0.8, JoinFlow.overall("loading", true, 1.0, 0.5), 1e-9)
+        assertEquals(0.6, JoinFlow.overall("loading", false, 0.0, 0.5), 1e-9)
         assertEquals(-1.0, JoinFlow.overall("connecting", false, 0.0, 0.0), 1e-9)
+    }
+
+    @org.junit.Test fun barMovesWhileTheServersDataArrives() {
+        // the wait for a stock server's first data (22 round trips) used to be a sweep with no number
+        var last = -1.0
+        for (kb in listOf(0, 1, 5, 11, 16, 21, 22)) {
+            val b = JoinFlow.overall("preview", false, 0.0, -1.0, waiting = true, signon = JoinFlow.signonFraction(kb * 1024.0))
+            assertTrue("bar at $kb KB ($b) must move", b > last)
+            last = b
+        }
+        assertTrue(last <= JoinFlow.BAR_SIGNON)
+        // more data than expected stretches the estimate instead of filling the bar
+        assertTrue(JoinFlow.signonFraction(40 * 1024.0) <= 0.97)
+        assertTrue(JoinFlow.signonFraction(40 * 1024.0) > JoinFlow.signonFraction(22 * 1024.0) - 1e-9)
+        // the bar never goes back when the wait ends: the load starts where the data part stopped
+        assertTrue(JoinFlow.overall("loading", false, 0.0, 0.0) >= JoinFlow.BAR_SIGNON)
     }
     @org.junit.Test fun downloadLineNamesBytesSpeedAndFiles() {
         val t = JoinFlow.downloading("dlcache/zzz-pack-weapons_01.pk3", 3.0 * 1048576, 22.8 * 1048576, 1042.4 * 1024, 4, 2)
@@ -124,5 +141,134 @@ class JoinDetailTest {
         assertEquals("downloading", JoinFlow.shownStage("loading", true))
         assertEquals("preview", JoinFlow.shownStage("preview", false))
         assertEquals("connecting", JoinFlow.shownStage("connecting", true))
+    }
+}
+
+/** The card's place, the server's own download, and the metered-link wording. */
+class JoinDockAndDataTest {
+    @org.junit.Test fun cardIsDockedAtTheBottomFromTheFirstFrame() {
+        // Gravity.BOTTOM = 0x50 (80), CENTER_HORIZONTAL = 1: a bottom bit and never the top bit (0x30)
+        assertEquals(81, JoinFlow.CARD_GRAVITY)
+        assertEquals(0x50, JoinFlow.CARD_GRAVITY and 0x70)
+    }
+
+    @org.junit.Test fun theServersOwnDownloadIsNamedAndMeasured() {
+        // csprogs.dat comes over the game connection (no curl): the engine reports it as a download of "csprogs.dat"
+        assertEquals("the server's game code", JoinFlow.downloadName("csprogs.dat"))
+        assertEquals("the server's game code", JoinFlow.downloadName("dlcache/csprogs.dat.4098806.38644"))
+        assertEquals("wind2.pk3", JoinFlow.downloadName("dlcache/wind2.pk3"))
+        val l = JoinFlow.describe(JoinFlow.Snap(stage = "downloading", dlFile = "csprogs.dat", filesTotal = 1, running = 1,
+            dlBytes = 1.5 * 1048576, dlTotal = 3.3 * 1048576, speed = 330.0 * 1024))
+        assertEquals("Downloading the server's game code", l.head)
+        assertEquals("1.5 of 3.3 MB  ·  330 KB/s  ·  0:05 left", l.detail)
+    }
+
+    @org.junit.Test fun meteredLinkIsSaidAndCounted() {
+        assertTrue(JoinFlow.metered(io.github.dixonsolutions.godnotic.Net.Kind.MOBILE))
+        assertTrue(JoinFlow.metered(io.github.dixonsolutions.godnotic.Net.Kind.METERED_WIFI))
+        assertTrue(JoinFlow.metered(io.github.dixonsolutions.godnotic.Net.Kind.MOBILE_WIFI_NO_INTERNET))
+        assertFalse(JoinFlow.metered(io.github.dixonsolutions.godnotic.Net.Kind.UNMETERED))
+        assertFalse(JoinFlow.metered(io.github.dixonsolutions.godnotic.Net.Kind.OFFLINE))
+        assertEquals(24.0 * 1024 + 3 * 1048576.0, JoinFlow.used(24.0 * 1024, 3 * 1048576.0), 1e-9)
+        assertEquals("", JoinFlow.usage(5e6, metered = false))
+        assertEquals("mobile data", JoinFlow.usage(10.0 * 1024, metered = true))
+        assertEquals("mobile data  ·  3.0 MB used", JoinFlow.usage(3.0 * 1048576, metered = true))
+        val l = JoinFlow.describe(JoinFlow.Snap(stage = "loading", loadStage = "models", loadN = 4, loadM = 9, map = "boil", usedBytes = 25.0 * 1048576, metered = true))
+        assertEquals("Loading map boil", l.head)
+        assertEquals("Models 4 / 9  ·  mobile data  ·  25.0 MB used", l.detail)
+        // the wait for the server's first data does not repeat its own byte count as "used"
+        val w = JoinFlow.describe(JoinFlow.Snap(stage = "signon", waitS = 3, sigBytes = 12.0 * 1024, usedBytes = 12.0 * 1024, metered = true))
+        assertEquals("12 KB received  ·  3 s  ·  mobile data", w.detail)
+    }
+}
+
+/** The preview appears once and stays: no blank, no revert, only a better picture of the same map replaces it. */
+class JoinPreviewSteadyTest {
+    private fun shot(p: String, k: String, m: String = "boil") = JoinFlow.Shot(p, k, m)
+
+    @org.junit.Test fun aSnapshotWithoutAPictureIsAGapNotAChange() {
+        val cur = shot("/c/maps_boil.jpg", "list")
+        assertEquals(cur, JoinFlow.nextShot(cur, JoinFlow.Shot()))
+        assertEquals(cur, JoinFlow.nextShot(cur, JoinFlow.Shot("", "", "boil")))
+    }
+
+    @org.junit.Test fun firstPictureIsTakenAtOnce() {
+        val s = shot("/c/maps_boil.jpg", "list")
+        assertEquals(s, JoinFlow.nextShot(JoinFlow.Shot(), s))
+    }
+
+    @org.junit.Test fun onlyABetterKindReplacesAndNeverGoesBack() {
+        val list = shot("/c/maps_boil.jpg", "list")
+        val own = shot("/p/boil_signon.jpg", "map")
+        val generic = shot("/g/generic.jpg", "generic")
+        assertEquals(own, JoinFlow.nextShot(list, own))
+        // the worse or equal one that follows does not take it back
+        assertEquals(own, JoinFlow.nextShot(own, list))
+        assertEquals(own, JoinFlow.nextShot(own, generic))
+        assertEquals(own, JoinFlow.nextShot(own, shot("/p/boil_bsp.png", "map")))
+        assertEquals(list, JoinFlow.nextShot(list, generic))
+    }
+
+    @org.junit.Test fun anotherMapsPictureReplacesAtOnceAndFadesNotWithinAMap() {
+        val a = shot("/c/maps_boil.jpg", "map", "boil")
+        val b = shot("/c/maps_atelier.jpg", "list", "atelier")
+        assertEquals(b, JoinFlow.nextShot(a, b))
+        assertFalse(JoinFlow.sameJoin(a, b))
+        assertTrue(JoinFlow.sameJoin(shot("/c/x.jpg", "list"), shot("/p/y.jpg", "map")))
+        assertTrue(JoinFlow.sameJoin(JoinFlow.Shot(), a))
+    }
+
+    @org.junit.Test fun wholeJoinSequenceChangesAtMostOnceAndNeverBlanks() {
+        val seq = listOf(
+            JoinFlow.Shot("", "", ""), shot("/c/maps_boil.jpg", "list"), JoinFlow.Shot("", "", "boil"), shot("/c/maps_boil.jpg", "list"),
+            shot("/p/boil_signon.jpg", "map"), JoinFlow.Shot("", "", "boil"), shot("/c/maps_boil.jpg", "list"), JoinFlow.Shot("", "", ""),
+        )
+        var cur = JoinFlow.Shot()
+        val shown = ArrayList<JoinFlow.Shot>()
+        for (s in seq) { cur = JoinFlow.nextShot(cur, s); if (cur.path.isNotEmpty()) shown.add(cur) }
+        assertEquals(listOf("/c/maps_boil.jpg", "/p/boil_signon.jpg"), shown.map { it.path }.distinct())
+        assertEquals("/p/boil_signon.jpg", cur.path)
+    }
+
+    @org.junit.Test fun theWorldTakesOverOnlyAfterItStaysDrawable() {
+        assertFalse(JoinFlow.worldShows(false, 0, 10_000))
+        assertFalse(JoinFlow.worldShows(true, 1_000, 1_000 + JoinFlow.WORLD_SETTLE_MS - 1))
+        assertTrue(JoinFlow.worldShows(true, 1_000, 1_000 + JoinFlow.WORLD_SETTLE_MS))
+        assertTrue(JoinFlow.FADE_MS in 100..400)
+    }
+}
+
+/** Owner's tablet (Hightime, minideck_v4r4): a picture from the first frame, a backdrop that fills the screen, friendly words, a bar that never goes back. */
+class JoinFirstFrameTest {
+    @org.junit.Test fun aPictureFromTheFirstFrame() {
+        assertEquals("/e/a.jpg", JoinFlow.firstShot("/e/a.jpg", "/h/b.jpg", "/l/c.png"))
+        assertEquals("/h/b.jpg", JoinFlow.firstShot("", "/h/b.jpg", "/l/c.png"))
+        assertEquals("/l/c.png", JoinFlow.firstShot("", null, "/l/c.png"))
+        assertEquals("", JoinFlow.firstShot("", null, null))
+        // and the art is replaced by the engine's picture of that map, once, never back
+        val art = JoinFlow.Shot("/m/minideck_v4r4.fallback.png", "generic", "minideck_v4r4")
+        val real = JoinFlow.Shot("/fe_cache/maps_minideck_v4r4.jpg", "list", "minideck_v4r4")
+        assertEquals(real, JoinFlow.nextShot(art, real))
+        assertEquals(real, JoinFlow.nextShot(real, art))
+    }
+
+    @org.junit.Test fun connectingSaysConnectingNotTheEnginesRetryText() {
+        val l = JoinFlow.describe(JoinFlow.Snap(stage = "connecting", status = "Connect: sending initial request, 8 retries left..."))
+        assertEquals("Connecting…", l.head)
+        assertEquals("", l.detail)
+    }
+
+    @org.junit.Test fun barNeverGoesBackOrReturnsToTheSweep() {
+        var p = -1.0
+        val seq = listOf(-1.0, 0.05, 0.19, 0.21, 0.5, 0.3, -1.0, 0.7, 0.4, 1.0)
+        val shown = seq.map { p = JoinFlow.monotonic(p, it); p }
+        assertEquals(listOf(-1.0, 0.05, 0.19, 0.21, 0.5, 0.5, 0.5, 0.7, 0.7, 1.0), shown)
+        assertEquals(shown.sorted(), shown)
+    }
+
+    @org.junit.Test fun placeholderBackdropIsOneGradientForTheWholeScreen() {
+        // the screen carries the gradient (FrontendHost.nameBackdrop); the map-name banner has no background of its own,
+        // which left a darker band behind the card. Source guard: scripts/test-join-card-docking.sh
+        assertTrue(JoinFlow.BACKDROP_TOP != JoinFlow.BACKDROP_BOTTOM)
     }
 }
