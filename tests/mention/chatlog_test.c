@@ -130,6 +130,167 @@ static void test_clear(void)
 	}
 }
 
+static void fill(int n)
+{
+	int i;
+	char s[16];
+	memset(&L, 0, sizeof(L));
+	for (i = 0; i < n; i++) { snprintf(s, sizeof(s), "line %d", i); TouchChatLog_Add(&L, 0, 0, s); }
+}
+
+static void test_icons_shown(void)
+{
+	memset(&L, 0, sizeof(L));
+	CHECK(!TouchChatLog_IconsShown(&L), "no icons before the first message");
+	fill(1);
+	CHECK(TouchChatLog_IconsShown(&L), "icons with one line");
+	TouchChatLog_Clear(&L);
+	CHECK(!TouchChatLog_IconsShown(&L), "no icons after Clear");
+	TouchChatLog_Add(&L, 0, 0, "again");
+	CHECK(TouchChatLog_IconsShown(&L), "icons come back with the next message");
+}
+
+static void test_px_clamp(void)
+{
+	fill(20);
+	CHECK(TouchChatLog_MaxPx(&L, 5, 10.0f) == 150.0f, "max px: 15 lines hidden * 10");
+	CHECK(TouchChatLog_ClampPx(&L, -3.5f, 5, 10.0f) == 0, "not below the live state");
+	CHECK(TouchChatLog_ClampPx(&L, 999.0f, 5, 10.0f) == 150.0f, "not past the oldest");
+	CHECK(TouchChatLog_ClampPx(&L, 37.25f, 5, 10.0f) == 37.25f, "fractional offsets kept");
+	fill(3);
+	CHECK(TouchChatLog_ClampPx(&L, 40.0f, 5, 10.0f) == 0, "short log does not scroll");
+}
+
+static void test_window(void)
+{
+	tcl_window_t w;
+	int m, drawn;
+	fill(20);
+	// live: the 5 newest lines, 15..19, no partial row
+	w = TouchChatLog_Window(L.count, 5, 0, 10.0f);
+	CHECK(w.frac == 0 && w.mfirst == 0 && w.mlast == 4 && w.j0 == 15, "live window j0=%d m=%d..%d", w.j0, w.mfirst, w.mlast);
+	// 2.5 lines back: a partial row enters at the top, frac 5, at most 6 rows
+	w = TouchChatLog_Window(L.count, 5, 25.0f, 10.0f);
+	CHECK(w.j0 == 13 && w.mfirst == -1 && w.mlast == 4 && w.frac == 5.0f, "mid window j0=%d m=%d..%d frac=%g", w.j0, w.mfirst, w.mlast, w.frac);
+	drawn = w.mlast - w.mfirst + 1;
+	CHECK(drawn == 6, "box_lines + 1 rows at most: %d", drawn);
+	// the oldest line at the top: nothing below index 0 is asked for
+	w = TouchChatLog_Window(L.count, 5, 150.0f, 10.0f);
+	CHECK(w.j0 + w.mfirst == 0 && w.j0 + w.mlast == 4, "top end: first line %d last %d", w.j0 + w.mfirst, w.j0 + w.mlast);
+	// a long log draws no more rows than fit, however deep it is
+	fill(TCL_CAP);
+	for (m = 0; m < 3; m++)
+	{
+		w = TouchChatLog_Window(L.count, 8, 37.0f + (float)m * 100, 12.0f);
+		drawn = w.mlast - w.mfirst + 1;
+		CHECK(drawn <= 9 && drawn >= 8, "long log draws only the visible rows: %d", drawn);
+		CHECK(w.j0 + w.mfirst >= 0 && w.j0 + w.mlast < (int)L.count, "indices inside the log");
+	}
+	// fewer lines than the box: only the lines that exist
+	fill(2);
+	w = TouchChatLog_Window(L.count, 5, 0, 10.0f);
+	CHECK(w.j0 + w.mfirst == 0 && w.j0 + w.mlast == 1, "short log: lines %d..%d", w.j0 + w.mfirst, w.j0 + w.mlast);
+}
+
+static void test_coast(void)
+{
+	float off = 50, vel = 400;
+	int steps = 0;
+	while (TouchChatLog_Coast(&off, &vel, 1.0f / 60, 1000.0f) && steps < 1000)
+		steps++;
+	CHECK(steps > 20 && steps < 400, "coasts a while then stops: %d steps", steps);
+	CHECK(off > 50 && off < 1000 && vel == 0, "moved on, then at rest: off=%g", off);
+	off = 20; vel = 900;
+	while (TouchChatLog_Coast(&off, &vel, 1.0f / 60, 60.0f))
+		;
+	CHECK(off == 60.0f && vel == 0, "stops at the oldest end: %g", off);
+	off = 20; vel = -900;
+	while (TouchChatLog_Coast(&off, &vel, 1.0f / 60, 60.0f))
+		;
+	CHECK(off == 0 && vel == 0, "stops at the live end: %g", off);
+	off = 10; vel = 2;
+	CHECK(!TouchChatLog_Coast(&off, &vel, 0.016f, 100.0f) && vel == 0, "a crawl is rest");
+}
+
+static void test_raster(void)
+{
+	static unsigned char px[64 * 64 * 4];
+	int slot, i, white, solid;
+	for (slot = 0; slot < TCL_ICONS; slot++)
+	{
+		memset(px, 0, sizeof(px));
+		TouchChatLog_IconRaster(slot, 64, px);
+		white = 0; solid = 0;
+		for (i = 0; i < 64 * 64; i++)
+		{
+			if (px[i * 4] > 200 && px[i * 4 + 3] > 200)
+				white++;
+			if (px[i * 4 + 3] > 0)
+				solid++;
+		}
+		CHECK(white > 100, "icon %d has a glyph: %d white pixels", slot, white);
+		CHECK(solid > 64 * 64 / 2, "icon %d has its plate: %d", slot, solid);
+		CHECK(px[3] == 0, "icon %d plate corner is transparent", slot);
+	}
+	// small sizes still draw something visible
+	memset(px, 0, sizeof(px));
+	TouchChatLog_IconRaster(1, 16, px);
+	white = 0;
+	for (i = 0; i < 16 * 16; i++)
+		if (px[i * 4] > 128)
+			white++;
+	CHECK(white > 10, "16px icon still has a glyph: %d", white);
+}
+
+static void test_pin(void)
+{
+	float off = 0;
+	int i;
+	// pinned: stays pinned however many lines arrive
+	for (i = 0; i < 50; i++)
+		off = TouchChatLog_PinAdjust(off, 12.0f);
+	CHECK(off == 0, "pinned stays at the live state: %g", off);
+	// scrolled up: each new line pushes the offset by one line, the view does not move
+	off = 30.0f;
+	fill(100);
+	for (i = 0; i < 5; i++)
+	{
+		tcl_window_t before = TouchChatLog_Window(L.count, 6, off, 12.0f);
+		int first_line = before.j0 + before.mfirst;
+		float frac = before.frac;
+		TouchChatLog_Add(&L, 0, 0, "new");
+		off = TouchChatLog_PinAdjust(off, 12.0f);
+		before = TouchChatLog_Window(L.count, 6, off, 12.0f);
+		CHECK(before.j0 + before.mfirst == first_line && before.frac == frac, "view did not move: line %d vs %d", before.j0 + before.mfirst, first_line);
+	}
+	CHECK(off == 30.0f + 60.0f, "offset grew by five lines: %g", off);
+	// scrolled back to the bottom: pinned again
+	off = TouchChatLog_ClampPx(&L, 0.0f, 6, 12.0f);
+	off = TouchChatLog_PinAdjust(off, 12.0f);
+	CHECK(off == 0, "back at the bottom, follows the newest");
+	// a full ring: the offset never exceeds what the log can scroll
+	fill(TCL_CAP + 40);
+	off = TouchChatLog_ClampPx(&L, 1e9f, 6, 12.0f);
+	off = TouchChatLog_PinAdjust(off, 12.0f);
+	off = TouchChatLog_ClampPx(&L, off, 6, 12.0f);
+	CHECK(off == TouchChatLog_MaxPx(&L, 6, 12.0f), "clamped at the oldest end: %g", off);
+}
+
+static void test_long_history(void)
+{
+	// 500+ lines: whatever the offset, no more than box_lines + 1 rows are touched
+	int off, worst = 0;
+	fill(TCL_CAP);
+	for (off = 0; off <= (int)TouchChatLog_MaxPx(&L, 8, 12.0f); off += 7)
+	{
+		tcl_window_t w = TouchChatLog_Window(L.count, 8, (float)off, 12.0f);
+		int n = w.mlast - w.mfirst + 1;
+		if (n > worst)
+			worst = n;
+	}
+	CHECK(worst <= 9, "rows touched per frame stay at the visible count: %d", worst);
+}
+
 int main(void)
 {
 	test_ring();
@@ -137,6 +298,13 @@ int main(void)
 	test_box();
 	test_export();
 	test_clear();
+	test_icons_shown();
+	test_px_clamp();
+	test_window();
+	test_coast();
+	test_raster();
+	test_pin();
+	test_long_history();
 	if (failures) { printf("%d failure(s)\n", failures); return 1; }
 	printf("chatlog: ok\n");
 	return 0;
