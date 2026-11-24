@@ -10,6 +10,11 @@ int main(void)
 	assert(TouchAim_EnabledForInput(0, 1));
 	assert(!TouchAim_EnabledForInput(1, 0));
 	assert(TouchAim_EnabledForInput(1, 1));
+	assert(!TouchAim_AutoSwitchEnabled(1, 0, 1, 1));
+	assert(TouchAim_AutoSwitchEnabled(1, 1, 1, 1));
+	assert(TouchAim_AutoSwitchEnabled(0, 0, 1, 1));
+	assert(!TouchAim_AutoSwitchEnabled(0, 0, 0, 1));
+	assert(!TouchAim_AutoSwitchEnabled(0, 0, 1, 0));
 	/* Simulate an idle HUD, mouse acquisition and motion, and both buttons. */
 	assert(!TouchAim_InputActive(0, 1, 0, 0, 0));
 	assert(TouchAim_InputActive(0, 1, 1, 0, 0));

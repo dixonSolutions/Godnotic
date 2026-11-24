@@ -10,7 +10,7 @@ LIB_DIR="${GODNOTIC_LIB_DIR:-${USER_BASE}/lib}"
 PROGRESS_FILE="${XONOTIC_ASSET_FETCH_PROGRESS:-${USER_DATA}/touch/asset-progress.txt}"
 PIDFILE="${USER_BASE}/fetchd.pid"
 FLATPAK_ID="${GODNOTIC_FLATPAK_ID:-io.github.dixonSolutions.Godnotic}"
-AUTO_OPEN="${GODNOTIC_AUTO_OPEN_ON_READY:-1}"
+AUTO_OPEN="${GODNOTIC_AUTO_OPEN_ON_READY:-0}"
 NOTIFY="${GODNOTIC_NOTIFY_ON_READY:-1}"
 
 mkdir -p "$USER_DATA/touch" "$USER_BASE"
@@ -66,7 +66,10 @@ fi
 notify_ready() {
     [ "$NOTIFY" = "1" ] || return 0
     _title="Godnotic"
-    _body="Game data finished downloading. Opening Godnotic…"
+    _body="Game data finished downloading."
+    if [ "$AUTO_OPEN" = "1" ] && ! engine_running; then
+        _body="Game data finished downloading. Opening Godnotic…"
+    fi
     if command -v notify-send >/dev/null 2>&1; then
         notify-send -a "Godnotic" -i "$FLATPAK_ID" "$_title" "$_body" || true
     elif command -v gdbus >/dev/null 2>&1; then

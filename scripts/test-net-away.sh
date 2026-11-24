@@ -37,6 +37,7 @@
 #   connect-again         connect to the same server while in the game (the
 #                         menu's join on the server you are on): back in the
 #                         game within seconds, no hang until a timeout
+#   transition-drop       a plain server drop during the next map signon is rejoined once
 #   svdrop                the server drops a player who has played a while (kick, no
 #                         reason): the client joins again once, a second drop within
 #                         2 minutes is left alone; NETDROP lines say why
@@ -461,6 +462,44 @@ EOF
 			kill "$CLPID" 2> /dev/null
 			finish
 			kill "$proxy_pid" 2>/dev/null; wait "$proxy_pid" 2>/dev/null ;;
+		manual-leave) # a deliberate leave must not trigger automatic reconnection
+			start manual-leave "$JOIN\\nset net_reconnect_server_min 4\\ndefer 150 quit" ""
+			playing manual-leave || { kill "$CLPID" 2>/dev/null; finish; return; }
+			sleep 6
+			once "$WORK/manual-leave/cl/data/poll.cfg" "disconnect"
+			sleep 8
+			if [ "$(count "$WORK/manual-leave/server.log" '^Bench connected')" -eq 1 ] && ! grep -aq 'joining again once' "$WORK/manual-leave/client.log"; then
+				ok "manual-leave: stayed disconnected"
+			else bad "manual-leave: rejoined after an intentional disconnect"; fi
+			kill "$CLPID" 2>/dev/null; finish ;;
+		transition-drop) # drop after signon starts, before the next map is entered
+			NET_TRACE=1 start transition-drop "$JOIN\\nset net_reconnect_server_min 4\\ndefer 150 quit" ""
+			playing transition-drop || { kill "$CLPID" 2>/dev/null; finish; return; }
+			sleep 6
+			tc qdisc add dev cl0 root netem delay 300ms
+			before=$(count "$WORK/transition-drop/client.log" 'NETTRACE cl .* signon 1 ')
+			before4=$(count "$WORK/transition-drop/client.log" 'NETTRACE cl .* signon 4 ')
+			# Arm an alias that disarms itself, then watch signon while it runs.
+			# once() waits after issuing the command and can miss the signon.
+			printf 'alias _td_change "changelevel %s; alias _td_change echo"\n' "$MAP" > "$WORK/transition-drop/sv/data/next.cfg"
+			sleep 1.2
+			echo _td_change > "$WORK/transition-drop/sv/data/next.cfg"
+			seen=0
+			for _ in $(seq 1 300); do
+				if [ "$(count "$WORK/transition-drop/client.log" 'NETTRACE cl .* signon 1 ')" -gt "$before" ]; then seen=1; break; fi
+				sleep 0.1
+			done
+			if [ "$seen" = 1 ]; then
+				echo 'kick Bench' > "$WORK/transition-drop/sv/data/next.cfg"
+				sleep 1
+				: > "$WORK/transition-drop/sv/data/next.cfg"
+				if wait_for "$WORK/transition-drop/client.log" '^NETDROP:.*signon [123]$' 15; then ok "transition-drop: server dropped during signon"; else bad "transition-drop: drop did not occur during signon"; fi
+				if wait_for "$WORK/transition-drop/client.log" 'joining again once' 15; then ok "transition-drop: scheduled a rejoin"; else bad "transition-drop: no rejoin scheduled"; fi
+				for _ in $(seq 1 120); do [ "$(count "$WORK/transition-drop/client.log" 'NETTRACE cl .* signon 4 ')" -gt "$before4" ] && break; sleep 0.5; done
+				[ "$(count "$WORK/transition-drop/client.log" 'NETTRACE cl .* signon 4 ')" -gt "$before4" ] && ok "transition-drop: joined the next match" || bad "transition-drop: no completed rejoin"
+			else bad "transition-drop: did not observe next map signon"; fi
+			tc qdisc del dev cl0 root 2>/dev/null
+			kill "$CLPID" 2>/dev/null; finish ;;
 		svdrop) # the server drops a player who has been playing for a while and says nothing: joined again once
 			start svdrop "$JOIN\nset net_reconnect_server_min 4\ndefer 150 quit" ""
 			playing svdrop || { finish; return; }

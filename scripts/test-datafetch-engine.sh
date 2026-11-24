@@ -93,6 +93,14 @@ missing "$L" > "$W/fp.txt"; known "$L"
 new="$(comm -23 "$W/fp.txt" "$W/base-$MAP1.txt")"
 [ -z "$new" ] && ok "first_play only: no missing-file line the whole set does not print ($(wc -l < "$W/fp.txt") lines, all in the baseline)" || { bad "first_play only: new missing-file lines:"; echo "$new" | head -20; }
 
+# --- the QC request command does not collide with its read-only status cvar --
+mkbase "$W/request" "${FIRST[@]}"
+U="$W/request-u"; status "$U" fetching
+run "$W/request" "$U" 12 +defer 2 "touch_data_request $MAP2" +defer 5 quit
+req="$U/data/data/touch/data-request.txt"
+[ "$(cut -d' ' -f1-2 "$req" 2>/dev/null)" = "want $MAP2" ] && ok "QC map request command prioritizes $MAP2" || bad "QC map request command did not write a request (got: $(cat "$req" 2>/dev/null))"
+if grep -a -q "touch_data_want is read-only" "$U/data/qconsole.log"; then bad "QC map request hit the read-only touch_data_want cvar"; else ok "QC map request does not hit the read-only status cvar"; fi
+
 # --- 1b. sounds named .opus decode on the workers, as .ogg ones do ----------
 if command -v ffmpeg >/dev/null 2>&1 && [ "$(ffmpeg -hide_banner -encoders 2>/dev/null | grep -c libopus)" -gt 0 ]; then
 	mkbase "$W/snd" "${FIRST[@]}"
@@ -117,7 +125,9 @@ U="$W/late-u"; status "$U" fetching
 mapfile -t NEED2 < <(names "$MAP2")
 # poll.cfg: commands the test hands the running engine (it execs the file twice a second)
 : > "$U/data/poll.cfg"
-run "$W/late" "$U" $((SECS * 2 + 150)) +alias cl_hook_gamestart_all "defer $SECS quit" +alias xt_poll "exec poll.cfg; defer 0.5 xt_poll" +defer 2 xt_poll +defer 6 "map $MAP2" &
+run "$W/late" "$U" $((SECS * 2 + 150)) +set touch_profile_done 1 +set _cl_name DatafetchTest +set touch_lan_map "$MAP2" +set touch_lan_gametype dm +set touch_lan_bots 6 +set g_warmup 0 \
+	+alias cl_hook_gamestart_all 'echo UIBSTART $touch_lan_map $touch_lan_gametype $bot_number $g_instagib; defer '"$SECS"' quit' \
+	+alias xt_poll "exec poll.cfg; defer 0.5 xt_poll" +defer 2 xt_poll +defer 6 "map $MAP2" &
 req="$U/data/data/touch/data-request.txt"
 for i in $(seq 1 240); do [ -s "$req" ] && break; sleep 0.5; done
 if [ "$(cut -d' ' -f1-2 "$req" 2>/dev/null)" = "want $MAP2" ]; then ok "map $MAP2 while it is still to come: request file says '$(cat "$req")'"; else bad "no request for $MAP2 (got: $(cat "$req" 2>/dev/null))"; fi
@@ -171,12 +181,28 @@ if not ok:
 sys.exit(0 if ok else 1)
 PY
 printf '%s\n' "uib_event {\"ev\":\"back\"}" > "$U/data/poll.cfg"; sleep 1; : > "$U/data/poll.cfg"
-poll hold3.json "map $MAP2" "defer 1 \"uib_dump hold3.json\"" || true
+poll hold3.json \
+  'uib_event {"ev":"action","node":"home/tiles/sp","action":"sp"}' \
+  "defer 0.5 \"set touch_lan_map $MAP2\"" \
+  'defer 0.7 "uib_event {\"ev\":\"value\",\"node\":\"sp/match/form/bots\",\"value\":6}"' \
+  'defer 0.9 "uib_event {\"ev\":\"value\",\"node\":\"sp/match/form/weapons\",\"value\":\"instagib\"}"' \
+  'defer 1.1 "uib_event {\"ev\":\"action\",\"node\":\"sp\",\"action\":\"play\"}"' \
+  'defer 1.8 "uib_dump hold3.json"' || true
+# Evaluate cvars after the queued actions have run, not when defer is parsed.
+printf '%s\n' 'echo UIBWAIT $touch_data_pending_map $touch_lan_gametype $bot_number $g_instagib' > "$U/data/poll.cfg"
+sleep 1
+: > "$U/data/poll.cfg"
+if grep -a -q "UIBWAIT $MAP2 dm 6 1" "$U/data/qconsole.log"; then
+  ok "UIB Play holds $MAP2 with the selected Deathmatch, six bots and InstaGib settings"
+else
+  bad "UIB Play did not preserve the selected map/settings while waiting: $(grep -a 'UIBWAIT' "$U/data/qconsole.log" | tail -1)"
+fi
 late=()
 for p in "${NEED2[@]}"; do [ -e "$W/late/data/$p" ] || { cp -l "$SPLIT/$p" "$W/late/data/$p.part" 2>/dev/null || cp "$SPLIT/$p" "$W/late/data/$p.part"; mv "$W/late/data/$p.part" "$W/late/data/$p"; late+=("$p"); status "$U" fetching "${late[@]}"; sleep 0.3; }; done
 wait
 L="$U/data/qconsole.log"
 grep -a -q "Server spawned" "$L" && ok "${#late[@]} packs landed (status file only): mounted, and the held map $MAP2 started by itself" || bad "the held map did not start after its packs landed"
+grep -a -q "UIBSTART $MAP2 dm 6 1" "$L" && ok "the deferred UIB Play starts the selected map with its chosen mode, bots and weapon setting" || bad "the deferred UIB Play did not retain the selected match settings"
 grep -a -q "could not find" "$L" && bad "fs_mountpack did not see a pack that had just landed" || ok "every landed pack was found at once"
 missing "$L" > "$W/late.txt"; known "$L"
 new="$(comm -23 "$W/late.txt" <(sort -u "$W/base-$MAP2.txt" "$W/base-$MAP1.txt"))"

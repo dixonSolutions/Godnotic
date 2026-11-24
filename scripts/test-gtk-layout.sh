@@ -68,5 +68,25 @@ else
 	bad "Singleplayer at 915x480: the map picker is cut or cramped ($(tr '\n' '|' < "$m"))"
 fi
 
+# The same window resized from desktop to phone width: the horizontal mode
+# strip should scroll rather than compressing its cards below minItem.
+mkdir -p "$WORK/resize"
+cat > "$WORK/resize/run.script" <<EOF
+wait 2000
+cards $WORK/resize/wide.txt
+size 400 860
+wait 1000
+cards $WORK/resize/narrow.txt
+quit
+EOF
+FIXTURE=singleplayer timeout 90 "$ROOT/loader/scripts/drive.sh" "$WORK/resize/run.script" "$WORK/resize" 1000x700 dark > "$WORK/resize/log.txt" 2>&1
+wide=$(awk '$1 == "gn-card-pic" { print $4; exit }' "$WORK/resize/wide.txt" 2>/dev/null)
+narrow=$(awk '$1 == "gn-card-pic" { print $4; exit }' "$WORK/resize/narrow.txt" 2>/dev/null)
+if [ -n "$wide" ] && [ -n "$narrow" ] && [ "$wide" -ge 140 ] && [ "$narrow" -ge 140 ]; then
+    ok "Mode cards remain at least 140 px wide after resize ($wide → $narrow)"
+else
+    bad "Mode cards were compressed on resize ($wide → $narrow)"
+fi
+
 [ $fail = 0 ] && echo "gtk-layout: all passed"
 exit $fail

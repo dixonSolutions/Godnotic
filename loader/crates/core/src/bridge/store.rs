@@ -91,6 +91,7 @@ pub struct Store {
     pub sources: HashMap<String, ListWindow>,
     asked_images: HashSet<String>,
     image_refs: HashMap<String, String>,
+    image_requests: HashMap<i64, String>,
 }
 
 impl Store {
@@ -161,6 +162,7 @@ impl Store {
         self.sources.clear();
         self.asked_images.clear();
         self.image_refs.clear();
+        self.image_requests.clear();
     }
 
     pub fn apply(&mut self, msg: &Map<String, Value>) -> Vec<Change> {
@@ -175,6 +177,7 @@ impl Store {
                     self.sources.clear();
                     self.asked_images.clear();
                     self.image_refs.clear();
+                    self.image_requests.clear();
                 }
                 self.session = Some(s.clone());
                 vec![Change::Hello { session: s, restarted }]
@@ -236,6 +239,7 @@ impl Store {
             "image" => {
                 let Some(r) = msg.str_of("ref") else { return vec![] };
                 self.asked_images.remove(&r);
+                if let Some(id) = msg.i64_of("re") { self.image_requests.remove(&id); }
                 if let Some(p) = msg.str_of("path") {
                     self.image_refs.insert(r.clone(), p);
                 }
@@ -245,12 +249,17 @@ impl Store {
             "error" => {
                 let code = msg.str_of("code").unwrap_or_default();
                 let m = msg.str_of("msg").unwrap_or_default();
-                // An image request that failed: the renderer keeps its placeholder.
-                if code == "not_found" {
-                    if let Some(r) = msg.str_of("ref") {
-                        self.asked_images.remove(&r);
+                // Errors carry the request id; resolve it before dropping the
+                // pending request so a failed image can be requested again.
+                let requested = msg.i64_of("re").and_then(|id| self.image_requests.remove(&id));
+                if let Some(r) = msg.str_of("ref").or(requested) {
+                    self.asked_images.remove(&r);
+                    if code == "not_found" {
                         return vec![Change::ImageMissing(r)];
                     }
+                    // A busy or invalid image request must also release its
+                    // waiting pictures; otherwise they pulse forever.
+                    return vec![Change::ImageMissing(r), Change::Error { code, msg: m }];
                 }
                 vec![Change::Error { code, msg: m }]
             }
@@ -262,6 +271,11 @@ impl Store {
     /// True the first time an image is wanted (send the request); false while pending.
     pub fn want_image(&mut self, r: &str) -> bool {
         self.asked_images.insert(r.to_string())
+    }
+
+    /// Associate an image request with its reply: errors carry `re`, not `ref`.
+    pub fn track_image_request(&mut self, id: i64, reference: &str) {
+        self.image_requests.insert(id, reference.to_string());
     }
 
     /// A path the engine already gave for this ref in this session.
@@ -300,4 +314,25 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod image_request_tests {
+    use super::{Change, Store};
+    use serde_json::json;
+
+    #[test]
+    fn missing_image_error_with_reply_id_allows_a_later_retry() {
+        let mut store = Store::new();
+        assert!(store.want_image("pk3:maps/boil"));
+        store.track_image_request(42, "pk3:maps/boil");
+        let error = json!({"uib":1,"t":"error","re":42,"code":"not_found","msg":"no such image"});
+        assert_eq!(store.apply(error.as_object().unwrap()), vec![Change::ImageMissing("pk3:maps/boil".into())]);
+        assert!(store.want_image("pk3:maps/boil"));
+        assert!(!store.want_image("pk3:maps/boil"));
+        store.track_image_request(43, "pk3:maps/boil");
+        let busy = json!({"uib":1,"t":"error","re":43,"code":"busy","msg":"queue full"});
+        assert!(matches!(&store.apply(busy.as_object().unwrap())[..], [Change::ImageMissing(_), Change::Error { .. }]));
+        assert!(store.want_image("pk3:maps/boil"));
+    }
 }

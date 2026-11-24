@@ -153,7 +153,18 @@ pub fn pump(app: &App) {
                 Deferred::Image(r, w, h) => {
                     let ask = app.core.borrow_mut().store.want_image(&r);
                     if ask {
-                        let m = app.core.borrow_mut().client.image(&r, w, h);
+                        // Map cards and detail views share a ref. Request enough
+                        // detail on the first use so a small card does not leave
+                        // the later full-screen preview with a thumbnail.
+                        let (w, h) = if r.starts_with("pk3:maps/") { (w.max(1024), h.max(1024)) } else { (w, h) };
+                        let mut core = app.core.borrow_mut();
+                        let m = core.client.image(&r, w, h);
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&m) {
+                            if let Some(id) = v.get("id").and_then(|v| v.as_i64()) {
+                                core.store.track_image_request(id, &r);
+                            }
+                        }
+                        drop(core);
                         app.out.borrow_mut().push_back(m);
                     }
                 }
@@ -208,14 +219,34 @@ fn handle_changes(app: &App, changes: &[Change], msg: &Map<String, Value>) {
                     request_rows(app, &l);
                 }
             }
-            Change::Image { reference, path, data } => app.images.borrow_mut().arrived(reference, path.as_deref(), data.as_deref()),
-            Change::ImageMissing(r) => app.images.borrow_mut().missing(r),
+            Change::Image { reference, path, data } => {
+                let retry = app.images.borrow_mut().arrived(reference, path.as_deref(), data.as_deref());
+                if let Some(delay) = retry { retry_image(app, reference, delay); }
+            }
+            Change::ImageMissing(r) => {
+                let retry = app.images.borrow_mut().missing(r);
+                if let Some(delay) = retry { retry_image(app, r, delay); }
+            }
             Change::Error { code, msg: m } => eprintln!("godnotic-loader: engine error {code}: {m}"),
             Change::Bye(reason) => crate::backend::engine_gone(app, reason),
             Change::Hello { .. } => {}
         }
     }
     let _ = msg;
+}
+
+// Assets may still be arriving when a map card is first shown. Check again
+// occasionally while it remains visible, without spinning on missing maps.
+fn retry_image(app: &App, reference: &str, delay: u64) {
+    let weak = Rc::downgrade(app);
+    let reference = reference.to_string();
+    glib::timeout_add_local_once(std::time::Duration::from_secs(delay), move || {
+        if let Some(app) = weak.upgrade() {
+            if app.images.borrow().has_visible_waiter(&reference) {
+                want_image(&app, &reference, 1024, 1024);
+            }
+        }
+    });
 }
 
 fn ui_lists(app: &App) -> Vec<Rc<RefCell<ListView>>> {
@@ -404,6 +435,20 @@ fn sync_stack(app: &App, rebuild_all: bool) {
     }
 }
 
+// Drop text input focus while the widget tree is still alive. Wayland's input
+// method can deliver a focus notification as a page or dialog is removed.
+fn clear_focus_in(win: &adw::ApplicationWindow, subtree: &impl IsA<gtk::Widget>) {
+    if let Some(focus) = gtk::prelude::GtkWindowExt::focus(win) {
+        let root = subtree.as_ref();
+        if focus == *root || focus.is_ancestor(root) {
+            if std::env::var_os("GODNOTIC_TIMING").is_some() {
+                eprintln!("godnotic-loader: clearing focus before removing a view");
+            }
+            gtk::prelude::GtkWindowExt::set_focus(win, None::<&gtk::Widget>);
+        }
+    }
+}
+
 /// Modal sheets and dialogs, the busy banner, toasts, and the game/menu context.
 fn sync_app_extras(app: &App) {
     let (modal, busy, toasts, context) = {
@@ -417,7 +462,9 @@ fn sync_app_extras(app: &App) {
     // Dialogs: close those gone, open the new ones.
     let open: Vec<String> = app.ui.borrow().as_ref().map(|u| u.dialogs.keys().cloned().collect()).unwrap_or_default();
     for id in open.iter().filter(|i| !modal.contains(i)) {
-        if let Some(d) = app.ui.borrow_mut().as_mut().and_then(|u| u.dialogs.remove(id)) {
+        let dialog = app.ui.borrow_mut().as_mut().and_then(|u| u.dialogs.remove(id));
+        if let Some(d) = dialog {
+            clear_focus_in(&win, &d);
             d.force_close();
         }
     }
@@ -475,6 +522,11 @@ pub fn fill_page(app: &App, page: &adw::NavigationPage, id: &str) {
     app.quiet.set(true);
     let content = widgets::screen(app, &core.store, screen);
     app.quiet.set(false);
+    drop(core);
+    let win = app.ui.borrow().as_ref().map(|u| u.win.clone());
+    if let (Some(old), Some(win)) = (page.child(), win) {
+        clear_focus_in(&win, &old);
+    }
     page.set_child(Some(&content));
 }
 

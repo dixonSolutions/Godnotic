@@ -504,7 +504,7 @@ ensure_fetchd() {
         "GODNOTIC_FLATPAK_ID=$FLATPAK_APP_ID" \
         "GODNOTIC_BUNDLE_DATA=$BUNDLE_DATA" \
         "XONOTIC_ASSET_FETCH_PROGRESS=$PROGRESS_FILE" \
-        "GODNOTIC_AUTO_OPEN_ON_READY=1" \
+        "GODNOTIC_AUTO_OPEN_ON_READY=0" \
         "GODNOTIC_NOTIFY_ON_READY=1" \
         bash "$HELPER_LIB_DIR/godnotic-fetchd.sh" \
         >/dev/null 2>&1 &

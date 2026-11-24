@@ -147,6 +147,14 @@ fn step(w: std::rc::Weak<app::Shared>, mut lines: VecDeque<String>) {
             }
             delay = (ms + 500) as u64;
         }
+        "focus" => {
+            let widget = args.first().and_then(|id| app.ui.borrow().as_ref().and_then(|u| u.activators.get(*id).cloned()));
+            match widget {
+                Some(widget) if widget.grab_focus() => println!("script: focused {}", args[0]),
+                _ => eprintln!("script: could not focus {:?}", args.first()),
+            }
+            delay = 200;
+        }
         "type" => {
             // type <node id> <text>: sets an entry's text as if typed (its change signals run).
             let w = args.first().and_then(|id| app.ui.borrow().as_ref().and_then(|u| u.activators.get(*id).cloned()));

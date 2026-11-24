@@ -148,7 +148,7 @@ interfaces: `touch_data_state`, `touch_data_done_kb`, `touch_data_total_kb`,
 
 ### Game to host
 
-`touch_data_want <map>` (the menu calls it when the player picks a map that is
+`touch_data_request <map>` (the menu calls it when the player picks a map that is
 still downloading; the engine calls it itself, below) writes
 `<engine write dir>/touch/data-request.txt`:
 
@@ -168,7 +168,7 @@ and no `.bsp`. While `touch_data_state` is `fetching`, `paused`, `waiting` or
 `error`:
 
 - `map <m>` / `changelevel <m>` for such a map does not start: the engine asks
-  for it (`touch_data_want`), keeps the command in `touch_data_pending` and
+  for it (`touch_data_request`), keeps the command in `touch_data_pending` and
   runs it when `maps/<m>.bsp` appears. `touch_data_cancel` drops it.
 - A server whose map is such a map: instead of the "cannot load map" error the
   client disconnects, asks for the map, keeps `connect <address>` in
@@ -178,8 +178,8 @@ and no `.bsp`. While `touch_data_state` is `fetching`, `paused`, `waiting` or
   `missing` when nothing is fetching it) and `progress` (0..1 for the wanted
   map, -1 while it is only queued); the source rebuilds when a pack is mounted,
   the downloader starts or stops, or the wanted map moves on. Choosing a
-  downloading map asks for it (`touch_data_want`); starting one says that it
-  is next instead of starting another map. `TouchData_MapState()` in
+  downloading map asks for it (`touch_data_request`); starting one waits and
+  starts the chosen map once its packs arrive. `TouchData_MapState()` in
   `touch_datafetch.h` is the same for a native front end, and
   `qcsrc/menu/xonotic/touch_data.qh` for QuakeC (`TouchData_StatusLine()`
   gives "Getting the rest of the maps: 180 of 300 MB").

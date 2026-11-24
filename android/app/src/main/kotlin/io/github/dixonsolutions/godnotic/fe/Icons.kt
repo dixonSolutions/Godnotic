@@ -22,6 +22,13 @@ object Icons {
         "pause" to { p -> p.moveTo(9f, 6f); p.lineTo(9f, 18f); p.moveTo(15f, 6f); p.lineTo(15f, 18f) },
         "singleplayer" to { p -> person(p, 12f, 1f) },
         "player" to { p -> person(p, 12f, 1f) },
+        "accessibility" to { p ->
+            p.addCircle(12f, 4.5f, 2f, Path.Direction.CW)
+            p.moveTo(4f, 9f); p.lineTo(20f, 9f)
+            p.moveTo(12f, 9f); p.lineTo(12f, 15f)
+            p.moveTo(12f, 15f); p.lineTo(7.5f, 21f)
+            p.moveTo(12f, 15f); p.lineTo(16.5f, 21f)
+        },
         "multiplayer" to { p -> person(p, 9f, 0.85f); person(p, 16f, 0.85f) },
         "players" to { p -> person(p, 9f, 0.85f); person(p, 16f, 0.85f) },
         "settings" to { p ->

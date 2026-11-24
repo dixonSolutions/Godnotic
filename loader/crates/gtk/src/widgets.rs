@@ -948,7 +948,11 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
                 for (v, l) in &opts {
                     g.add(adw::Toggle::builder().name(v.as_str()).label(l.as_str()).build());
                 }
-                g.set_active_name(Some(&cur));
+                let known = opts.iter().any(|(v, _)| *v == cur);
+                g.set_active_name(if known { Some(&cur) } else { None });
+                if !known && !cur.is_empty() {
+                    r.set_subtitle(&if sub.is_empty() { format!("Current: {cur}") } else { format!("{sub} · Current: {cur}") });
+                }
                 g.connect_active_name_notify(move |g| {
                     if let (Some(a), Some(v)) = (w.upgrade(), g.active_name()) {
                         value(&a, &id, json!(v.to_string()));
@@ -956,7 +960,16 @@ fn control_row(app: &App, n: &Node) -> gtk::Widget {
                 });
                 r.add_suffix(&g);
                 let g2 = g.clone();
-                register_updater(app, &n.id, Rc::new(move |n: &Node| g2.set_active_name(n.str("value").as_deref())));
+                let r2 = r.clone();
+                register_updater(app, &n.id, Rc::new(move |n: &Node| {
+                    let current = n.str("value").unwrap_or_default();
+                    let known = g2.toggle_by_name(&current).is_some();
+                    g2.set_active_name(if known { Some(&current) } else { None });
+                    let subtitle = if !known && !current.is_empty() {
+                        if sub.is_empty() { format!("Current: {current}") } else { format!("{sub} · Current: {current}") }
+                    } else { sub.clone() };
+                    r2.set_subtitle(&subtitle);
+                }));
                 r.upcast()
             } else {
                 let labels: Vec<&str> = opts.iter().map(|(_, l)| l.as_str()).collect();
@@ -1619,6 +1632,7 @@ fn grid(app: &App, store: &Store, n: &Node) -> gtk::Widget {
     // Home's row on a phone: a little less between the cards, more for each
     f.set_column_spacing(if featured && app.narrow.get() { 8 } else { 12 });
     let compact_strip = n.str("scroll").as_deref() == Some("horizontal") && !featured && window_height(app) < SHORT_WINDOW;
+    let horizontal_strip = n.str("scroll").as_deref() == Some("horizontal");
     // Home uses one column on a narrow screen and a row on wider screens.
     f.set_min_children_per_line(if app.narrow.get() { 1 } else if featured { kids.len().clamp(1, 4) as u32 } else { 2 });
     f.set_max_children_per_line(if featured && app.narrow.get() { 1 } else { n.f64("maxColumns").map(|m| m as u32).unwrap_or(((1100.0 / (min + 12.0)) as u32).clamp(1, 6)) });
@@ -1627,7 +1641,10 @@ fn grid(app: &App, store: &Store, n: &Node) -> gtk::Widget {
             continue;
         }
         let w = node(app, store, k);
-        w.set_size_request(if app.narrow.get() || featured { 0 } else { min as i32 }, -1);
+        // A horizontal strip has to keep its per-card minimum even on a narrow
+        // window; giving every child a zero width lets FlowBox compress the
+        // entire mode picker into the viewport instead of making it scroll.
+        w.set_size_request(if (app.narrow.get() && !horizontal_strip) || featured { 0 } else { min as i32 }, -1);
         if compact_strip {
             compact_card(&w);
         }
@@ -2104,6 +2121,9 @@ fn preview_content(app: &App, n: &Node) -> gtk::Widget {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 18);
     if let Some(r) = n.str("image") {
         let p = picture(app, &r, 1280, 720);
+        // Map shots are commonly square; a detail preview should show the
+        // complete image rather than cropping away its top and bottom.
+        p.set_content_fit(gtk::ContentFit::Contain);
         if compact {
             p.set_size_request(320, 180);
         } else {

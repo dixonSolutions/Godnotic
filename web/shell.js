@@ -336,11 +336,17 @@
   function screenKeyboard(on) {
     state.kbdOn = on;
     if (on) {
+      // The field is normally absent from the accessibility tree, but when
+      // the game opens chat/console input it is the actual text entry point.
+      kbd.removeAttribute('aria-hidden');
       kbdReset();
       kbd.focus({ preventScroll: true });
-    } else if (document.activeElement === kbd) {
-      kbd.blur();
-      canvas.focus({ preventScroll: true });
+    } else {
+      kbd.setAttribute('aria-hidden', 'true');
+      if (document.activeElement === kbd) {
+        kbd.blur();
+        canvas.focus({ preventScroll: true });
+      }
     }
   }
   kbd.addEventListener('input', () => {

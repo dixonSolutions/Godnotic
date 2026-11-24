@@ -205,8 +205,11 @@ class Element extends EventTarget {
     const classes = new Set();
     this.classList = { add: (c) => classes.add(c), remove: (c) => classes.delete(c), toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)), contains: (c) => classes.has(c) };
     this.dataset = {};
+    this.attributes = new Map();
   }
-  setAttribute() {}
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  removeAttribute(name) { this.attributes.delete(name); }
   getBoundingClientRect() { return { width: 1280, height: 720 }; }
   focus() {}
   closest() { return new Element(); }
@@ -372,6 +375,7 @@ await test('text input focuses the keyboard field and forwards physical and IME 
   const p = loadPage(profile(), makeHost([]), { engine: false });
   const kbd = p.element('xt-kbd');
   const canvas = p.element('canvas');
+  kbd.setAttribute('aria-hidden', 'true');
   kbd.focus = () => { p.context.document.activeElement = kbd; };
   kbd.blur = () => { p.context.document.activeElement = null; };
   canvas.focus = () => { p.context.document.activeElement = canvas; };
@@ -384,6 +388,7 @@ await test('text input focuses the keyboard field and forwards physical and IME 
   p.context.Module._xt_web_key = (key) => keys.push(key);
   p.context.Module.xt.screenKeyboard(true);
   assert.equal(p.context.document.activeElement, kbd);
+  assert.equal(kbd.getAttribute('aria-hidden'), null, 'focused input is exposed to assistive technology');
   const physical = new Event('keydown', { cancelable: true });
   Object.assign(physical, { key: 'h', keyCode: 72, isComposing: false });
   kbd.dispatchEvent(physical);
@@ -401,6 +406,7 @@ await test('text input focuses the keyboard field and forwards physical and IME 
   assert.deepEqual(keys, [8, 8]);
   p.context.Module.xt.screenKeyboard(false);
   assert.equal(p.context.document.activeElement, canvas);
+  assert.equal(kbd.getAttribute('aria-hidden'), 'true', 'inactive input is hidden');
 });
 
 await test('first visit asks, downloads each chunk once, mounts; a reload makes no data requests', async () => {
