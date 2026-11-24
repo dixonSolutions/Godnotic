@@ -1099,7 +1099,7 @@ static void TCL_DrawPanel(const tcl_metrics_t *m, float dt)
 	{
 		float r = 14.0f * m->dp, cx = pxl + pw * 0.5f, cy = pyt + ph * 0.5f;
 		DrawQ_RoundedBox(cx, cy + 3 * m->dp, pw * 0.5f + 3 * m->dp, ph * 0.5f + 3 * m->dp, r, 0, 0, 0, 0, 0.16f, 0);
-		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, 0, 0.025f, 0.04f, 0.065f, 0.98f, 0);
+		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, 0, 0.025f, 0.04f, 0.065f, 0.74f, 0);
 		DrawQ_RoundedBox(cx, cy, pw * 0.5f, ph * 0.5f, r, m->dp, 0.8f, 0.9f, 1, 0.32f, 0);
 	}
 
