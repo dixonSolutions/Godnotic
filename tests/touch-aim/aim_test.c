@@ -838,6 +838,15 @@ static void test_ammo(void)
 	CHECK_EQ(0, TouchWep_ShotsLeft(3, -1, 4), "ammo: 3 rockets cannot pay for a Devastator shot");
 	CHECK_EQ(9, TouchWep_ShotsLeft(10, 80, 10), "ammo: clip and reserve both count");
 	CHECK_EQ(TW_SHOTS_UNLIMITED, TouchWep_ShotsLeft(-1, -1, 1), "ammo: unlimited");
+	{
+		static const char *const insta[] = { "vaporizer" }, *const hooked[] = { "blaster", "vaporizer", "hook" }, *const all[] = { "blaster", "vortex", "vaporizer" }, *const mod[] = { "vaporizer", "modgun" };
+		const touch_wep_t *v = TouchWep_Find("vaporizer");
+		CHECK_EQ(1, TouchWep_ShotCost(v, insta, 1), "instagib: one cell a shot");
+		CHECK_EQ(1, TouchWep_ShotCost(v, hooked, 3), "instagib: the blaster and the hook do not matter");
+		CHECK_EQ(10, TouchWep_ShotCost(v, all, 3), "vaporizer among guns: ten cells");
+		CHECK_EQ(10, TouchWep_ShotCost(v, mod, 2), "vaporizer with a mod's gun: ten cells");
+		CHECK_EQ(6, TouchWep_ShotCost(TouchWep_Find("vortex"), all, 3), "vortex: its own cost");
+	}
 	CHECK_NEAR(0.5, TouchWep_TimeToDry(8, TouchWep_Refire("machinegun", false)), 1e-3, "ammo: 8 bullets of machinegun last 0.5 s");
 	CHECK_NEAR(1.1, TouchWep_Refire("devastator", false), 1e-4, "refire: devastator");
 	CHECK_NEAR(1, TouchWep_Refire("railgun", false), 1e-4, "refire: unknown weapon 1 s");

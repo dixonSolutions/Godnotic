@@ -213,7 +213,7 @@ static void test_mortar(void)
 
 static touch_brk_cfg_t cfg(void)
 {
-	touch_brk_cfg_t c = { 1.2f, 15.0f, 90.0f, 0.7f, 4.0f };
+	touch_brk_cfg_t c = { 4.0f, 15.0f, 400.0f, 0.25f, 4.0f };
 	return c;
 }
 
@@ -236,88 +236,76 @@ static void test_breakout(void)
 	touch_brk_cfg_t c = cfg();
 	touch_brk_t b;
 	double t = 100;
-	int n;
-	// the view is held on the target (the pull put it there): a 30 deg/s drag
-	// releases it within a tenth of a second
+	float dt = 1.0f / 60, acc = 0;
+	int i, n, rel;
+	// the player can always leave: a drag that keeps going one way
+	memset(&b, 0, sizeof(b));
+	n = frames_until_release(&b, &c, 60, 1, 0, 0, 0, 60, &t);
+	CHECK(n > 1 && n <= 8, "a 60 deg/s drag off the target releases in %d frames", n);
+	CHECK(TouchBrk_Held(&b, t, 7) && !TouchBrk_Held(&b, t, 8), "only that target is held out");
+	CHECK(TouchBrk_Held(&b, t + 0.24, 7) && !TouchBrk_Held(&b, t + 0.26, 7), "for 0.25 s");
 	memset(&b, 0, sizeof(b));
 	n = frames_until_release(&b, &c, 30, 1, 0, 0, 0, 60, &t);
-	CHECK(n > 0 && n <= 6, "drag away from the point releases in %d frames", n);
-	CHECK(TouchBrk_Held(&b, t, 7), "released target is held out");
-	CHECK(!TouchBrk_Held(&b, t, 8), "another target is not");
-	CHECK(TouchBrk_PullOff(&b, t), "pull is off for everyone");
-	CHECK(TouchBrk_Held(&b, t + 0.69, 7) && !TouchBrk_Held(&b, t + 0.71, 7), "cooldown is 0.7 s");
-	CHECK(!TouchBrk_PullOff(&b, t + 0.71), "pull returns with the cooldown");
-	// a drag against a target some degrees off, directly away from it
+	CHECK(n > 6 && n <= 30, "a 30 deg/s drag holds a moment, then releases (%d frames)", n);
 	memset(&b, 0, sizeof(b));
-	n = frames_until_release(&b, &c, 40, -1, 0, 6, 0, 60, &t);
-	CHECK(n > 0 && n <= 5, "drag directly away from a target 6 deg off releases in %d frames", n);
-	// across the line to it counts as away too
+	n = frames_until_release(&b, &c, 60, -1, 0, 6, 0, 60, &t);
+	CHECK(n > 0 && n <= 8, "directly away from a target 6 deg off: %d frames", n);
 	memset(&b, 0, sizeof(b));
-	n = frames_until_release(&b, &c, 40, 0, 1, 6, 0, 60, &t);
-	CHECK(n > 0 && n <= 5, "drag across the line releases in %d frames", n);
-	// toward the target: kept, however long
+	n = frames_until_release(&b, &c, 60, 0, 1, 6, 0, 60, &t);
+	CHECK(n > 0 && n <= 8, "across the line to it: %d frames", n);
+	// toward it: kept
 	memset(&b, 0, sizeof(b));
 	n = frames_until_release(&b, &c, 40, 1, 0, 20, 0, 120, &t);
-	CHECK(n == 0, "a drag toward the target keeps it (released at frame %d)", n);
-	CHECK(!TouchBrk_PullOff(&b, t), "and the pull stays on");
-	// toward with a little sideways wobble: still kept
+	CHECK(n == 0, "a drag toward the target keeps it (frame %d)", n);
+	// the drag that brought the view onto it does not count against it
 	memset(&b, 0, sizeof(b));
-	{
-		int i, rel = 0;
-		for (i = 0; i < 120; i++)
-		{
-			float dt = 1.0f / 60;
-			t += dt;
-			if (TouchBrk_Step(&b, &c, t, dt, 40 * dt, (i % 2 ? 4 : -4) * dt, 7, 15, 0))
-				rel = 1;
-		}
-		CHECK(!rel, "a drag toward the target with a wobble keeps it");
-	}
-	// a thumb at rest or a slow settle (under 15 deg/s) never releases
+	for (i = 0; i < 30; i++)
+		TouchBrk_Step(&b, &c, t, dt, 100 * dt, 0, 0, 0, 0);
+	CHECK(!TouchBrk_Step(&b, &c, t, dt, 100 * dt, 0, 7, 0, 0), "a target reached in mid-turn is not released on sight");
+	// turning with a target that moves the same way, as fast or a bit faster
+	memset(&b, 0, sizeof(b));
+	n = frames_until_release(&b, &c, 50, 1, 0, 40 * dt, 0, 300, &t);
+	CHECK(n == 0, "following a target moving 40 deg/s at 50 keeps it (frame %d)", n);
+	memset(&b, 0, sizeof(b));
+	n = frames_until_release(&b, &c, 200, 1, 0, 40 * dt, 0, 60, &t);
+	CHECK(n > 0, "running well past it releases");
+	// a thumb that goes back and forth leaves nothing
+	memset(&b, 0, sizeof(b));
+	for (i = rel = 0; i < 240; i++)
+		rel |= TouchBrk_Step(&b, &c, t, dt, ((i / 2) & 1 ? 60 : -60) * dt, 0, 7, 0, 0);
+	CHECK(!rel, "a 60 deg/s wobble keeps the target");
 	memset(&b, 0, sizeof(b));
 	n = frames_until_release(&b, &c, 8, -1, 0, 0, 0, 600, &t);
 	CHECK(n == 0, "a resting thumb (8 deg/s) never releases (frame %d)", n);
-	CHECK(!TouchBrk_PullOff(&b, t), "and does not turn the pull off");
-	// the tail of a finished drag: fast then decaying, with the thumb lifted
 	memset(&b, 0, sizeof(b));
+	CHECK(TouchBrk_Step(&b, &c, t, dt, 7.0f, 0, 7, 0, 0), "a flick releases in one frame");
+	// released in mid-turn: not taken back while the drag goes on, then it is
+	CHECK(TouchBrk_Held(&b, t, 7), "held");
+	for (i = 0; i < 60; i++)
 	{
-		int i, rel = 0;
-		float rate = 10;
-		for (i = 0; i < 90; i++)
-		{
-			float dt = 1.0f / 60;
-			t += dt;
-			rate *= 0.9f;
-			if (TouchBrk_Step(&b, &c, t, dt, 0, rate * dt, 7, 0, 0))
-				rel = 1;
-		}
-		CHECK(!rel, "a decaying tail never releases");
+		t += dt;
+		acc += 30 * dt;
+		TouchBrk_Leaving(&b, &c, t, dt, 7, 30 * dt, 0, -acc, 0);
 	}
-	// a flick: one frame
-	memset(&b, 0, sizeof(b));
-	CHECK(TouchBrk_Step(&b, &c, t, 1.0f / 60, 3.0f, 0, 7, 0, 0), "a flick releases in one frame");
-	// nobody targeted: no release, but the pull still stands down while dragging
-	memset(&b, 0, sizeof(b));
-	CHECK(!TouchBrk_Step(&b, &c, t, 1.0f / 60, 1.0f, 0, 0, 0, 0) && !b.ent, "no target, nothing released");
-	CHECK(TouchBrk_PullOff(&b, t), "but the pull is off for a drag");
-	// the cooldown: held out, then retaken after it
-	memset(&b, 0, sizeof(b));
-	n = frames_until_release(&b, &c, 40, 1, 0, 0, 0, 30, &t);
-	CHECK(n > 0 && TouchBrk_Held(&b, t, 7), "released");
-	CHECK(!TouchBrk_Return(&b, &c, 1.0f / 60, 0.1f, 0, 10, 0, 8.0f), "still turning away and out of range: stays held");
-	CHECK(TouchBrk_Held(&b, t, 7), "held after a failed return");
-	// turning back onto it: toward, within the return angle
-	memset(&b, 0, sizeof(b));
-	b.ent = 7;
-	b.until = t + 0.5;
-	b.ent = 7; b.until = t + 0.5;
-	CHECK(TouchBrk_Return(&b, &c, 1.0f / 60, 0.9f, 0, 3.0f, 0, 2.0f), "turn back toward it, 2 deg off its edge: taken again");
+	CHECK(TouchBrk_Held(&b, t, 7), "still held after a second of turning away");
+	TouchBrk_Leaving(&b, &c, t + 0.2, dt, 7, 0, 0, -acc, 0);
+	CHECK(!TouchBrk_Held(&b, t + 0.26, 7), "taken again once the drag stops");
+	// turning back onto it
+	b.out[0].ent = 7; b.out[0].until = t + 0.5;
+	CHECK(!TouchBrk_Return(&b, &c, dt, 7, 0.9f, 0, 20.0f, 0, 15.0f), "toward but 15 deg off: stays held");
+	CHECK(!TouchBrk_Return(&b, &c, dt, 7, -0.9f, 0, 3.0f, 0, 2.0f), "near it but turning away: stays held");
+	CHECK(!TouchBrk_Return(&b, &c, dt, 7, 0.1f, 0, 3.0f, 0, 2.0f), "near it but a resting thumb: stays held");
+	CHECK(TouchBrk_Return(&b, &c, dt, 7, 0.9f, 0, 3.0f, 0, 2.0f), "turn back toward it: taken again");
 	CHECK(!TouchBrk_Held(&b, t, 7), "the hold is gone");
-	b.ent = 7; b.until = t + 0.5;
-	CHECK(!TouchBrk_Return(&b, &c, 1.0f / 60, 0.9f, 0, 20.0f, 0, 15.0f), "toward but still 15 deg off: stays held");
-	CHECK(!TouchBrk_Return(&b, &c, 1.0f / 60, -0.9f, 0, 3.0f, 0, 2.0f), "near it but turning away: stays held");
-	CHECK(!TouchBrk_Return(&b, &c, 1.0f / 60, 0.1f, 0, 3.0f, 0, 2.0f), "near it but a resting thumb: stays held");
-	CHECK(TouchBrk_Held(&b, t, 7), "still held");
+	// two enemies close together: releasing the second keeps the first out
+	TouchBrk_Step(&b, &c, t, dt, 0, 0, 7, 0, 0);
+	CHECK(TouchBrk_Step(&b, &c, t, dt, 7.0f, 0, 7, 0, 0), "the first is released");
+	TouchBrk_Step(&b, &c, t, dt, 0, 0, 8, 0, 0);
+	CHECK(TouchBrk_Step(&b, &c, t, dt, 7.0f, 0, 8, 0, 0), "then the second");
+	CHECK(TouchBrk_Held(&b, t, 7) && TouchBrk_Held(&b, t, 8), "both are held out");
+	// a short frame that a whole touch event landed in is not a flick
+	TouchBrk_Step(&b, &c, t, 0.004f, 0, 0, 9, 0, 0);
+	CHECK(!TouchBrk_Step(&b, &c, t, 0.004f, 1.7f, 0, 9, 0, 0), "1.7 deg in a 4 ms frame is no flick");
 }
 
 // ---- hit rates against a simulated person ---------------------------------
@@ -519,7 +507,7 @@ static void test_cost(void)
 	for (i = 0; i < N; i++)
 	{
 		TouchBrk_Step(&b, &c, i * 0.016, 0.016f, 0.1f, (i & 3) * 0.1f, 3, 2, 1);
-		b.until = 0;
+		memset(b.out, 0, sizeof(b.out));
 	}
 	clock_gettime(CLOCK_MONOTONIC, &z);
 	ns_brk = ((z.tv_sec - a.tv_sec) * 1e9 + (z.tv_nsec - a.tv_nsec)) / N;
