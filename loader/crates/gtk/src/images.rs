@@ -94,7 +94,7 @@ impl Images {
     /// Keep live waiters so a map installed after this reply can fill the card.
     /// The caller retries with backoff while a picture remains visible.
     pub fn missing(&mut self, r: &str) -> Option<u64> {
-        let Some(waiters) = self.waiting.get_mut(r) else { return None };
+        let waiters = self.waiting.get_mut(r)?;
         waiters.retain(|w| {
             if let Some(p) = w.upgrade() {
                 p.remove_css_class("gn-placeholder");
