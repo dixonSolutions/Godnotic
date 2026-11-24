@@ -52,12 +52,16 @@ with tempfile.TemporaryDirectory(prefix='uib-loading-') as work:
                     c.recv(0.5)
                     node = c.nodes.get('loading/map')
                     if node:
+                        context = c.nodes.get('app', {}).get('props', {}).get('context')
+                        assert context == 'loading', f'loading/map published with app.context={context!r}'
                         ref = node['props'].get('ref')
                         assert ref in ('pk3:maps/afterslime', 'pk3:maps/afterslime.jpg', 'pk3:maps/afterslime.png'), ref
                         image = c.request({'t': 'image', 'ref': ref, 'w': 1024, 'h': 1024}, limit=15)
                         assert image and os.path.isfile(image.get('path', '')), image
+                        context = c.nodes.get('app', {}).get('props', {}).get('context')
+                        assert context == 'loading', f'preview arrived only after app.context={context!r}'
                         assert t.fails == 0, f'{t.fails} invalid bridge messages'
-                        print('loading preview: local server join returned a valid map image')
+                        print('loading preview: map image arrived while app.context remained loading')
                         break
                 else:
                     raise AssertionError('no map image in loading screen')
@@ -68,3 +72,43 @@ with tempfile.TemporaryDirectory(prefix='uib-loading-') as work:
         finally:
             srv.terminate()
             srv.wait(timeout=10)
+
+# A local game has no remote connect handshake: its map and levelshot must be
+# published from SV_SpawnServer while the GTK loading page still owns the screen.
+with tempfile.TemporaryDirectory(prefix='uib-local-loading-') as work:
+    userdir = os.path.join(work, 'user')
+    os.makedirs(os.path.join(userdir, 'data'))
+    shutil.copy(menu, os.path.join(userdir, 'data', 'menu.dat'))
+    sock = os.path.join(work, 'uib.sock')
+    p, plog = t.spawn(['-uibridge', 'listen:' + sock], userdir,
+        'set touch_lan_map afterslime\nset touch_lan_gametype dm\nset touch_lan_bots 0\nset touch_profile_done 1\n')
+    try:
+        c = t.Conn(t.connect(sock))
+        t.hello(c)
+        c.send({'t': 'ev', 'ev': 'action', 'node': 'home/tiles/sp', 'action': 'sp'})
+        assert t.wait_for(c, lambda: 'sp' in c.nodes, 10), 'Singleplayer did not open'
+        c.send({'t': 'ev', 'ev': 'action', 'node': 'sp', 'action': 'play'})
+        end = time.monotonic() + 25
+        while time.monotonic() < end:
+            c.recv(0.5)
+            node = c.nodes.get('loading/map')
+            if node:
+                context = c.nodes.get('app', {}).get('props', {}).get('context')
+                assert context == 'loading', f'local preview published with app.context={context!r}'
+                ref = node['props'].get('ref')
+                assert ref == 'pk3:maps/afterslime.jpg', ref
+                image = c.request({'t': 'image', 'ref': ref, 'w': 1024, 'h': 1024}, limit=15)
+                assert image and os.path.isfile(image.get('path', '')), image
+                context = c.nodes.get('app', {}).get('props', {}).get('context')
+                assert context == 'loading', f'local image arrived after app.context={context!r}'
+                break
+        else:
+            raise AssertionError('no map image in local loading screen')
+        assert t.wait_for(c, lambda: c.nodes.get('app', {}).get('props', {}).get('context') == 'game', 25), \
+            'local map did not reach the signed-on game'
+        assert t.fails == 0, f'{t.fails} invalid bridge messages'
+        print('loading preview: local image arrived during loading and the game signed on')
+    finally:
+        p.terminate()
+        p.wait(timeout=10)
+        plog.close()
