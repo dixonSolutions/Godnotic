@@ -72,7 +72,7 @@ int main(void)
 
 	// the bar, state by state
 	CHECK_STR("<", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_PREV), "free-fly prev");
-	CHECK_STR("FREE", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_MAIN), "free-fly main");
+	CHECK_STR("Free", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_MAIN), "free-fly main");
 	CHECK_STR(">", TouchSpec_BarLabel(TOUCHSPEC_OBSERVING, TOUCHSPEC_BAR_NEXT), "free-fly next");
 	for (part = 0; part < TOUCHSPEC_BAR_PARTS; part++)
 	{
@@ -85,10 +85,13 @@ int main(void)
 	CHECK_INT(TOUCHSPEC_ACT_PREV, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_PREV), "following prev");
 	CHECK_INT(TOUCHSPEC_ACT_FREE, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_MAIN), "following main: free-fly");
 	CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_NEXT), "following next");
-	CHECK_STR("FREE", TouchSpec_BarLabel(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_MAIN), "following main label");
+	CHECK_STR("Free", TouchSpec_BarLabel(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_MAIN), "following main label");
 	CHECK_INT(TOUCHSPEC_ACT_PREV, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_PREV), "out prev");
 	CHECK_INT(TOUCHSPEC_ACT_NONE, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_MAIN), "out main: the server keeps the view");
-	CHECK_STR("WATCHING", TouchSpec_BarLabel(TOUCHSPEC_OUT, TOUCHSPEC_BAR_MAIN), "out main label");
+	CHECK_STR("Bob", TouchSpec_MainLabel(TOUCHSPEC_FOLLOWING, "Bob"), "name in the pill");
+	CHECK_STR("Bob", TouchSpec_MainLabel(TOUCHSPEC_OUT, "Bob"), "out: name in the pill");
+	CHECK_STR("Free", TouchSpec_MainLabel(TOUCHSPEC_OBSERVING, "Bob"), "flying reads Free");
+	CHECK_STR("Watching", TouchSpec_BarLabel(TOUCHSPEC_OUT, TOUCHSPEC_BAR_MAIN), "out main label");
 	CHECK_INT(TOUCHSPEC_ACT_NEXT, TouchSpec_BarAction(TOUCHSPEC_OUT, TOUCHSPEC_BAR_NEXT), "out next");
 	CHECK_STR("", TouchSpec_BarLabel(TOUCHSPEC_NONE, TOUCHSPEC_BAR_MAIN), "playing: no bar");
 	CHECK_STR("JOIN", TouchSpec_BarLabel(TOUCHSPEC_FOLLOWING, TOUCHSPEC_BAR_JOIN), "the join part says JOIN");

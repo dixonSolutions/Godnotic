@@ -7,7 +7,7 @@ observer = s.split('string Touch_Spec_ObserverHint', 1)[1].split('string Touch_S
 assert 'vid_keyboard_detected' in observer
 assert 'choice == 2' in observer and 'choice == 1' in observer
 assert 'Tap ^3>^1 to spectate' in observer
-assert 'Tap ^3FREE^1 to observe' in observer
+assert 'Tap ^3the name^1 to observe' in observer
 join = s.split('string Touch_Spec_JoinHint', 1)[1].split('string Touch_Spec_CommandLabel', 1)[0]
 assert 'vid_keyboard_detected' in join and 'Tap ^3JOIN' in join
 pressed = (root / 'engine/data/xonotic-data.pk3dir/qcsrc/client/hud/panel/pressedkeys.qc').read_text()
